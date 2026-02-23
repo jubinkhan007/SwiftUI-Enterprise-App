@@ -54,7 +54,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureAuth",
-            dependencies: ["Core", "Domain", "DesignSystem"]
+            dependencies: ["Core", "Domain", "Data", "DesignSystem", "Network"]
         ),
         .target(
             name: "FeatureDashboard",

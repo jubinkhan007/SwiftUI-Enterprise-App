@@ -12,7 +12,7 @@ struct JWTAuthPayload: JWTPayload {
         UUID(uuidString: subject.value)
     }
 
-    func verify(using algorithm: some JWTAlgorithm) async throws {
+    func verify(using signer: JWTSigner) throws {
         try expiration.verifyNotExpired()
     }
 }
@@ -25,7 +25,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         }
 
         do {
-            let payload = try await request.jwt.verify(token, as: JWTAuthPayload.self)
+            let payload = try request.jwt.verify(token, as: JWTAuthPayload.self)
             request.storage[UserPayloadKey.self] = payload
             return try await next.respond(to: request)
         } catch {

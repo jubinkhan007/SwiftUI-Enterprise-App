@@ -1,11 +1,29 @@
 import Foundation
 
-public enum NetworkError: Error {
+public enum NetworkError: Error, LocalizedError, Sendable, Equatable {
     case invalidURL
-    case decodingFailed(Error)
-    case serverError(statusCode: Int)
-    case underlying(Error)
-    case unauthorized
+    case decodingFailed(String)
+    case serverError(statusCode: Int, message: String?)
+    case underlying(String)
+    case unauthorized(message: String?)
+    case offline
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "Invalid server URL."
+        case .decodingFailed(let message):
+            return "Unexpected response format. \(message)"
+        case .serverError(_, let message):
+            return message ?? "Server error."
+        case .underlying(let message):
+            return message
+        case .unauthorized(let message):
+            return message ?? "You are not authorized."
+        case .offline:
+            return "You appear to be offline."
+        }
+    }
 }
 
 public protocol APIEndpoint {
@@ -42,11 +60,13 @@ public struct APIClient: APIClientProtocol {
 
         var request = URLRequest(url: url)
         request.httpMethod = endpoint.method.rawValue
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30
         
-        if let headers = endpoint.headers {
-            for (key, value) in headers {
-                request.addValue(value, forHTTPHeaderField: key)
-            }
+        request.addValue("application/json", forHTTPHeaderField: "Accept")
+        request.addValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        endpoint.headers?.forEach { key, value in
+            request.addValue(value, forHTTPHeaderField: key)
         }
         
         request.httpBody = endpoint.body
@@ -55,28 +75,59 @@ public struct APIClient: APIClientProtocol {
             let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkError.serverError(statusCode: 0)
+                throw NetworkError.serverError(statusCode: 0, message: "Invalid server response.")
             }
 
             switch httpResponse.statusCode {
             case 200...299:
                 do {
-                    let decoder = JSONDecoder()
-                    decoder.keyDecodingStrategy = .convertFromSnakeCase
-                    decoder.dateDecodingStrategy = .iso8601
-                    return try decoder.decode(T.self, from: data)
+                    return try JSONCoding.decoder.decode(T.self, from: data)
                 } catch {
-                    throw NetworkError.decodingFailed(error)
+                    throw NetworkError.decodingFailed(String(describing: error))
                 }
             case 401:
-                throw NetworkError.unauthorized
+                throw NetworkError.unauthorized(message: decodeVaporErrorMessage(from: data))
             default:
-                throw NetworkError.serverError(statusCode: httpResponse.statusCode)
+                throw NetworkError.serverError(
+                    statusCode: httpResponse.statusCode,
+                    message: decodeVaporErrorMessage(from: data)
+                )
             }
         } catch let error as NetworkError {
-             throw error
+            throw error
+        } catch let urlError as URLError where urlError.code == .notConnectedToInternet {
+            throw NetworkError.offline
         } catch {
-            throw NetworkError.underlying(error)
+            throw NetworkError.underlying(String(describing: error))
         }
     }
+
+    private func decodeVaporErrorMessage(from data: Data) -> String? {
+        // Vapor's default Abort response looks like: { "error": true, "reason": "..." }
+        guard let abort = try? JSONCoding.decoder.decode(VaporAbortResponse.self, from: data) else {
+            return nil
+        }
+        return abort.reason
+    }
+}
+
+private struct VaporAbortResponse: Decodable {
+    let error: Bool
+    let reason: String
+}
+
+public enum JSONCoding {
+    public static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+
+    public static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
 }

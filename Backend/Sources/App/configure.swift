@@ -26,7 +26,7 @@ func configure(_ app: Application) throws {
     // MARK: - JWT
     // In production, load this from environment variables
     let jwtSecret = Environment.get("JWT_SECRET") ?? "enterprise-app-dev-secret-key-change-in-production"
-    await app.jwt.keys.add(hmac: .init(from: jwtSecret), digestAlgorithm: .sha256)
+    app.jwt.signers.use(.hs256(key: jwtSecret))
 
     // MARK: - JSON Configuration
     let encoder = JSONEncoder()

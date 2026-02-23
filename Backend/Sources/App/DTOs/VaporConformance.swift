@@ -1,0 +1,21 @@
+import SharedModels
+import Vapor
+
+// MARK: - Vapor Content Conformance
+
+/// Make SharedModels DTOs usable as Vapor response bodies.
+/// Using @retroactive since these types are defined in SharedModels.
+extension APIResponse: @retroactive AsyncRequestDecodable where T: Content {}
+extension APIResponse: @retroactive AsyncResponseEncodable where T: Content {}
+extension APIResponse: @retroactive RequestDecodable where T: Content {}
+extension APIResponse: @retroactive ResponseEncodable where T: Content {}
+extension APIResponse: @retroactive Content where T: Content {}
+
+extension UserDTO: @retroactive Content {}
+extension TaskItemDTO: @retroactive Content {}
+extension AuthResponse: @retroactive Content {}
+extension TokenRefreshResponse: @retroactive Content {}
+extension CreateTaskRequest: @retroactive Content {}
+extension UpdateTaskRequest: @retroactive Content {}
+extension RegisterRequest: @retroactive Content {}
+extension LoginRequest: @retroactive Content {}

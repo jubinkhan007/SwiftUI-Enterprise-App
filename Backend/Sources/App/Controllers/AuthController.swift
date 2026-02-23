@@ -84,6 +84,6 @@ struct AuthController: RouteCollection {
             expiration: .init(value: Date().addingTimeInterval(60 * 60 * 24)), // 24 hours
             role: user.role.rawValue
         )
-        return try await req.jwt.sign(payload)
+        return try req.jwt.sign(payload)
     }
 }
