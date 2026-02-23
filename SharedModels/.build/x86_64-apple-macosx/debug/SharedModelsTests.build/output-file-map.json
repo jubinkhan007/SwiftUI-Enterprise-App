@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsTests.build/master.swiftdeps"
+  },
+  "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Tests/SharedModelsTests/SharedModelsTests.swift": {
+    "dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsTests.build/SharedModelsTests.d",
+    "object": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsTests.build/SharedModelsTests.swift.o",
+    "swiftmodule": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsTests.build/SharedModelsTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsTests.build/SharedModelsTests.swiftdeps"
+  }
+}

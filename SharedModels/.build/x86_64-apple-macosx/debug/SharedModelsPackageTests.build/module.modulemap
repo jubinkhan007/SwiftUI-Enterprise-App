@@ -1,0 +1,4 @@
+module SharedModelsPackageTests {
+    header "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsPackageTests.build/SharedModelsPackageTests-Swift.h"
+    requires objc
+}

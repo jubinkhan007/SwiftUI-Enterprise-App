@@ -1,0 +1,14 @@
+name: EnterpriseApp
+options:
+  bundleIdPrefix: com.enterprise
+targets:
+  EnterpriseApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [App]
+    dependencies:
+      - package: EnterpriseAppModules
+packages:
+  EnterpriseAppModules:
+    path: .

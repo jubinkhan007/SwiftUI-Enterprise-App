@@ -1,0 +1,17 @@
+# Build artifacts
+.build/
+.swiftpm/
+
+# Database (local dev)
+*.db
+
+# macOS
+.DS_Store
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+
+# Environment
+.env

@@ -1,0 +1,44 @@
+import Fluent
+import FluentSQLiteDriver
+import JWT
+import Vapor
+
+/// Configures the application: database, migrations, middleware, and routes.
+func configure(_ app: Application) throws {
+    // MARK: - CORS Middleware
+    let corsConfiguration = CORSMiddleware.Configuration(
+        allowedOrigin: .all,
+        allowedMethods: [.GET, .POST, .PUT, .DELETE, .PATCH, .OPTIONS],
+        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
+    )
+    app.middleware.use(CORSMiddleware(configuration: corsConfiguration))
+
+    // MARK: - Database
+    app.databases.use(.sqlite(.file("enterprise_app.db")), as: .sqlite)
+
+    // MARK: - Migrations
+    app.migrations.add(CreateUser())
+    app.migrations.add(CreateTaskItem())
+
+    // Run migrations automatically in development
+    try app.autoMigrate().wait()
+
+    // MARK: - JWT
+    // In production, load this from environment variables
+    let jwtSecret = Environment.get("JWT_SECRET") ?? "enterprise-app-dev-secret-key-change-in-production"
+    await app.jwt.keys.add(hmac: .init(from: jwtSecret), digestAlgorithm: .sha256)
+
+    // MARK: - JSON Configuration
+    let encoder = JSONEncoder()
+    encoder.keyEncodingStrategy = .convertToSnakeCase
+    encoder.dateEncodingStrategy = .iso8601
+    ContentConfiguration.global.use(encoder: encoder, for: .json)
+
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    decoder.dateDecodingStrategy = .iso8601
+    ContentConfiguration.global.use(decoder: decoder, for: .json)
+
+    // MARK: - Routes
+    try routes(app)
+}
