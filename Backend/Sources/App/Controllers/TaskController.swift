@@ -65,7 +65,10 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func create(req: Request) async throws -> APIResponse<TaskItemDTO> {
-        let user = try req.auth.require(UserModel.self)
+        let authPayload = try req.authPayload
+        guard let userId = authPayload.userId else {
+            throw Abort(.unauthorized, reason: "Invalid user ID in token.")
+        }
         let payload = try req.content.decode(CreateTaskRequest.self)
 
         guard !payload.title.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -86,7 +89,7 @@ struct TaskController: RouteCollection {
             try await task.save(on: db)
             let activity = TaskActivityModel(
                 taskId: try task.requireID(),
-                userId: try user.requireID(),
+                userId: userId,
                 type: .created
             )
             try await activity.save(on: db)
@@ -99,7 +102,10 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func update(req: Request) async throws -> APIResponse<TaskItemDTO> {
-        let user = try req.auth.require(UserModel.self)
+        let authPayload = try req.authPayload
+        guard let userId = authPayload.userId else {
+            throw Abort(.unauthorized, reason: "Invalid user ID in token.")
+        }
         guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
             throw Abort(.notFound, reason: "Task not found.")
         }
@@ -121,12 +127,12 @@ struct TaskController: RouteCollection {
         }
         if let status = payload.status, task.status != status {
             let metadata = ["from": task.status.rawValue, "to": status.rawValue]
-            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: try user.requireID(), type: .statusChanged, metadata: metadata))
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: userId, type: .statusChanged, metadata: metadata))
             task.status = status
         }
         if let priority = payload.priority, task.priority != priority {
             let metadata = ["from": task.priority.rawValue, "to": priority.rawValue]
-            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: try user.requireID(), type: .priorityChanged, metadata: metadata))
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: userId, type: .priorityChanged, metadata: metadata))
             task.priority = priority
         }
         if let startDate = payload.startDate {
@@ -136,8 +142,8 @@ struct TaskController: RouteCollection {
             task.dueDate = dueDate
         }
         if let assigneeId = payload.assigneeId, task.$assignee.id != assigneeId {
-            let metadata = assigneeId != nil ? ["assignee_id": assigneeId!.uuidString] : ["assignee_id": "Unassigned"]
-            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: try user.requireID(), type: .assigned, metadata: metadata))
+            let metadata = ["assignee_id": assigneeId.uuidString]
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: userId, type: .assigned, metadata: metadata))
             task.$assignee.id = assigneeId
         }
 
@@ -187,7 +193,10 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func createComment(req: Request) async throws -> APIResponse<TaskActivityDTO> {
-        let user = try req.auth.require(UserModel.self)
+        let authPayload = try req.authPayload
+        guard let userId = authPayload.userId else {
+            throw Abort(.unauthorized, reason: "Invalid user ID in token.")
+        }
         guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
             throw Abort(.notFound, reason: "Task not found.")
         }
@@ -199,7 +208,7 @@ struct TaskController: RouteCollection {
         
         let activity = TaskActivityModel(
             taskId: try task.requireID(),
-            userId: try user.requireID(),
+            userId: userId,
             type: .comment,
             content: payload.content
         )

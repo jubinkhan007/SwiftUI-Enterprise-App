@@ -15,5 +15,6 @@ func routes(_ app: Application) throws {
 
     // Protected routes (require JWT)
     let protected = api.grouped(JWTAuthMiddleware())
+    try protected.register(collection: OrganizationController())
     try protected.register(collection: TaskController())
 }

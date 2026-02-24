@@ -21,6 +21,9 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     @Enum(key: "priority")
     var priority: TaskPriority
 
+    @OptionalParent(key: "org_id")
+    var organization: OrganizationModel?
+
     @OptionalField(key: "start_date")
     var startDate: Date?
 

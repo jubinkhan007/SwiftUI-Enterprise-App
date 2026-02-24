@@ -14,11 +14,23 @@
     "swiftmodule": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads~partial.swiftmodule",
     "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads.swiftdeps"
   },
+  "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/EmptyResponse.swift": {
+    "dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse.d",
+    "object": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse.swift.o",
+    "swiftmodule": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse~partial.swiftmodule",
+    "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse.swiftdeps"
+  },
   "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift": {
     "dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.d",
     "object": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.swift.o",
     "swiftmodule": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums~partial.swiftmodule",
     "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.swiftdeps"
+  },
+  "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Organization.swift": {
+    "dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Organization.d",
+    "object": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Organization.swift.o",
+    "swiftmodule": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Organization~partial.swiftmodule",
+    "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Organization.swiftdeps"
   },
   "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskActivityDTO.swift": {
     "dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskActivityDTO.d",

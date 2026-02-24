@@ -36,7 +36,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/EmptyResponse.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Organization.swift"
         },
         {
           "kind" : "file",
@@ -69,7 +77,9 @@
       "objects" : [
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/APIResponse.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads.swift.o",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.swift.o",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Organization.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskActivityDTO.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskItem.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskQuery.swift.o",
@@ -93,7 +103,6 @@
         "-emit-objc-header",
         "-emit-objc-header-path",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/SharedModels-Swift.h",
-        "-color-diagnostics",
         "-swift-version",
         "5",
         "-sdk",
@@ -138,7 +147,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Organization.swift.o"
         },
         {
           "kind" : "file",
@@ -165,7 +182,9 @@
       "sources" : [
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/APIResponse.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/EmptyResponse.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Organization.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskActivityDTO.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskItem.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskQuery.swift",
@@ -222,7 +241,6 @@
         "-emit-objc-header",
         "-emit-objc-header-path",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsPackageTests.build/SharedModelsPackageTests-Swift.h",
-        "-color-diagnostics",
         "-sdk",
         "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
         "-F",
@@ -316,7 +334,6 @@
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/ModuleCache",
         "-parseable-output",
         "-parse-as-library",
-        "-color-diagnostics",
         "-swift-version",
         "5",
         "-sdk",
@@ -382,7 +399,9 @@
       "-c",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/APIResponse.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift",
+      "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/EmptyResponse.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift",
+      "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Organization.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskActivityDTO.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskItem.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskQuery.swift",
@@ -406,7 +425,6 @@
       "-emit-objc-header",
       "-emit-objc-header-path",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/SharedModels-Swift.h",
-      "-color-diagnostics",
       "-swift-version",
       "5",
       "-sdk",
@@ -471,7 +489,6 @@
       "-emit-objc-header",
       "-emit-objc-header-path",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModelsPackageTests.build/SharedModelsPackageTests-Swift.h",
-      "-color-diagnostics",
       "-sdk",
       "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
       "-F",
@@ -531,7 +548,6 @@
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/ModuleCache",
       "-parseable-output",
       "-parse-as-library",
-      "-color-diagnostics",
       "-swift-version",
       "5",
       "-sdk",
@@ -616,7 +632,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/EmptyResponse.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Organization.swift"
         },
         {
           "kind" : "file",
@@ -668,7 +692,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Organization.swift.o"
         },
         {
           "kind" : "file",

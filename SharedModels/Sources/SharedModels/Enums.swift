@@ -50,21 +50,123 @@ public enum TaskPriority: String, Codable, CaseIterable, Sendable {
     }
 }
 
-// MARK: - User Role
+// MARK: - User Role (RBAC)
 
-/// Defines the access level of a user within the organization.
+/// Defines the access level of a user within an organization.
+/// Ordered from least to most privileged.
 public enum UserRole: String, Codable, CaseIterable, Sendable {
-    case viewer
+    case guest
     case member
+    case manager
     case admin
     case owner
 
     public var displayName: String {
         switch self {
-        case .viewer: return "Viewer"
+        case .guest: return "Guest"
         case .member: return "Member"
+        case .manager: return "Manager"
         case .admin: return "Admin"
         case .owner: return "Owner"
         }
     }
+
+    /// Privilege level for comparison (higher = more privileged).
+    public var privilegeLevel: Int {
+        switch self {
+        case .guest: return 0
+        case .member: return 1
+        case .manager: return 2
+        case .admin: return 3
+        case .owner: return 4
+        }
+    }
+}
+
+// MARK: - Permission
+
+/// Granular permission actions within an organization.
+/// Roles map to sets of these permissions server-side.
+public enum Permission: String, Codable, Sendable, CaseIterable {
+    // Tasks
+    case tasksRead       = "tasks.read"
+    case tasksCreate     = "tasks.create"
+    case tasksEdit       = "tasks.edit"
+    case tasksDelete     = "tasks.delete"
+    case tasksAssign     = "tasks.assign"
+
+    // Members
+    case membersView     = "members.view"
+    case membersInvite   = "members.invite"
+    case membersManage   = "members.manage"
+    case membersRemove   = "members.remove"
+
+    // Projects (future, but define now)
+    case projectsCreate  = "projects.create"
+    case projectsEdit    = "projects.edit"
+    case projectsDelete  = "projects.delete"
+    case projectsArchive = "projects.archive"
+
+    // Analytics
+    case analyticsView   = "analytics.view"
+    case analyticsExport = "analytics.export"
+
+    // Admin
+    case orgSettings     = "org.settings"
+    case orgDelete       = "org.delete"
+    case auditLogView    = "audit_log.view"
+}
+
+/// A set of permissions for the current user within an org context.
+/// Computed server-side and sent to the client via `/api/me`.
+public struct PermissionSet: Codable, Sendable, Equatable {
+    public let permissions: Set<Permission>
+
+    public init(permissions: Set<Permission>) {
+        self.permissions = permissions
+    }
+
+    public func has(_ permission: Permission) -> Bool {
+        permissions.contains(permission)
+    }
+
+    /// Convenience: Create a PermissionSet from a role using the default mapping.
+    public static func defaultPermissions(for role: UserRole) -> PermissionSet {
+        switch role {
+        case .guest:
+            return PermissionSet(permissions: [.tasksRead, .membersView])
+        case .member:
+            return PermissionSet(permissions: [
+                .tasksRead, .tasksCreate, .tasksEdit, .tasksAssign,
+                .membersView, .analyticsView
+            ])
+        case .manager:
+            return PermissionSet(permissions: [
+                .tasksRead, .tasksCreate, .tasksEdit, .tasksDelete, .tasksAssign,
+                .membersView, .membersInvite,
+                .projectsCreate, .projectsEdit,
+                .analyticsView, .analyticsExport
+            ])
+        case .admin:
+            return PermissionSet(permissions: [
+                .tasksRead, .tasksCreate, .tasksEdit, .tasksDelete, .tasksAssign,
+                .membersView, .membersInvite, .membersManage, .membersRemove,
+                .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
+                .analyticsView, .analyticsExport,
+                .orgSettings, .auditLogView
+            ])
+        case .owner:
+            return PermissionSet(permissions: Set(Permission.allCases))
+        }
+    }
+}
+
+// MARK: - Invite Status
+
+/// Lifecycle status of an organization invite.
+public enum InviteStatus: String, Codable, CaseIterable, Sendable {
+    case pending
+    case accepted
+    case expired
+    case revoked
 }
