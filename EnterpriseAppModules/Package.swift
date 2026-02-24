@@ -11,9 +11,9 @@ let package = Package(
     ],
     products: [
         .library(name: "Core", targets: ["Core"]),
-        .library(name: "Network", targets: ["Network"]),
+        .library(name: "AppNetwork", targets: ["AppNetwork"]),
         .library(name: "Domain", targets: ["Domain"]),
-        .library(name: "Data", targets: ["Data"]),
+        .library(name: "AppData", targets: ["AppData"]),
         .library(name: "DesignSystem", targets: ["DesignSystem"]),
         .library(name: "FeatureAuth", targets: ["FeatureAuth"]),
         .library(name: "FeatureDashboard", targets: ["FeatureDashboard"]),
@@ -26,7 +26,7 @@ let package = Package(
             name: "Core"
         ),
         .target(
-            name: "Network",
+            name: "AppNetwork",
             dependencies: [
                 "Core",
                 .product(name: "SharedModels", package: "SharedModels"),
@@ -40,11 +40,11 @@ let package = Package(
             ]
         ),
         .target(
-            name: "Data",
+            name: "AppData",
             dependencies: [
                 "Core",
                 "Domain",
-                "Network",
+                "AppNetwork",
                 .product(name: "SharedModels", package: "SharedModels"),
             ]
         ),
@@ -54,7 +54,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureAuth",
-            dependencies: ["Core", "Domain", "Data", "DesignSystem", "Network"]
+            dependencies: ["Core", "Domain", "AppData", "DesignSystem", "AppNetwork"]
         ),
         .target(
             name: "FeatureDashboard",
@@ -62,7 +62,7 @@ let package = Package(
         ),
         .testTarget(
             name: "EnterpriseAppModulesTests",
-            dependencies: ["Core", "Network", "Domain", "Data", "DesignSystem", "FeatureAuth", "FeatureDashboard"]
+            dependencies: ["Core", "AppNetwork", "Domain", "AppData", "DesignSystem", "FeatureAuth", "FeatureDashboard"]
         ),
     ]
 )

@@ -1,14 +1,14 @@
-import Data
+import AppData
 import DesignSystem
 import Domain
-import Network
+import AppNetwork
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
 
 public struct AuthFlowView: View {
-    @StateObject private var authManager: AuthManager
+    @StateObject private var authManager: AppData.AuthManager
 
     @State private var mode: AuthMode = .login
     @State private var email = ""
@@ -19,13 +19,13 @@ public struct AuthFlowView: View {
 
     @FocusState private var focus: FocusField?
 
-    public init(authManager: AuthManager) {
+    public init(authManager: AppData.AuthManager) {
         self._authManager = StateObject(wrappedValue: authManager)
     }
 
     public init(configuration: APIConfiguration = .localVapor) {
-        let service = LiveAuthService.mappedErrors(configuration: configuration)
-        self._authManager = StateObject(wrappedValue: AuthManager(authService: service))
+        let service = AppData.LiveAuthService.mappedErrors(configuration: configuration)
+        self._authManager = StateObject(wrappedValue: AppData.AuthManager(authService: service))
     }
 
     public var body: some View {

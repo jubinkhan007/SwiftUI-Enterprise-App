@@ -9,6 +9,17 @@ targets:
     sources: [App]
     dependencies:
       - package: EnterpriseAppModules
+        product: FeatureAuth
+      - package: EnterpriseAppModules
+        product: FeatureDashboard
+      - package: EnterpriseAppModules
+        product: AppNetwork
+      - package: EnterpriseAppModules
+        product: Domain
+      - package: EnterpriseAppModules
+        product: AppData
+      - package: EnterpriseAppModules
+        product: DesignSystem
 packages:
   EnterpriseAppModules:
-    path: .
+    path: EnterpriseAppModules

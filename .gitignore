@@ -6,3 +6,9 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+
+*.xcodeproj
+build/
+*.log
+simulator_screen.png
+App/Info.plist

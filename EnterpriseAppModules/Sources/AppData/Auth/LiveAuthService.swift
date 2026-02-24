@@ -1,6 +1,6 @@
 import Domain
 import Foundation
-import Network
+import AppNetwork
 import SharedModels
 
 public struct LiveAuthService: AuthServiceProtocol {

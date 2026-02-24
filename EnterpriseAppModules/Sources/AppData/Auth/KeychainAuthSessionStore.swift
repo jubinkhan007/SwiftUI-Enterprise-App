@@ -1,6 +1,6 @@
 import Foundation
 import Domain
-import Network
+import AppNetwork
 import Security
 
 public struct KeychainAuthSessionStore: AuthSessionStoreProtocol {
