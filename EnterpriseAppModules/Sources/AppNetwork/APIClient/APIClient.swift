@@ -6,6 +6,7 @@ public enum NetworkError: Error, LocalizedError, Sendable, Equatable {
     case serverError(statusCode: Int, message: String?)
     case underlying(String)
     case unauthorized(message: String?)
+    case forbidden(message: String?)
     case offline
 
     public var errorDescription: String? {
@@ -20,6 +21,8 @@ public enum NetworkError: Error, LocalizedError, Sendable, Equatable {
             return message
         case .unauthorized(let message):
             return message ?? "You are not authorized."
+        case .forbidden(let message):
+            return message ?? "Access denied. You may have been removed from this workspace."
         case .offline:
             return "You appear to be offline."
         }
@@ -87,6 +90,10 @@ public struct APIClient: APIClientProtocol {
                 }
             case 401:
                 throw NetworkError.unauthorized(message: decodeVaporErrorMessage(from: data))
+            case 403:
+                // Immediately clear org context — user lost access
+                OrganizationContext.shared.clear()
+                throw NetworkError.forbidden(message: decodeVaporErrorMessage(from: data))
             default:
                 throw NetworkError.serverError(
                     statusCode: httpResponse.statusCode,

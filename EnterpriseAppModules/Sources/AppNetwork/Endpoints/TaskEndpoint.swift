@@ -60,6 +60,9 @@ extension TaskEndpoint: APIEndpoint {
         if let token = TokenStore.shared.token {
             h["Authorization"] = "Bearer \(token)"
         }
+        if let orgId = OrganizationContext.shared.orgId {
+            h["X-Org-Id"] = orgId.uuidString
+        }
         return h
     }
 
