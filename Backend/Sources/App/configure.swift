@@ -19,6 +19,8 @@ func configure(_ app: Application) throws {
     // MARK: - Migrations
     app.migrations.add(CreateUser())
     app.migrations.add(CreateTaskItem())
+    app.migrations.add(AddVersionToTaskItem())
+    app.migrations.add(CreateTaskActivity())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

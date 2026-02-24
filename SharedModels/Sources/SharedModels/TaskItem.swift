@@ -12,6 +12,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let priority: TaskPriority
     public let dueDate: Date?
     public let assigneeId: UUID?
+    public let version: Int
     public let createdAt: Date?
     public let updatedAt: Date?
 
@@ -23,6 +24,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         priority: TaskPriority = .medium,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
+        version: Int = 1,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
@@ -33,6 +35,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         self.priority = priority
         self.dueDate = dueDate
         self.assigneeId = assigneeId
+        self.version = version
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -74,6 +77,7 @@ public struct UpdateTaskRequest: Codable, Sendable {
     public let priority: TaskPriority?
     public let dueDate: Date?
     public let assigneeId: UUID?
+    public let expectedVersion: Int
 
     public init(
         title: String? = nil,
@@ -81,7 +85,8 @@ public struct UpdateTaskRequest: Codable, Sendable {
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
         dueDate: Date? = nil,
-        assigneeId: UUID? = nil
+        assigneeId: UUID? = nil,
+        expectedVersion: Int
     ) {
         self.title = title
         self.description = description
@@ -89,5 +94,6 @@ public struct UpdateTaskRequest: Codable, Sendable {
         self.priority = priority
         self.dueDate = dueDate
         self.assigneeId = assigneeId
+        self.expectedVersion = expectedVersion
     }
 }

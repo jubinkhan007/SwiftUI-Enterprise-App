@@ -12,6 +12,8 @@ struct TaskController: RouteCollection {
             task.get(use: show)
             task.put(use: update)
             task.delete(use: delete)
+            task.get("activity", use: getActivities)
+            task.post("comments", use: createComment)
         }
     }
 
@@ -63,6 +65,7 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func create(req: Request) async throws -> APIResponse<TaskItemDTO> {
+        let user = try req.auth.require(UserModel.self)
         let payload = try req.content.decode(CreateTaskRequest.self)
 
         guard !payload.title.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -77,7 +80,16 @@ struct TaskController: RouteCollection {
             dueDate: payload.dueDate,
             assigneeId: payload.assigneeId
         )
-        try await task.save(on: req.db)
+
+        try await req.db.transaction { db in
+            try await task.save(on: db)
+            let activity = TaskActivityModel(
+                taskId: try task.requireID(),
+                userId: try user.requireID(),
+                type: .created
+            )
+            try await activity.save(on: db)
+        }
 
         return .success(task.toDTO())
     }
@@ -86,32 +98,54 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func update(req: Request) async throws -> APIResponse<TaskItemDTO> {
+        let user = try req.auth.require(UserModel.self)
         guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
             throw Abort(.notFound, reason: "Task not found.")
         }
 
         let payload = try req.content.decode(UpdateTaskRequest.self)
 
-        if let title = payload.title {
+        // Optimistic Concurrency Control
+        guard task.version == payload.expectedVersion else {
+            throw Abort(.conflict, reason: "Task was modified by another user. Please refresh and try again.")
+        }
+
+        var activities: [TaskActivityModel] = []
+
+        if let title = payload.title, task.title != title {
             task.title = title
         }
-        if let description = payload.description {
+        if let description = payload.description, task.description != description {
             task.description = description
         }
-        if let status = payload.status {
+        if let status = payload.status, task.status != status {
+            let metadata = ["from": task.status.rawValue, "to": status.rawValue]
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: try user.requireID(), type: .statusChanged, metadata: metadata))
             task.status = status
         }
-        if let priority = payload.priority {
+        if let priority = payload.priority, task.priority != priority {
+            let metadata = ["from": task.priority.rawValue, "to": priority.rawValue]
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: try user.requireID(), type: .priorityChanged, metadata: metadata))
             task.priority = priority
         }
         if let dueDate = payload.dueDate {
             task.dueDate = dueDate
         }
-        if let assigneeId = payload.assigneeId {
+        if let assigneeId = payload.assigneeId, task.$assignee.id != assigneeId {
+            let metadata = assigneeId != nil ? ["assignee_id": assigneeId!.uuidString] : ["assignee_id": "Unassigned"]
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: try user.requireID(), type: .assigned, metadata: metadata))
             task.$assignee.id = assigneeId
         }
 
-        try await task.save(on: req.db)
+        // Increment local version for the save
+        task.version += 1
+
+        try await req.db.transaction { db in
+            try await task.save(on: db)
+            for activity in activities {
+                try await activity.save(on: db)
+            }
+        }
 
         return .success(task.toDTO())
     }
@@ -125,5 +159,48 @@ struct TaskController: RouteCollection {
         }
         try await task.delete(on: req.db)
         return .noContent
+    }
+
+    // MARK: - GET /api/tasks/:taskID/activity
+
+    @Sendable
+    func getActivities(req: Request) async throws -> APIResponse<[TaskActivityDTO]> {
+        guard let taskId = req.parameters.get("taskID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid Task ID.")
+        }
+        
+        let activities = try await TaskActivityModel.query(on: req.db)
+            .filter(\.$task.$id == taskId)
+            .sort(\.$createdAt, .descending)
+            .all()
+            
+        let dtos = activities.map { $0.toDTO() }
+        let pagination = PaginationMeta(page: 1, perPage: dtos.count, total: dtos.count)
+        return .success(dtos, pagination: pagination)
+    }
+
+    // MARK: - POST /api/tasks/:taskID/comments
+
+    @Sendable
+    func createComment(req: Request) async throws -> APIResponse<TaskActivityDTO> {
+        let user = try req.auth.require(UserModel.self)
+        guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
+            throw Abort(.notFound, reason: "Task not found.")
+        }
+        
+        let payload = try req.content.decode(CreateCommentRequest.self)
+        guard !payload.content.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw Abort(.badRequest, reason: "Comment content cannot be empty.")
+        }
+        
+        let activity = TaskActivityModel(
+            taskId: try task.requireID(),
+            userId: try user.requireID(),
+            type: .comment,
+            content: payload.content
+        )
+        
+        try await activity.save(on: req.db)
+        return .success(activity.toDTO())
     }
 }

@@ -40,7 +40,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskActivityDTO.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskItem.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskQuery.swift"
         },
         {
           "kind" : "file",
@@ -62,7 +70,9 @@
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/APIResponse.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.swift.o",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskActivityDTO.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskItem.swift.o",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskQuery.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/User.swift.o"
       ],
       "otherArguments" : [
@@ -132,7 +142,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskActivityDTO.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskItem.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskQuery.swift.o"
         },
         {
           "kind" : "file",
@@ -148,7 +166,9 @@
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/APIResponse.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskActivityDTO.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskItem.swift",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskQuery.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/User.swift"
       ],
       "tempsPath" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build",
@@ -363,7 +383,9 @@
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/APIResponse.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift",
+      "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskActivityDTO.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskItem.swift",
+      "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskQuery.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/User.swift",
       "-I",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/Modules",
@@ -598,7 +620,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskActivityDTO.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskItem.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/TaskQuery.swift"
         },
         {
           "kind" : "file",
@@ -642,7 +672,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskActivityDTO.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskItem.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/TaskQuery.swift.o"
         },
         {
           "kind" : "file",

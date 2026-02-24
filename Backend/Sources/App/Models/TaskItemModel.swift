@@ -33,6 +33,9 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     @Timestamp(key: "updated_at", on: .update)
     var updatedAt: Date?
 
+    @Field(key: "version")
+    var version: Int
+
     init() {}
 
     init(
@@ -42,7 +45,8 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         status: TaskStatus = .todo,
         priority: TaskPriority = .medium,
         dueDate: Date? = nil,
-        assigneeId: UUID? = nil
+        assigneeId: UUID? = nil,
+        version: Int = 1
     ) {
         self.id = id
         self.title = title
@@ -51,6 +55,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         self.priority = priority
         self.dueDate = dueDate
         self.$assignee.id = assigneeId
+        self.version = version
     }
 
     /// Convert to the shared DTO for API responses.
@@ -63,6 +68,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
             priority: priority,
             dueDate: dueDate,
             assigneeId: $assignee.id,
+            version: version,
             createdAt: createdAt,
             updatedAt: updatedAt
         )

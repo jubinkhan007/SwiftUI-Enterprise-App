@@ -1,5 +1,6 @@
 import Domain
 import Foundation
+import AppNetwork
 
 @MainActor
 public final class AuthManager: ObservableObject {
@@ -15,7 +16,9 @@ public final class AuthManager: ObservableObject {
     ) {
         self.authService = authService
         self.sessionStore = sessionStore
-        self.session = sessionStore.loadSession()
+        let restored = sessionStore.loadSession()
+        self.session = restored
+        TokenStore.shared.token = restored?.token
     }
 
     public func signIn(email: String, password: String) async throws {
@@ -25,6 +28,7 @@ public final class AuthManager: ObservableObject {
         let newSession = try await authService.login(email: email, password: password)
         try sessionStore.saveSession(newSession)
         session = newSession
+        TokenStore.shared.token = newSession.token
     }
 
     public func register(email: String, password: String, displayName: String) async throws {
@@ -34,11 +38,13 @@ public final class AuthManager: ObservableObject {
         let newSession = try await authService.register(email: email, password: password, displayName: displayName)
         try sessionStore.saveSession(newSession)
         session = newSession
+        TokenStore.shared.token = newSession.token
     }
 
     public func signOut() {
         try? sessionStore.clearSession()
         session = nil
+        TokenStore.shared.clear()
     }
 }
 
