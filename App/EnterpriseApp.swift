@@ -45,6 +45,7 @@ struct AuthenticatedRootView: View {
     let selectedOrg: OrganizationDTO
     let viewModel: DashboardViewModel
     @StateObject private var orgGateViewModel = OrganizationGateViewModel()
+    @State private var showTeamManagement = false
     
     init(session: Domain.AuthSession, authManager: AppData.AuthManager, selectedOrg: OrganizationDTO, modelContainer: ModelContainer) {
         self.session = session
@@ -68,10 +69,24 @@ struct AuthenticatedRootView: View {
                 ToolbarItem(placement: .principal) {
                     WorkspaceSwitcherView(viewModel: orgGateViewModel)
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showTeamManagement = true
+                    } label: {
+                        Image(systemName: "person.3")
+                            .font(.subheadline)
+                    }
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Menu {
                         Text("Signed in as \(session.user.displayName)")
                         Text("Workspace: \(selectedOrg.name)")
+                        Divider()
+                        Button {
+                            showTeamManagement = true
+                        } label: {
+                            Label("Team Management", systemImage: "person.3")
+                        }
                         Divider()
                         Button("Sign Out", role: .destructive) {
                             OrganizationContext.shared.clear()
@@ -82,6 +97,9 @@ struct AuthenticatedRootView: View {
                             .font(.title3)
                     }
                 }
+            }
+            .sheet(isPresented: $showTeamManagement) {
+                TeamManagementView(orgId: selectedOrg.id)
             }
             .task {
                 await orgGateViewModel.fetchOrganizations()

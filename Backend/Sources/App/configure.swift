@@ -9,7 +9,7 @@ func configure(_ app: Application) throws {
     let corsConfiguration = CORSMiddleware.Configuration(
         allowedOrigin: .all,
         allowedMethods: [.GET, .POST, .PUT, .DELETE, .PATCH, .OPTIONS],
-        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
+        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith, .init("X-Org-Id")]
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfiguration))
 
@@ -26,6 +26,7 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateOrganizationMember())
     app.migrations.add(CreateOrganizationInvite())
     app.migrations.add(AddOrgIdToTaskItem())
+    app.migrations.add(CreateAuditLog())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

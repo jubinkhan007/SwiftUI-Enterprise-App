@@ -8,6 +8,12 @@
     "swiftmodule": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/APIResponse~partial.swiftmodule",
     "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/APIResponse.swiftdeps"
   },
+  "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuditLog.swift": {
+    "dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuditLog.d",
+    "object": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuditLog.swift.o",
+    "swiftmodule": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuditLog~partial.swiftmodule",
+    "swift-dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuditLog.swiftdeps"
+  },
   "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift": {
     "dependencies": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads.d",
     "object": "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads.swift.o",

@@ -22,6 +22,7 @@ struct OrganizationController: RouteCollection {
             org.put("members", ":memberID", "role", use: updateMemberRole)
             org.delete("members", ":memberID", use: removeMember)
             org.post("invites", ":inviteID", "revoke", use: revokeInvite)
+            org.get("audit-log", use: listAuditLog)
         }
 
         // Public invite acceptance (no org context needed, uses invite token)
@@ -239,6 +240,15 @@ struct OrganizationController: RouteCollection {
         )
 
         try await invite.save(on: req.db)
+
+        // Audit log
+        try await AuditLogModel.log(
+            on: req.db, orgId: ctx.orgId, userId: ctx.userId,
+            userEmail: "", action: "member.invited",
+            resourceType: "invite", resourceId: invite.id,
+            details: "Invited \(payload.email) as \(payload.role.rawValue)"
+        )
+
         return .success(invite.toDTO())
     }
 
@@ -328,8 +338,17 @@ struct OrganizationController: RouteCollection {
             throw Abort(.badRequest, reason: "Cannot assign Owner role. Use ownership transfer instead.")
         }
 
+        let oldRole = member.role
         member.role = payload.role
         try await member.save(on: req.db)
+
+        // Audit log
+        try await AuditLogModel.log(
+            on: req.db, orgId: ctx.orgId, userId: ctx.userId,
+            userEmail: "", action: "member.role_changed",
+            resourceType: "member", resourceId: member.id,
+            details: "Changed role from \(oldRole.rawValue) to \(payload.role.rawValue)"
+        )
 
         let user = try await UserModel.find(member.$user.id, on: req.db)
         return .success(member.toDTO(
@@ -354,6 +373,14 @@ struct OrganizationController: RouteCollection {
             throw Abort(.forbidden, reason: "Cannot remove the workspace Owner. Transfer ownership first.")
         }
 
+        // Audit log
+        try await AuditLogModel.log(
+            on: req.db, orgId: ctx.orgId, userId: ctx.userId,
+            userEmail: "", action: "member.removed",
+            resourceType: "member", resourceId: member.id,
+            details: "Removed member"
+        )
+
         try await member.delete(on: req.db)
         return .noContent
     }
@@ -375,6 +402,31 @@ struct OrganizationController: RouteCollection {
         invite.status = .revoked
         try await invite.save(on: req.db)
 
+        // Audit log
+        let ctx = try req.orgContext
+        try await AuditLogModel.log(
+            on: req.db, orgId: ctx.orgId, userId: ctx.userId,
+            userEmail: "", action: "invite.revoked",
+            resourceType: "invite", resourceId: invite.id,
+            details: "Revoked invite for \(invite.email)"
+        )
+
         return .success(invite.toDTO())
+    }
+
+    // MARK: - GET /api/organizations/:orgID/audit-log
+
+    @Sendable
+    func listAuditLog(req: Request) async throws -> APIResponse<[AuditLogDTO]> {
+        let ctx = try req.orgContext
+        try req.requirePermission(.auditLogView)
+
+        let logs = try await AuditLogModel.query(on: req.db)
+            .filter(\.$organization.$id == ctx.orgId)
+            .sort(\.$createdAt, .descending)
+            .range(..<50)
+            .all()
+
+        return .success(logs.map { $0.toDTO() })
     }
 }

@@ -32,6 +32,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuditLog.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift"
         },
         {
@@ -76,6 +80,7 @@
       "moduleOutputPath" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/Modules/SharedModels.swiftmodule",
       "objects" : [
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/APIResponse.swift.o",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuditLog.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/EmptyResponse.swift.o",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/Enums.swift.o",
@@ -143,6 +148,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuditLog.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuthPayloads.swift.o"
         },
         {
@@ -181,6 +190,7 @@
       "prepareForIndexing" : false,
       "sources" : [
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/APIResponse.swift",
+        "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuditLog.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/EmptyResponse.swift",
         "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift",
@@ -398,6 +408,7 @@
       "-incremental",
       "-c",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/APIResponse.swift",
+      "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuditLog.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/EmptyResponse.swift",
       "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/Enums.swift",
@@ -628,6 +639,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuditLog.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/Sources/SharedModels/AuthPayloads.swift"
         },
         {
@@ -685,6 +700,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/APIResponse.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/AuditLog.swift.o"
         },
         {
           "kind" : "file",

@@ -29,3 +29,4 @@ extension MeResponse: @retroactive Content {}
 extension CreateOrganizationRequest: @retroactive Content {}
 extension CreateInviteRequest: @retroactive Content {}
 extension UpdateMemberRoleRequest: @retroactive Content {}
+extension AuditLogDTO: @retroactive Content {}

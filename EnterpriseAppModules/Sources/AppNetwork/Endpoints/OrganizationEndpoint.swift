@@ -14,6 +14,7 @@ public enum OrganizationEndpoint {
     case updateMemberRole(orgId: UUID, memberId: UUID, payload: UpdateMemberRoleRequest, configuration: APIConfiguration)
     case removeMember(orgId: UUID, memberId: UUID, configuration: APIConfiguration)
     case revokeInvite(orgId: UUID, inviteId: UUID, configuration: APIConfiguration)
+    case auditLog(orgId: UUID, configuration: APIConfiguration)
 }
 
 extension OrganizationEndpoint: APIEndpoint {
@@ -23,7 +24,8 @@ extension OrganizationEndpoint: APIEndpoint {
              .showOrg(_, let c), .listMembers(_, let c),
              .createInvite(_, _, let c), .listInvites(_, let c),
              .acceptInvite(_, let c), .updateMemberRole(_, _, _, let c),
-             .removeMember(_, _, let c), .revokeInvite(_, _, let c):
+             .removeMember(_, _, let c), .revokeInvite(_, _, let c),
+             .auditLog(_, let c):
             return c.baseURL
         }
     }
@@ -53,12 +55,14 @@ extension OrganizationEndpoint: APIEndpoint {
             return "/api/organizations/\(orgId.uuidString)/members/\(memberId.uuidString)"
         case .revokeInvite(let orgId, let inviteId, _):
             return "/api/organizations/\(orgId.uuidString)/invites/\(inviteId.uuidString)/revoke"
+        case .auditLog(let orgId, _):
+            return "/api/organizations/\(orgId.uuidString)/audit-log"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .me, .listOrgs, .showOrg, .listMembers, .listInvites:
+        case .me, .listOrgs, .showOrg, .listMembers, .listInvites, .auditLog:
             return .get
         case .createOrg, .createInvite, .acceptInvite, .revokeInvite:
             return .post
