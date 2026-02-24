@@ -21,6 +21,9 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     @Enum(key: "priority")
     var priority: TaskPriority
 
+    @OptionalField(key: "start_date")
+    var startDate: Date?
+
     @OptionalField(key: "due_date")
     var dueDate: Date?
 
@@ -44,6 +47,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         description: String? = nil,
         status: TaskStatus = .todo,
         priority: TaskPriority = .medium,
+        startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
         version: Int = 1
@@ -53,6 +57,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.startDate = startDate
         self.dueDate = dueDate
         self.$assignee.id = assigneeId
         self.version = version
@@ -66,6 +71,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
             description: description,
             status: status,
             priority: priority,
+            startDate: startDate,
             dueDate: dueDate,
             assigneeId: $assignee.id,
             version: version,

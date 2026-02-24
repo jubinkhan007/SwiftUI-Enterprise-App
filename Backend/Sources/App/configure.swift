@@ -21,6 +21,7 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateTaskItem())
     app.migrations.add(AddVersionToTaskItem())
     app.migrations.add(CreateTaskActivity())
+    app.migrations.add(AddStartDateToTaskItem())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

@@ -77,6 +77,7 @@ struct TaskController: RouteCollection {
             description: payload.description,
             status: payload.status ?? .todo,
             priority: payload.priority ?? .medium,
+            startDate: payload.startDate,
             dueDate: payload.dueDate,
             assigneeId: payload.assigneeId
         )
@@ -127,6 +128,9 @@ struct TaskController: RouteCollection {
             let metadata = ["from": task.priority.rawValue, "to": priority.rawValue]
             activities.append(TaskActivityModel(taskId: try task.requireID(), userId: try user.requireID(), type: .priorityChanged, metadata: metadata))
             task.priority = priority
+        }
+        if let startDate = payload.startDate {
+            task.startDate = startDate
         }
         if let dueDate = payload.dueDate {
             task.dueDate = dueDate

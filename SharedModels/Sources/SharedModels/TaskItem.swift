@@ -10,6 +10,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let description: String?
     public let status: TaskStatus
     public let priority: TaskPriority
+    public let startDate: Date?
     public let dueDate: Date?
     public let assigneeId: UUID?
     public let version: Int
@@ -22,6 +23,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         description: String? = nil,
         status: TaskStatus = .todo,
         priority: TaskPriority = .medium,
+        startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
         version: Int = 1,
@@ -33,6 +35,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.startDate = startDate
         self.dueDate = dueDate
         self.assigneeId = assigneeId
         self.version = version
@@ -49,6 +52,7 @@ public struct CreateTaskRequest: Codable, Sendable {
     public let description: String?
     public let status: TaskStatus?
     public let priority: TaskPriority?
+    public let startDate: Date?
     public let dueDate: Date?
     public let assigneeId: UUID?
 
@@ -57,6 +61,7 @@ public struct CreateTaskRequest: Codable, Sendable {
         description: String? = nil,
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
+        startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil
     ) {
@@ -64,6 +69,7 @@ public struct CreateTaskRequest: Codable, Sendable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.startDate = startDate
         self.dueDate = dueDate
         self.assigneeId = assigneeId
     }
@@ -75,6 +81,7 @@ public struct UpdateTaskRequest: Codable, Sendable {
     public let description: String?
     public let status: TaskStatus?
     public let priority: TaskPriority?
+    public let startDate: Date?
     public let dueDate: Date?
     public let assigneeId: UUID?
     public let expectedVersion: Int
@@ -84,6 +91,7 @@ public struct UpdateTaskRequest: Codable, Sendable {
         description: String? = nil,
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
+        startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
         expectedVersion: Int
@@ -92,6 +100,7 @@ public struct UpdateTaskRequest: Codable, Sendable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.startDate = startDate
         self.dueDate = dueDate
         self.assigneeId = assigneeId
         self.expectedVersion = expectedVersion

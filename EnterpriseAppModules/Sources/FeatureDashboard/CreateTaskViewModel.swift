@@ -10,6 +10,13 @@ public final class CreateTaskViewModel: ObservableObject {
     @Published public var status: TaskStatus = .todo
     @Published public var priority: TaskPriority = .medium
     
+    @Published public var startDate: Date? = nil
+    @Published public var dueDate: Date? = nil
+    @Published public var assigneeIdText: String = ""    // UUID string for manual entry
+    
+    @Published public var showStartDatePicker = false
+    @Published public var showDueDatePicker = false
+    
     @Published public var isSaving = false
     @Published public var error: Error?
     @Published public var isSuccess = false
@@ -31,18 +38,20 @@ public final class CreateTaskViewModel: ObservableObject {
         isSaving = true
         error = nil
         
+        let assigneeId = UUID(uuidString: assigneeIdText.trimmingCharacters(in: .whitespacesAndNewlines))
+        
         let payload = CreateTaskRequest(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             description: descriptionText.isEmpty ? nil : descriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
             status: status,
             priority: priority,
-            dueDate: nil,
-            assigneeId: nil
+            startDate: startDate,
+            dueDate: dueDate,
+            assigneeId: assigneeId
         )
         
         do {
             _ = try await taskRepository.createTask(payload: payload)
-            // Success handles either online remote creation or offline optimistic queueing
             isSuccess = true
         } catch {
             self.error = error
