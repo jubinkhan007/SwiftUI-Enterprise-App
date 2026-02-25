@@ -5,7 +5,9 @@ import Vapor
 /// Handles full CRUD operations for tasks. All routes require JWT authentication.
 struct TaskController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
-        let tasks = routes.grouped("tasks")
+        // Wrap all task routes in OrgTenantMiddleware to enforce X-Org-Id
+        let tasks = routes.grouped("tasks").grouped(OrgTenantMiddleware())
+        
         tasks.get(use: index)
         tasks.post(use: create)
         tasks.group(":taskID") { task in
@@ -26,7 +28,9 @@ struct TaskController: RouteCollection {
         let statusFilter: TaskStatus? = try? req.query.get(TaskStatus.self, at: "status")
         let priorityFilter: TaskPriority? = try? req.query.get(TaskPriority.self, at: "priority")
 
+        let ctx = try req.orgContext
         var query = TaskItemModel.query(on: req.db)
+            .filter(\.$organization.$id == ctx.orgId)
 
         // Apply filters
         if let status = statusFilter {
@@ -55,8 +59,12 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func show(req: Request) async throws -> APIResponse<TaskItemDTO> {
-        guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
-            throw Abort(.notFound, reason: "Task not found.")
+        let ctx = try req.orgContext
+        guard let task = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+            .filter(\.$organization.$id == ctx.orgId)
+            .first() else {
+            throw Abort(.notFound, reason: "Task not found in this organization.")
         }
         return .success(task.toDTO())
     }
@@ -65,10 +73,7 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func create(req: Request) async throws -> APIResponse<TaskItemDTO> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized, reason: "Invalid user ID in token.")
-        }
+        let ctx = try req.orgContext
         let payload = try req.content.decode(CreateTaskRequest.self)
 
         guard !payload.title.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -76,6 +81,7 @@ struct TaskController: RouteCollection {
         }
 
         let task = TaskItemModel(
+            orgId: ctx.orgId,
             title: payload.title,
             description: payload.description,
             status: payload.status ?? .todo,
@@ -89,10 +95,18 @@ struct TaskController: RouteCollection {
             try await task.save(on: db)
             let activity = TaskActivityModel(
                 taskId: try task.requireID(),
-                userId: userId,
+                userId: ctx.userId,
                 type: .created
             )
             try await activity.save(on: db)
+            
+            // Audit Log
+            try await AuditLogModel.log(
+                on: db, orgId: ctx.orgId, userId: ctx.userId,
+                userEmail: "", action: "task.created",
+                resourceType: "task", resourceId: task.id,
+                details: "Created task: \(task.title)"
+            )
         }
 
         return .success(task.toDTO())
@@ -102,12 +116,12 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func update(req: Request) async throws -> APIResponse<TaskItemDTO> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized, reason: "Invalid user ID in token.")
-        }
-        guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
-            throw Abort(.notFound, reason: "Task not found.")
+        let ctx = try req.orgContext
+        guard let task = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+            .filter(\.$organization.$id == ctx.orgId)
+            .first() else {
+            throw Abort(.notFound, reason: "Task not found in this organization.")
         }
 
         let payload = try req.content.decode(UpdateTaskRequest.self)
@@ -127,12 +141,12 @@ struct TaskController: RouteCollection {
         }
         if let status = payload.status, task.status != status {
             let metadata = ["from": task.status.rawValue, "to": status.rawValue]
-            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: userId, type: .statusChanged, metadata: metadata))
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: ctx.userId, type: .statusChanged, metadata: metadata))
             task.status = status
         }
         if let priority = payload.priority, task.priority != priority {
             let metadata = ["from": task.priority.rawValue, "to": priority.rawValue]
-            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: userId, type: .priorityChanged, metadata: metadata))
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: ctx.userId, type: .priorityChanged, metadata: metadata))
             task.priority = priority
         }
         if let startDate = payload.startDate {
@@ -143,16 +157,17 @@ struct TaskController: RouteCollection {
         }
         if let assigneeId = payload.assigneeId, task.$assignee.id != assigneeId {
             let metadata = ["assignee_id": assigneeId.uuidString]
-            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: userId, type: .assigned, metadata: metadata))
+            activities.append(TaskActivityModel(taskId: try task.requireID(), userId: ctx.userId, type: .assigned, metadata: metadata))
             task.$assignee.id = assigneeId
         }
 
         // Increment local version for the save
         task.version += 1
 
+        let finalActivities = activities // Capture immutably for closure
         try await req.db.transaction { db in
             try await task.save(on: db)
-            for activity in activities {
+            for activity in finalActivities {
                 try await activity.save(on: db)
             }
         }
@@ -164,10 +179,23 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func delete(req: Request) async throws -> HTTPStatus {
-        guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
-            throw Abort(.notFound, reason: "Task not found.")
+        let ctx = try req.orgContext
+        guard let task = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+            .filter(\.$organization.$id == ctx.orgId)
+            .first() else {
+            throw Abort(.notFound, reason: "Task not found in this organization.")
         }
-        try await task.delete(on: req.db)
+        try await req.db.transaction { db in
+            // Audit Log
+            try await AuditLogModel.log(
+                on: db, orgId: ctx.orgId, userId: ctx.userId,
+                userEmail: "", action: "task.deleted",
+                resourceType: "task", resourceId: task.id,
+                details: "Deleted task: \(task.title)"
+            )
+            try await task.delete(on: db)
+        }
         return .noContent
     }
 
@@ -175,8 +203,18 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func getActivities(req: Request) async throws -> APIResponse<[TaskActivityDTO]> {
+        let ctx = try req.orgContext
         guard let taskId = req.parameters.get("taskID", as: UUID.self) else {
             throw Abort(.badRequest, reason: "Invalid Task ID.")
+        }
+        
+        let taskExists = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id == taskId)
+            .filter(\.$organization.$id == ctx.orgId)
+            .count() > 0
+            
+        guard taskExists else {
+            throw Abort(.notFound, reason: "Task not found in this organization.")
         }
         
         let activities = try await TaskActivityModel.query(on: req.db)
@@ -193,12 +231,12 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func createComment(req: Request) async throws -> APIResponse<TaskActivityDTO> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized, reason: "Invalid user ID in token.")
-        }
-        guard let task = try await TaskItemModel.find(req.parameters.get("taskID"), on: req.db) else {
-            throw Abort(.notFound, reason: "Task not found.")
+        let ctx = try req.orgContext
+        guard let task = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+            .filter(\.$organization.$id == ctx.orgId)
+            .first() else {
+            throw Abort(.notFound, reason: "Task not found in this organization.")
         }
         
         let payload = try req.content.decode(CreateCommentRequest.self)
@@ -208,7 +246,7 @@ struct TaskController: RouteCollection {
         
         let activity = TaskActivityModel(
             taskId: try task.requireID(),
-            userId: userId,
+            userId: ctx.userId,
             type: .comment,
             content: payload.content
         )

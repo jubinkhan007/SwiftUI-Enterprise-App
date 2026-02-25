@@ -7,6 +7,8 @@ struct OrganizationController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         // /api/me — no org context required, returns user + all their orgs
         routes.get("me", use: me)
+        // /api/invites — no org context required, returns invites addressed to the current user
+        routes.get("invites", use: myInvites)
 
         let orgs = routes.grouped("organizations")
         orgs.post(use: create)
@@ -78,6 +80,62 @@ struct OrganizationController: RouteCollection {
         )
 
         return .success(response)
+    }
+
+    // MARK: - GET /api/invites
+
+    /// Returns pending invites addressed to the current user's email.
+    /// This endpoint does not require an org context (X-Org-Id) since the user
+    /// is not yet a member of the invited org.
+    @Sendable
+    func myInvites(req: Request) async throws -> APIResponse<[PendingInviteDTO]> {
+        let authPayload = try req.authPayload
+        guard let userId = authPayload.userId else {
+            throw Abort(.unauthorized)
+        }
+
+        guard let user = try await UserModel.find(userId, on: req.db) else {
+            throw Abort(.notFound, reason: "User not found.")
+        }
+
+        let now = Date()
+        let invites = try await OrganizationInviteModel.query(on: req.db)
+            .filter(\.$email == user.email.lowercased())
+            .filter(\.$status == .pending)
+            .filter(\.$expiresAt > now)
+            .sort(\.$createdAt, .descending)
+            .all()
+
+        if invites.isEmpty {
+            return .success([])
+        }
+
+        let orgIds = Array(Set(invites.map { $0.$organization.id }))
+        let orgs = try await OrganizationModel.query(on: req.db)
+            .filter(\.$id ~~ orgIds)
+            .all()
+
+        var orgNameById: [UUID: String] = [:]
+        orgNameById.reserveCapacity(orgs.count)
+        for org in orgs {
+            if let id = org.id {
+                orgNameById[id] = org.name
+            }
+        }
+
+        let dtos = invites.map { invite in
+            PendingInviteDTO(
+                id: invite.id ?? UUID(),
+                orgId: invite.$organization.id,
+                orgName: orgNameById[invite.$organization.id] ?? "Workspace",
+                role: invite.role,
+                invitedBy: invite.invitedBy,
+                expiresAt: invite.expiresAt,
+                createdAt: invite.createdAt
+            )
+        }
+
+        return .success(dtos)
     }
 
     // MARK: - POST /api/organizations
@@ -299,9 +357,8 @@ struct OrganizationController: RouteCollection {
         }
 
         // Create membership and mark invite accepted
-        var membership: OrganizationMemberModel!
-        try await req.db.transaction { db in
-            membership = OrganizationMemberModel(
+        let membership = try await req.db.transaction { db -> OrganizationMemberModel in
+            let membership = OrganizationMemberModel(
                 orgId: invite.$organization.id,
                 userId: userId,
                 role: invite.role
@@ -310,6 +367,8 @@ struct OrganizationController: RouteCollection {
 
             invite.status = .accepted
             try await invite.save(on: db)
+            
+            return membership
         }
 
         return .success(membership.toDTO(displayName: user.displayName, email: user.email))

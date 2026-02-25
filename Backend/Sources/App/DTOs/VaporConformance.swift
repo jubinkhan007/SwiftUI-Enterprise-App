@@ -25,6 +25,7 @@ extension LoginRequest: @retroactive Content {}
 extension OrganizationDTO: @retroactive Content {}
 extension OrganizationMemberDTO: @retroactive Content {}
 extension OrganizationInviteDTO: @retroactive Content {}
+extension PendingInviteDTO: @retroactive Content {}
 extension MeResponse: @retroactive Content {}
 extension CreateOrganizationRequest: @retroactive Content {}
 extension CreateInviteRequest: @retroactive Content {}

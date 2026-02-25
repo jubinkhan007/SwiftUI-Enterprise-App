@@ -81,7 +81,7 @@ struct AuthController: RouteCollection {
     private func generateToken(for user: UserModel, on req: Request) async throws -> String {
         let payload = JWTAuthPayload(
             subject: .init(value: user.id!.uuidString),
-            expiration: .init(value: Date().addingTimeInterval(60 * 60 * 24)), // 24 hours
+            expiration: .init(value: Date().addingTimeInterval(60 * 60 * 24 * 7)), // 7 days
             role: user.role.rawValue
         )
         return try req.jwt.sign(payload)

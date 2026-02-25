@@ -44,7 +44,7 @@ struct AuthenticatedRootView: View {
     let authManager: AppData.AuthManager
     let selectedOrg: OrganizationDTO
     let viewModel: DashboardViewModel
-    @StateObject private var orgGateViewModel = OrganizationGateViewModel()
+    @StateObject private var orgGateViewModel: OrganizationGateViewModel
     @State private var showTeamManagement = false
     
     init(session: Domain.AuthSession, authManager: AppData.AuthManager, selectedOrg: OrganizationDTO, modelContainer: ModelContainer) {
@@ -61,11 +61,17 @@ struct AuthenticatedRootView: View {
             syncQueue: syncQueue
         )
         self.viewModel = DashboardViewModel(taskRepository: taskRepository)
+        
+        let gateVM = OrganizationGateViewModel()
+        gateVM.selectedOrg = selectedOrg
+        gateVM.organizations = [selectedOrg] // Initial state, will be overwritten by fetch
+        self._orgGateViewModel = StateObject(wrappedValue: gateVM)
     }
     
     var body: some View {
-        DashboardView(viewModel: viewModel)
-            .toolbar {
+        NavigationStack {
+            DashboardView(viewModel: viewModel)
+                .toolbar {
                 ToolbarItem(placement: .principal) {
                     WorkspaceSwitcherView(viewModel: orgGateViewModel)
                 }
@@ -101,8 +107,9 @@ struct AuthenticatedRootView: View {
             .sheet(isPresented: $showTeamManagement) {
                 TeamManagementView(orgId: selectedOrg.id)
             }
-            .task {
-                await orgGateViewModel.fetchOrganizations()
-            }
+        }
+        .task {
+            await orgGateViewModel.fetchOrganizations()
+        }
     }
 }

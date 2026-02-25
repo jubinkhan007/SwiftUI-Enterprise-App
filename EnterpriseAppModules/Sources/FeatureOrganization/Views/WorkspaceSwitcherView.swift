@@ -31,6 +31,12 @@ public struct WorkspaceSwitcherView: View {
             Divider()
 
             Button {
+                viewModel.showJoinSheet = true
+            } label: {
+                Label("Join Workspace", systemImage: "person.badge.plus")
+            }
+
+            Button {
                 viewModel.showCreateSheet = true
             } label: {
                 Label("New Workspace", systemImage: "plus.circle")

@@ -46,6 +46,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
 
     init(
         id: UUID? = nil,
+        orgId: UUID? = nil,
         title: String,
         description: String? = nil,
         status: TaskStatus = .todo,
@@ -56,6 +57,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         version: Int = 1
     ) {
         self.id = id
+        self.$organization.id = orgId
         self.title = title
         self.description = description
         self.status = status

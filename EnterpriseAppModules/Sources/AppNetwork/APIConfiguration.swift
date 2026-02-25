@@ -10,7 +10,7 @@ public struct APIConfiguration: Sendable, Equatable {
 
 public extension APIConfiguration {
     static var localVapor: APIConfiguration {
-        APIConfiguration(baseURL: URL(string: "http://localhost:8080")!)
+        // Use 127.0.0.1 to avoid any IPv6/IPv4 ambiguity with "localhost".
+        APIConfiguration(baseURL: URL(string: "http://127.0.0.1:8080")!)
     }
 }
-

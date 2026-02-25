@@ -89,6 +89,14 @@ public struct APIClient: APIClientProtocol {
                     throw NetworkError.decodingFailed(String(describing: error))
                 }
             case 401:
+#if DEBUG
+                let hasAuthHeader = request.value(forHTTPHeaderField: "Authorization") != nil
+                let hasOrgHeader = request.value(forHTTPHeaderField: "X-Org-Id") != nil
+                print("API 401 \(request.httpMethod ?? "") \(url.absoluteString) hasAuth=\(hasAuthHeader) hasOrg=\(hasOrgHeader)")
+#endif
+                // Do NOT clear the token or trigger global logout here — let the caller decide.
+                // Callers that own the auth lifecycle (e.g. DashboardViewModel, OrganizationGateViewModel)
+                // should post .apiUnauthorized themselves when they see NetworkError.unauthorized.
                 throw NetworkError.unauthorized(message: decodeVaporErrorMessage(from: data))
             case 403:
                 // Immediately clear org context — user lost access

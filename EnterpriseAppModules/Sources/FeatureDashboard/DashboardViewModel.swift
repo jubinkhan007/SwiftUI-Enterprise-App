@@ -81,8 +81,12 @@ public final class DashboardViewModel: ObservableObject {
             
         } catch {
             self.error = error
+            if case NetworkError.unauthorized = error {
+                TokenStore.shared.clear()
+                NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
+            }
         }
-        
+
         isLoading = false
     }
     

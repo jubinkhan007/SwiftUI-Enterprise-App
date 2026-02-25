@@ -99,6 +99,39 @@ public struct OrganizationInviteDTO: Codable, Identifiable, Sendable, Equatable 
     }
 }
 
+// MARK: - Pending Invite DTO
+
+/// Represents a pending invite visible to the invited user.
+/// This includes lightweight workspace metadata so the client can display
+/// "You were invited to <workspace>" without requiring org membership first.
+public struct PendingInviteDTO: Codable, Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let orgId: UUID
+    public let orgName: String
+    public let role: UserRole
+    public let invitedBy: UUID
+    public let expiresAt: Date
+    public let createdAt: Date?
+
+    public init(
+        id: UUID,
+        orgId: UUID,
+        orgName: String,
+        role: UserRole,
+        invitedBy: UUID,
+        expiresAt: Date,
+        createdAt: Date? = nil
+    ) {
+        self.id = id
+        self.orgId = orgId
+        self.orgName = orgName
+        self.role = role
+        self.invitedBy = invitedBy
+        self.expiresAt = expiresAt
+        self.createdAt = createdAt
+    }
+}
+
 // MARK: - Create / Update Payloads
 
 /// Payload for creating a new organization.

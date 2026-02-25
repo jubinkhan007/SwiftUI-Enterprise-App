@@ -38,6 +38,9 @@ public struct OrganizationGateView<AuthenticatedContent: View>: View {
         .sheet(isPresented: $viewModel.showCreateSheet) {
             createOrgSheet
         }
+        .sheet(isPresented: $viewModel.showJoinSheet) {
+            joinOrgSheet
+        }
     }
 
     // MARK: - Loading
@@ -76,11 +79,21 @@ public struct OrganizationGateView<AuthenticatedContent: View>: View {
                     Text("Welcome!")
                         .appFont(AppTypography.largeTitle)
                         .foregroundColor(AppColors.textPrimary)
-                    Text("Create your first workspace to get started.")
+                    Text("Join an existing workspace or create one to get started.")
                         .appFont(AppTypography.body)
                         .foregroundColor(AppColors.textSecondary)
                         .multilineTextAlignment(.center)
                 }
+
+                if !viewModel.pendingInvites.isEmpty {
+                    pendingInvitesSection
+                        .frame(maxWidth: 360)
+                }
+
+                AppButton("Join Workspace", variant: .secondary, leadingIcon: "person.badge.plus") {
+                    viewModel.showJoinSheet = true
+                }
+                .frame(maxWidth: 280)
 
                 AppButton("Create Workspace", variant: .primary) {
                     viewModel.showCreateSheet = true
@@ -95,6 +108,55 @@ public struct OrganizationGateView<AuthenticatedContent: View>: View {
             }
             .padding(AppSpacing.xl)
         }
+    }
+
+    private var pendingInvitesSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("Invitations")
+                .appFont(AppTypography.headline)
+                .foregroundColor(AppColors.textPrimary)
+
+            VStack(spacing: AppSpacing.sm) {
+                ForEach(viewModel.pendingInvites) { invite in
+                    HStack(spacing: AppSpacing.md) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(invite.orgName)
+                                .appFont(AppTypography.body.weight(.semibold))
+                                .foregroundColor(AppColors.textPrimary)
+
+                            Text("\(invite.role.displayName) • Expires \(expiryText(invite.expiresAt))")
+                                .appFont(AppTypography.caption1)
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+
+                        Spacer()
+
+                        AppButton(
+                            viewModel.isJoining ? "Joining…" : "Accept",
+                            variant: .primary,
+                            isEnabled: !viewModel.isJoining,
+                            isLoading: viewModel.isJoining
+                        ) {
+                            Task { await viewModel.acceptInvite(inviteId: invite.id) }
+                        }
+                        .frame(width: 120)
+                    }
+                    .padding(AppSpacing.md)
+                    .background(AppColors.surfaceElevated)
+                    .cornerRadius(AppRadius.medium)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppRadius.medium)
+                            .stroke(AppColors.borderSubtle, lineWidth: 1)
+                    )
+                }
+            }
+        }
+    }
+
+    private func expiryText(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     // MARK: - Org Selection Grid
@@ -227,6 +289,67 @@ public struct OrganizationGateView<AuthenticatedContent: View>: View {
                     }
                     .foregroundColor(AppColors.textSecondary)
                 }
+            }
+        }
+    }
+
+    // MARK: - Join Org Sheet
+
+    private var joinOrgSheet: some View {
+        NavigationStack {
+            ZStack {
+                AppColors.backgroundSecondary.ignoresSafeArea()
+
+                VStack(spacing: AppSpacing.lg) {
+                    if !viewModel.pendingInvites.isEmpty {
+                        pendingInvitesSection
+                    }
+
+                    AppTextField(
+                        "Invite ID",
+                        text: $viewModel.inviteIdToAccept,
+                        placeholder: "Paste the invite UUID"
+                    )
+
+                    Text("Ask a workspace admin to share an invite ID with you.")
+                        .appFont(AppTypography.caption1)
+                        .foregroundColor(AppColors.textTertiary)
+                        .multilineTextAlignment(.center)
+
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.statusError)
+                    }
+
+                    AppButton(
+                        viewModel.isJoining ? "Joining…" : "Join Workspace",
+                        variant: .primary,
+                        isLoading: viewModel.isJoining
+                    ) {
+                        Task { await viewModel.acceptInvite() }
+                    }
+                    .disabled(viewModel.inviteIdToAccept.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isJoining)
+
+                    Spacer()
+                }
+                .padding()
+            }
+            .navigationTitle("Join Workspace")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        viewModel.errorMessage = nil
+                        viewModel.showJoinSheet = false
+                    }
+                    .foregroundColor(AppColors.textSecondary)
+                }
+            }
+            .task {
+                await viewModel.fetchPendingInvites()
             }
         }
     }

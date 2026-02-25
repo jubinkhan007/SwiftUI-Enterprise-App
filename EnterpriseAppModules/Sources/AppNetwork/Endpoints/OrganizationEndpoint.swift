@@ -4,6 +4,7 @@ import SharedModels
 /// API endpoints for Organization management.
 public enum OrganizationEndpoint {
     case me(orgId: UUID?, configuration: APIConfiguration)
+    case myInvites(configuration: APIConfiguration)
     case listOrgs(configuration: APIConfiguration)
     case createOrg(payload: CreateOrganizationRequest, configuration: APIConfiguration)
     case showOrg(id: UUID, configuration: APIConfiguration)
@@ -20,7 +21,7 @@ public enum OrganizationEndpoint {
 extension OrganizationEndpoint: APIEndpoint {
     public var baseURL: URL {
         switch self {
-        case .me(_, let c), .listOrgs(let c), .createOrg(_, let c),
+        case .me(_, let c), .myInvites(let c), .listOrgs(let c), .createOrg(_, let c),
              .showOrg(_, let c), .listMembers(_, let c),
              .createInvite(_, _, let c), .listInvites(_, let c),
              .acceptInvite(_, let c), .updateMemberRole(_, _, _, let c),
@@ -37,6 +38,8 @@ extension OrganizationEndpoint: APIEndpoint {
                 return "/api/me?org_id=\(orgId.uuidString)"
             }
             return "/api/me"
+        case .myInvites:
+            return "/api/invites"
         case .listOrgs, .createOrg:
             return "/api/organizations"
         case .showOrg(let id, _):
@@ -62,7 +65,7 @@ extension OrganizationEndpoint: APIEndpoint {
 
     public var method: HTTPMethod {
         switch self {
-        case .me, .listOrgs, .showOrg, .listMembers, .listInvites, .auditLog:
+        case .me, .myInvites, .listOrgs, .showOrg, .listMembers, .listInvites, .auditLog:
             return .get
         case .createOrg, .createInvite, .acceptInvite, .revokeInvite:
             return .post

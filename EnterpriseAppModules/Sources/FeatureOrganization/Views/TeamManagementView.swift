@@ -2,12 +2,16 @@ import SwiftUI
 import SharedModels
 import DesignSystem
 import AppNetwork
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Full team management view with Members & Invites tabs.
 /// Actions (invite, role edit, remove, revoke) are disabled based on the user's resolved `PermissionSet`.
 public struct TeamManagementView: View {
     @StateObject private var viewModel: TeamManagementViewModel
     @State private var selectedTab = 0
+    @State private var toast: ToastMessage?
 
     public init(orgId: UUID) {
         self._viewModel = StateObject(wrappedValue: TeamManagementViewModel(orgId: orgId))
@@ -86,6 +90,7 @@ public struct TeamManagementView: View {
             .refreshable {
                 await viewModel.loadAll()
             }
+            .toast($toast)
         }
     }
 
@@ -236,6 +241,14 @@ public struct TeamManagementView: View {
             }
         }
         .padding(.vertical, 4)
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                copyInviteId(invite.id)
+            } label: {
+                Label("Copy ID", systemImage: "doc.on.doc")
+            }
+            .tint(AppColors.brandPrimary)
+        }
         .swipeActions(edge: .trailing) {
             if invite.status == .pending && viewModel.canManageRoles {
                 Button(role: .destructive) {
@@ -245,6 +258,13 @@ public struct TeamManagementView: View {
                 }
             }
         }
+    }
+
+    private func copyInviteId(_ id: UUID) {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = id.uuidString
+        #endif
+        toast = ToastMessage(type: .success, title: "Copied", message: "Invite ID copied to clipboard.")
     }
 
     // MARK: - Invite Sheet

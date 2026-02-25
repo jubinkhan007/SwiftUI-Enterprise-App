@@ -29,6 +29,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             request.storage[UserPayloadKey.self] = payload
             return try await next.respond(to: request)
         } catch {
+            request.logger.warning("JWT verification failed: \(String(describing: error))")
             throw Abort(.unauthorized, reason: "Invalid or expired token.")
         }
     }

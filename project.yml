@@ -11,6 +11,8 @@ targets:
       - package: EnterpriseAppModules
         product: FeatureAuth
       - package: EnterpriseAppModules
+        product: FeatureOrganization
+      - package: EnterpriseAppModules
         product: FeatureDashboard
       - package: EnterpriseAppModules
         product: AppNetwork

@@ -11,8 +11,7 @@ public struct DashboardView: View {
     }
     
     public var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 AppColors.backgroundPrimary.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
@@ -57,7 +56,6 @@ public struct DashboardView: View {
                     Task { await viewModel.refresh() }
                 }
                 .presentationDetents([.medium, .large])
-            }
         }
     }
     

@@ -8,7 +8,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      # Keep the default in sync with Backend/Sources/App/configure.swift for local dev.
+      - JWT_SECRET=${JWT_SECRET:-enterprise-app-dev-secret-key-change-in-production}
       - DATABASE_URL=postgres://vapor:vapor@db:5432/enterprise_app
     depends_on:
       db:

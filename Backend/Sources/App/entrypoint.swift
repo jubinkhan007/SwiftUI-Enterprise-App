@@ -3,6 +3,7 @@ import Vapor
 @main
 enum Entrypoint {
     static func main() async throws {
+        DotEnv.loadIfPresent()
         var env = try Environment.detect()
         try LoggingSystem.bootstrap(from: &env)
 
