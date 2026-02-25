@@ -113,4 +113,30 @@ public final class DashboardViewModel: ObservableObject {
         query.page = 1
         await fetchTasks()
     }
+    
+    public func handleSidebarSelection(_ selection: SidebarViewModel.SidebarItem?) {
+        // Reset query state
+        query.page = 1
+        query.spaceId = nil
+        query.projectId = nil
+        query.listId = nil
+        
+        guard let selection = selection else {
+            Task { await fetchTasks() }
+            return
+        }
+        
+        switch selection {
+        case .allTasks, .inbox:
+            break // No extra filters for now
+        case .space(let id):
+            query.spaceId = id
+        case .project(let id):
+            query.projectId = id
+        case .list(let id):
+            query.listId = id
+        }
+        
+        Task { await fetchTasks() }
+    }
 }

@@ -6,19 +6,19 @@ import SharedModels
 /// All routes are protected by Auth & OrgTenantMiddleware.
 struct HierarchyController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
-        let hierarchyReqs = routes.grouped("api")
+        // Routes are already scoped to /api by routes.swift
         
         // POST /api/spaces
-        hierarchyReqs.post("spaces", use: createSpace)
+        routes.post("spaces", use: createSpace)
         
         // POST /api/spaces/:space_id/projects
-        hierarchyReqs.post("spaces", ":space_id", "projects", use: createProject)
+        routes.post("spaces", ":space_id", "projects", use: createProject)
         
         // POST /api/projects/:project_id/lists
-        hierarchyReqs.post("projects", ":project_id", "lists", use: createList)
+        routes.post("projects", ":project_id", "lists", use: createList)
         
         // GET /api/hierarchy
-        hierarchyReqs.get("hierarchy", use: getHierarchy)
+        routes.get("hierarchy", use: getHierarchy)
     }
 
     // MARK: - Spaces

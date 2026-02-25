@@ -12,7 +12,8 @@ public final class CreateTaskViewModel: ObservableObject {
     
     @Published public var startDate: Date? = nil
     @Published public var dueDate: Date? = nil
-    @Published public var assigneeIdText: String = ""    // UUID string for manual entry
+    @Published public var assigneeIdText: String = ""
+    @Published public var listId: UUID? = nil
     
     @Published public var showStartDatePicker = false
     @Published public var showDueDatePicker = false
@@ -28,8 +29,9 @@ public final class CreateTaskViewModel: ObservableObject {
     
     private let taskRepository: TaskRepositoryProtocol
     
-    public init(taskRepository: TaskRepositoryProtocol) {
+    public init(taskRepository: TaskRepositoryProtocol, listId: UUID? = nil) {
         self.taskRepository = taskRepository
+        self.listId = listId
     }
     
     public func saveTask() async {
@@ -47,7 +49,8 @@ public final class CreateTaskViewModel: ObservableObject {
             priority: priority,
             startDate: startDate,
             dueDate: dueDate,
-            assigneeId: assigneeId
+            assigneeId: assigneeId,
+            listId: listId
         )
         
         do {

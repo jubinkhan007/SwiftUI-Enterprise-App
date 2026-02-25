@@ -127,3 +127,14 @@ public struct UpdateTaskRequest: Codable, Sendable {
         self.expectedVersion = expectedVersion
     }
 }
+
+/// Payload for moving a task to a different list or position.
+public struct MoveTaskRequest: Codable, Sendable {
+    public let targetListId: UUID
+    public let position: Double
+
+    public init(targetListId: UUID, position: Double) {
+        self.targetListId = targetListId
+        self.position = position
+    }
+}

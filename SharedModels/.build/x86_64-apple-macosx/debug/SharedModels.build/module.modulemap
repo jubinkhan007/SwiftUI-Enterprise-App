@@ -1,4 +1,0 @@
-module SharedModels {
-    header "/Users/mac/.gemini/antigravity/scratch/EnterpriseApp/SharedModels/.build/x86_64-apple-macosx/debug/SharedModels.build/SharedModels-Swift.h"
-    requires objc
-}

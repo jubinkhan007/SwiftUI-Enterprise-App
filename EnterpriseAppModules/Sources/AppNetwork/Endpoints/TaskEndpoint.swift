@@ -7,6 +7,7 @@ public enum TaskEndpoint {
     case createTask(payload: CreateTaskRequest, configuration: APIConfiguration)
     case updateTask(id: UUID, payload: UpdateTaskRequest, configuration: APIConfiguration)
     case deleteTask(id: UUID, configuration: APIConfiguration)
+    case moveTask(id: UUID, payload: MoveTaskRequest, configuration: APIConfiguration)
     case getActivity(taskId: UUID, configuration: APIConfiguration)
     case createComment(taskId: UUID, payload: CreateCommentRequest, configuration: APIConfiguration)
 }
@@ -19,6 +20,7 @@ extension TaskEndpoint: APIEndpoint {
              .createTask(_, let config),
              .updateTask(_, _, let config),
              .deleteTask(_, let config),
+             .moveTask(_, _, let config),
              .getActivity(_, let config),
              .createComment(_, _, let config):
             return config.baseURL
@@ -29,6 +31,7 @@ extension TaskEndpoint: APIEndpoint {
         switch self {
         case .getTasks, .createTask: return "/api/tasks"
         case .getTask(let id, _), .updateTask(let id, _, _), .deleteTask(let id, _): return "/api/tasks/\(id.uuidString)"
+        case .moveTask(let id, _, _): return "/api/tasks/\(id.uuidString)/move"
         case .getActivity(let taskId, _): return "/api/tasks/\(taskId.uuidString)/activity"
         case .createComment(let taskId, _, _): return "/api/tasks/\(taskId.uuidString)/comments"
         }
@@ -39,6 +42,7 @@ extension TaskEndpoint: APIEndpoint {
         case .getTasks, .getTask, .getActivity: return .get
         case .createTask, .createComment: return .post
         case .updateTask: return .put
+        case .moveTask: return .patch
         case .deleteTask: return .delete
         }
     }
@@ -52,6 +56,9 @@ extension TaskEndpoint: APIEndpoint {
         if let status = query.status { params["status"] = status.rawValue }
         if let priority = query.priority { params["priority"] = priority.rawValue }
         if let search = query.search { params["search"] = search }
+        if let spaceId = query.spaceId { params["space_id"] = spaceId.uuidString }
+        if let projectId = query.projectId { params["project_id"] = projectId.uuidString }
+        if let listId = query.listId { params["list_id"] = listId.uuidString }
         return params
     }
 
@@ -72,6 +79,8 @@ extension TaskEndpoint: APIEndpoint {
         case .createTask(let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .updateTask(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .moveTask(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .createComment(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)

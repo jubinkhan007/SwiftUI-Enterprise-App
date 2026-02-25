@@ -17,6 +17,7 @@ struct TaskController: RouteCollection {
         let task = tasks.grouped(":taskID")
         task.get(use: show)
         task.put(use: update)
+        task.patch("move", use: move)
         task.delete(use: delete)
         task.get("activity", use: getActivities)
         task.post("comments", use: createComment)
@@ -31,6 +32,10 @@ struct TaskController: RouteCollection {
         let perPage = min((try? req.query.get(Int.self, at: "per_page")) ?? 20, 100)
         let statusFilter: TaskStatus? = try? req.query.get(TaskStatus.self, at: "status")
         let priorityFilter: TaskPriority? = try? req.query.get(TaskPriority.self, at: "priority")
+        
+        let spaceId: UUID? = try? req.query.get(UUID.self, at: "space_id")
+        let projectId: UUID? = try? req.query.get(UUID.self, at: "project_id")
+        let listId: UUID? = try? req.query.get(UUID.self, at: "list_id")
 
         let ctx = try req.orgContext
         var query = TaskItemModel.query(on: req.db)
@@ -43,6 +48,18 @@ struct TaskController: RouteCollection {
         if let priority = priorityFilter {
             query = query.filter(\.$priority == priority)
         }
+        
+        if let listId = listId {
+            query = query.filter(\.$list.$id == listId)
+        } else if let projectId = projectId {
+            query = query.join(TaskListModel.self, on: \TaskItemModel.$list.$id == \TaskListModel.$id)
+                .filter(TaskListModel.self, \.$project.$id == projectId)
+        } else if let spaceId = spaceId {
+            query = query.join(TaskListModel.self, on: \TaskItemModel.$list.$id == \TaskListModel.$id)
+                .join(ProjectModel.self, on: \TaskListModel.$project.$id == \ProjectModel.$id)
+                .filter(ProjectModel.self, \.$space.$id == spaceId)
+        }
+        
         if !includeArchived {
             query = query.filter(\.$archivedAt == nil)
         }
@@ -214,6 +231,51 @@ struct TaskController: RouteCollection {
             for activity in finalActivities {
                 try await activity.save(on: db)
             }
+        }
+
+        return .success(task.toDTO())
+    }
+
+    // MARK: - PATCH /api/tasks/:taskID/move
+
+    @Sendable
+    func move(req: Request) async throws -> APIResponse<TaskItemDTO> {
+        let ctx = try req.orgContext
+        guard let task = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+            .filter(\.$organization.$id == ctx.orgId)
+            .first() else {
+            throw Abort(.notFound, reason: "Task not found in this organization.")
+        }
+
+        let payload = try req.content.decode(MoveTaskRequest.self)
+        
+        // If moving to a different list, validate ownership
+        if task.$list.id != payload.targetListId {
+            let listExists = try await TaskListModel.query(on: req.db)
+                .filter(\.$id == payload.targetListId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .first()?.project.space.$organization.id == ctx.orgId
+                
+            guard listExists else {
+                throw Abort(.notFound, reason: "Target list not found in this organization.")
+            }
+            task.$list.id = payload.targetListId
+        }
+
+        task.position = payload.position
+        task.version += 1
+        
+        try await req.db.transaction { db in
+            try await task.save(on: db)
+            
+            let activity = TaskActivityModel(
+                taskId: try task.requireID(),
+                userId: ctx.userId,
+                type: .statusChanged, // Or a new 'moved' type if we add it to enum
+                metadata: ["to_list": payload.targetListId.uuidString, "position": String(payload.position)]
+            )
+            try await activity.save(on: db)
         }
 
         return .success(task.toDTO())

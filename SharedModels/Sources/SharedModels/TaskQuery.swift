@@ -9,6 +9,9 @@ public struct TaskQuery: Codable, Sendable, Equatable {
     public var priority: TaskPriority?
     public var assigneeId: UUID?
     public var search: String?
+    public var spaceId: UUID?
+    public var projectId: UUID?
+    public var listId: UUID?
     
     public init(
         page: Int = 1,
@@ -16,7 +19,10 @@ public struct TaskQuery: Codable, Sendable, Equatable {
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
         assigneeId: UUID? = nil,
-        search: String? = nil
+        search: String? = nil,
+        spaceId: UUID? = nil,
+        projectId: UUID? = nil,
+        listId: UUID? = nil
     ) {
         self.page = page
         self.perPage = perPage
@@ -24,5 +30,8 @@ public struct TaskQuery: Codable, Sendable, Equatable {
         self.priority = priority
         self.assigneeId = assigneeId
         self.search = search
+        self.spaceId = spaceId
+        self.projectId = projectId
+        self.listId = listId
     }
 }

@@ -1,6 +1,9 @@
 import SwiftUI
 import SharedModels
 import DesignSystem
+import Domain
+import AppData
+import AppNetwork
 
 /// A gate view inserted between AuthGateView and the main app content.
 ///
@@ -11,36 +14,80 @@ import DesignSystem
 public struct OrganizationGateView<AuthenticatedContent: View>: View {
     @StateObject private var viewModel: OrganizationGateViewModel
     private let authenticatedContent: (OrganizationDTO) -> AuthenticatedContent
+    private let session: Domain.AuthSession
+    private let authManager: AppData.AuthManager
 
     public init(
+        session: Domain.AuthSession,
+        authManager: AppData.AuthManager,
         viewModel: OrganizationGateViewModel,
         @ViewBuilder authenticatedContent: @escaping (OrganizationDTO) -> AuthenticatedContent
     ) {
+        self.session = session
+        self.authManager = authManager
         self._viewModel = StateObject(wrappedValue: viewModel)
         self.authenticatedContent = authenticatedContent
     }
 
     public var body: some View {
         Group {
-            if viewModel.isLoading {
-                loadingView
-            } else if let org = viewModel.selectedOrg {
+            if let org = viewModel.selectedOrg {
                 authenticatedContent(org)
-            } else if viewModel.organizations.isEmpty {
-                emptyStateView
             } else {
-                orgSelectionView
+                gatedNavigation
             }
         }
-        .task {
-            await viewModel.fetchOrganizations()
+        .task { await viewModel.fetchOrganizations() }
+        .sheet(isPresented: $viewModel.showCreateSheet) { createOrgSheet }
+        .sheet(isPresented: $viewModel.showJoinSheet) { joinOrgSheet }
+    }
+
+    private var gatedNavigation: some View {
+        NavigationStack {
+            Group {
+                if viewModel.isLoading {
+                    loadingView
+                } else if viewModel.organizations.isEmpty {
+                    emptyStateView
+                } else {
+                    orgSelectionView
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { accountDrawer }
+            }
         }
-        .sheet(isPresented: $viewModel.showCreateSheet) {
-            createOrgSheet
+    }
+
+    private var accountDrawer: some View {
+        Menu {
+            Text("Signed in as \(session.user.displayName)")
+            Divider()
+
+            Button {
+                viewModel.showJoinSheet = true
+            } label: {
+                Label("Join Workspace", systemImage: "person.badge.plus")
+            }
+
+            Button {
+                viewModel.showCreateSheet = true
+            } label: {
+                Label("Create Workspace", systemImage: "plus")
+            }
+
+            Divider()
+
+            Button("Sign Out", role: .destructive) {
+                OrganizationContext.shared.clear()
+                authManager.signOut()
+            }
+        } label: {
+            Image(systemName: "person.circle")
+                .font(.title3)
+                .foregroundColor(AppColors.textPrimary)
         }
-        .sheet(isPresented: $viewModel.showJoinSheet) {
-            joinOrgSheet
-        }
+        .accessibilityLabel("Account")
     }
 
     // MARK: - Loading
@@ -162,42 +209,29 @@ public struct OrganizationGateView<AuthenticatedContent: View>: View {
     // MARK: - Org Selection Grid
 
     private var orgSelectionView: some View {
-        NavigationStack {
-            ZStack {
-                AppColors.backgroundPrimary.ignoresSafeArea()
+        ZStack {
+            AppColors.backgroundPrimary.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: AppSpacing.lg) {
-                        Text("Select a Workspace")
-                            .appFont(AppTypography.title3)
-                            .foregroundColor(AppColors.textPrimary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                VStack(spacing: AppSpacing.lg) {
+                    Text("Select a Workspace")
+                        .appFont(AppTypography.title3)
+                        .foregroundColor(AppColors.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.md) {
-                            ForEach(viewModel.organizations) { org in
-                                orgCard(org)
-                            }
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.md) {
+                        ForEach(viewModel.organizations) { org in
+                            orgCard(org)
                         }
                     }
-                    .padding()
                 }
-            }
-            .navigationTitle("Workspaces")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.large)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        viewModel.showCreateSheet = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundColor(AppColors.brandPrimary)
-                    }
-                }
+                .padding()
             }
         }
+        .navigationTitle("Workspaces")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.large)
+        #endif
     }
 
     private func orgCard(_ org: OrganizationDTO) -> some View {

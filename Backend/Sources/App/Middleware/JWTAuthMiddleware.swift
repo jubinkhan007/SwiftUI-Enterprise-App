@@ -24,14 +24,16 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             throw Abort(.unauthorized, reason: "Missing authorization token.")
         }
 
+        let payload: JWTAuthPayload
         do {
-            let payload = try request.jwt.verify(token, as: JWTAuthPayload.self)
-            request.storage[UserPayloadKey.self] = payload
-            return try await next.respond(to: request)
+            payload = try request.jwt.verify(token, as: JWTAuthPayload.self)
         } catch {
             request.logger.warning("JWT verification failed: \(String(describing: error))")
             throw Abort(.unauthorized, reason: "Invalid or expired token.")
         }
+
+        request.storage[UserPayloadKey.self] = payload
+        return try await next.respond(to: request)
     }
 }
 

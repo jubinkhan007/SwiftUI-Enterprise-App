@@ -29,6 +29,8 @@ struct EnterpriseApp: App {
             AuthGateView(authManager: authManager) { session, manager in
                 // After auth, gate on organization selection
                 OrganizationGateView(
+                    session: session,
+                    authManager: manager,
                     viewModel: OrganizationGateViewModel()
                 ) { selectedOrg in
                     AuthenticatedRootView(
@@ -45,9 +47,9 @@ struct EnterpriseApp: App {
 
 struct AuthenticatedRootView: View {
     let session: Domain.AuthSession
-    let authManager: AppData.AuthManager
     let selectedOrg: OrganizationDTO
     let viewModel: DashboardViewModel
+    @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
     @State private var showTeamManagement = false
     
@@ -66,54 +68,68 @@ struct AuthenticatedRootView: View {
         )
         self.viewModel = DashboardViewModel(taskRepository: taskRepository)
         
+        let hierarchyRepo = HierarchyRepository(apiClient: apiClient)
+        self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
+        
         let gateVM = OrganizationGateViewModel()
         gateVM.selectedOrg = selectedOrg
-        gateVM.organizations = [selectedOrg] // Initial state, will be overwritten by fetch
+        gateVM.organizations = [selectedOrg]
         self._orgGateViewModel = StateObject(wrappedValue: gateVM)
     }
     
     var body: some View {
-        NavigationStack {
-            DashboardView(viewModel: viewModel)
-                .toolbar {
-                ToolbarItem(placement: .principal) {
-                    WorkspaceSwitcherView(viewModel: orgGateViewModel)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showTeamManagement = true
-                    } label: {
-                        Image(systemName: "person.3")
-                            .font(.subheadline)
-                    }
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Menu {
-                        Text("Signed in as \(session.user.displayName)")
-                        Text("Workspace: \(selectedOrg.name)")
-                        Divider()
-                        Button {
-                            showTeamManagement = true
-                        } label: {
-                            Label("Team Management", systemImage: "person.3")
+        NavigationSplitView {
+            SidebarView(viewModel: sidebarViewModel)
+        } detail: {
+            NavigationStack {
+                DashboardView(viewModel: viewModel)
+                    .toolbar {
+                        ToolbarItem(placement: .principal) {
+                            WorkspaceSwitcherView(viewModel: orgGateViewModel)
                         }
-                        Divider()
-                        Button("Sign Out", role: .destructive) {
-                            OrganizationContext.shared.clear()
-                            authManager.signOut()
+                        ToolbarItem(placement: .primaryAction) {
+                            Button {
+                                showTeamManagement = true
+                            } label: {
+                                Image(systemName: "person.3")
+                                    .font(.subheadline)
+                            }
                         }
-                    } label: {
-                        Image(systemName: "person.circle")
-                            .font(.title3)
+                        ToolbarItem(placement: .cancellationAction) {
+                            personMenu
+                        }
                     }
-                }
+                    .sheet(isPresented: $showTeamManagement) {
+                        TeamManagementView(orgId: selectedOrg.id)
+                    }
             }
-            .sheet(isPresented: $showTeamManagement) {
-                TeamManagementView(orgId: selectedOrg.id)
-            }
+        }
+        .onChange(of: sidebarViewModel.selectedArea) { oldValue, newValue in
+            viewModel.handleSidebarSelection(newValue)
         }
         .task {
             await orgGateViewModel.fetchOrganizations()
+        }
+    }
+    
+    private var personMenu: some View {
+        Menu {
+            Text("Signed in as \(session.user.displayName)")
+            Text("Workspace: \(selectedOrg.name)")
+            Divider()
+            Button {
+                showTeamManagement = true
+            } label: {
+                Label("Team Management", systemImage: "person.3")
+            }
+            Divider()
+            Button("Sign Out", role: .destructive) {
+                OrganizationContext.shared.clear()
+                authManager.signOut()
+            }
+        } label: {
+            Image(systemName: "person.circle")
+                .font(.title3)
         }
     }
 }

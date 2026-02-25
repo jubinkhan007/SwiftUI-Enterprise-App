@@ -174,16 +174,27 @@ struct OrganizationController: RouteCollection {
             ownerId: userId
         )
 
-        // Create org + owner membership in a transaction
+        // Create org, owner membership, and default hierarchy in a transaction
         try await req.db.transaction { db in
             try await org.save(on: db)
+            let newOrgId = try org.requireID()
 
             let membership = OrganizationMemberModel(
-                orgId: try org.requireID(),
+                orgId: newOrgId,
                 userId: userId,
                 role: .owner
             )
             try await membership.save(on: db)
+            
+            // Auto-generate default Phase 7 hierarchy
+            let defaultSpace = SpaceModel(orgId: newOrgId, name: "Default Space")
+            try await defaultSpace.save(on: db)
+            
+            let defaultProject = ProjectModel(spaceId: try defaultSpace.requireID(), name: "General")
+            try await defaultProject.save(on: db)
+            
+            let defaultList = TaskListModel(projectId: try defaultProject.requireID(), name: "To Do")
+            try await defaultList.save(on: db)
         }
 
         return .success(org.toDTO(memberCount: 1))

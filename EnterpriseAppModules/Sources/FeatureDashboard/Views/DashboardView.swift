@@ -52,7 +52,7 @@ public struct DashboardView: View {
                 await viewModel.refresh()
             }
             .sheet(isPresented: $showingCreateTask) {
-                CreateTaskSheet(viewModel: CreateTaskViewModel(taskRepository: viewModel.taskRepository)) {
+                CreateTaskSheet(viewModel: CreateTaskViewModel(taskRepository: viewModel.taskRepository, listId: viewModel.query.listId)) {
                     Task { await viewModel.refresh() }
                 }
                 .presentationDetents([.medium, .large])
