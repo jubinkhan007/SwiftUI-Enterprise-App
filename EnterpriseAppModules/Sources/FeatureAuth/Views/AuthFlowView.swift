@@ -8,7 +8,7 @@ import UIKit
 #endif
 
 public struct AuthFlowView: View {
-    @StateObject private var authManager: AppData.AuthManager
+    @ObservedObject private var authManager: AppData.AuthManager
 
     @State private var mode: AuthMode = .login
     @State private var email = ""
@@ -20,12 +20,7 @@ public struct AuthFlowView: View {
     @FocusState private var focus: FocusField?
 
     public init(authManager: AppData.AuthManager) {
-        self._authManager = StateObject(wrappedValue: authManager)
-    }
-
-    public init(configuration: APIConfiguration = .localVapor) {
-        let service = AppData.LiveAuthService.mappedErrors(configuration: configuration)
-        self._authManager = StateObject(wrappedValue: AppData.AuthManager(authService: service))
+        self._authManager = ObservedObject(wrappedValue: authManager)
     }
 
     public var body: some View {

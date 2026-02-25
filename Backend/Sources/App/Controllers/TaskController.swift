@@ -8,21 +8,25 @@ struct TaskController: RouteCollection {
         // Wrap all task routes in OrgTenantMiddleware to enforce X-Org-Id
         let tasks = routes.grouped("tasks").grouped(OrgTenantMiddleware())
         
+        let lists = routes.grouped("lists").grouped(OrgTenantMiddleware())
+        lists.get(":listID", "tasks", use: tasksByList)
+        
         tasks.get(use: index)
         tasks.post(use: create)
-        tasks.group(":taskID") { task in
-            task.get(use: show)
-            task.put(use: update)
-            task.delete(use: delete)
-            task.get("activity", use: getActivities)
-            task.post("comments", use: createComment)
-        }
+        
+        let task = tasks.grouped(":taskID")
+        task.get(use: show)
+        task.put(use: update)
+        task.delete(use: delete)
+        task.get("activity", use: getActivities)
+        task.post("comments", use: createComment)
     }
 
     // MARK: - GET /api/tasks
 
     @Sendable
     func index(req: Request) async throws -> APIResponse<[TaskItemDTO]> {
+        let includeArchived = (try? req.query.get(Bool.self, at: "include_archived")) ?? false
         let page = (try? req.query.get(Int.self, at: "page")) ?? 1
         let perPage = min((try? req.query.get(Int.self, at: "per_page")) ?? 20, 100)
         let statusFilter: TaskStatus? = try? req.query.get(TaskStatus.self, at: "status")
@@ -38,6 +42,9 @@ struct TaskController: RouteCollection {
         }
         if let priority = priorityFilter {
             query = query.filter(\.$priority == priority)
+        }
+        if !includeArchived {
+            query = query.filter(\.$archivedAt == nil)
         }
 
         // Get total count for pagination
@@ -60,10 +67,17 @@ struct TaskController: RouteCollection {
     @Sendable
     func show(req: Request) async throws -> APIResponse<TaskItemDTO> {
         let ctx = try req.orgContext
-        guard let task = try await TaskItemModel.query(on: req.db)
+        let includeArchived = (try? req.query.get(Bool.self, at: "include_archived")) ?? false
+        
+        var query = TaskItemModel.query(on: req.db)
             .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
             .filter(\.$organization.$id == ctx.orgId)
-            .first() else {
+            
+        if !includeArchived {
+            query = query.filter(\.$archivedAt == nil)
+        }
+            
+        guard let task = try await query.first() else {
             throw Abort(.notFound, reason: "Task not found in this organization.")
         }
         return .success(task.toDTO())
@@ -79,9 +93,24 @@ struct TaskController: RouteCollection {
         guard !payload.title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw Abort(.badRequest, reason: "Task title is required.")
         }
+        
+        guard let listId = payload.listId else {
+            throw Abort(.badRequest, reason: "Task must belong to a list. Missing listId.")
+        }
+        
+        // Validate List exists and belongs to this Org
+        let query = TaskListModel.query(on: req.db)
+            .filter(\.$id == listId)
+            .with(\.$project) { project in project.with(\.$space) }
+            
+        guard let list = try await query.first(),
+              list.project.space.$organization.id == ctx.orgId else {
+            throw Abort(.notFound, reason: "List not found in this organization.")
+        }
 
         let task = TaskItemModel(
             orgId: ctx.orgId,
+            listId: listId,
             title: payload.title,
             description: payload.description,
             status: payload.status ?? .todo,
@@ -160,6 +189,21 @@ struct TaskController: RouteCollection {
             activities.append(TaskActivityModel(taskId: try task.requireID(), userId: ctx.userId, type: .assigned, metadata: metadata))
             task.$assignee.id = assigneeId
         }
+        
+        // Handles moving to a different list
+        if let listId = payload.listId, task.$list.id != listId {
+            task.$list.id = listId
+        }
+        
+        // Handles drag & drop ordering
+        if let position = payload.position {
+            task.position = position
+        }
+        
+        // Handles soft deleting / archiving
+        if let archivedAt = payload.archivedAt {
+            task.archivedAt = archivedAt
+        }
 
         // Increment local version for the save
         task.version += 1
@@ -197,6 +241,44 @@ struct TaskController: RouteCollection {
             try await task.delete(on: db)
         }
         return .noContent
+    }
+    
+    // MARK: - GET /api/lists/:listID/tasks
+    
+    @Sendable
+    func tasksByList(req: Request) async throws -> APIResponse<[TaskItemDTO]> {
+        let ctx = try req.orgContext
+        let includeArchived = (try? req.query.get(Bool.self, at: "include_archived")) ?? false
+        
+        guard let listId = req.parameters.get("listID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid list ID.")
+        }
+        
+        // Validate List exists and belongs to this Org
+        let query2 = TaskListModel.query(on: req.db)
+            .filter(\.$id == listId)
+            .with(\.$project) { project in project.with(\.$space) }
+            
+        let listBelongsToOrg = try await query2.first()?.project.space.$organization.id == ctx.orgId
+            
+        guard listBelongsToOrg else {
+            throw Abort(.notFound, reason: "List not found using current organization credentials.")
+        }
+        
+        var query = TaskItemModel.query(on: req.db)
+            .filter(\.$list.$id == listId)
+            
+        if !includeArchived {
+            query = query.filter(\.$archivedAt == nil)
+        }
+        
+        let tasks = try await query
+            .sort(\.$position, .ascending)
+            .all()
+            
+        let dtos = tasks.map { $0.toDTO() }
+        let pagination = PaginationMeta(page: 1, perPage: tasks.count, total: tasks.count)
+        return .success(dtos, pagination: pagination)
     }
 
     // MARK: - GET /api/tasks/:taskID/activity

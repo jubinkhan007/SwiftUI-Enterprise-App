@@ -11,6 +11,7 @@ import SharedModels
 @main
 struct EnterpriseApp: App {
     let modelContainer: ModelContainer
+    @StateObject private var authManager: AppData.AuthManager
     
     init() {
         do {
@@ -18,11 +19,14 @@ struct EnterpriseApp: App {
         } catch {
             fatalError("Failed to create SwiftData ModelContainer: \(error)")
         }
+
+        let service = AppData.LiveAuthService.mappedErrors(configuration: AppNetwork.APIConfiguration.localVapor)
+        self._authManager = StateObject(wrappedValue: AppData.AuthManager(authService: service))
     }
     
     var body: some Scene {
         WindowGroup {
-            AuthGateView(configuration: AppNetwork.APIConfiguration.localVapor) { session, manager in
+            AuthGateView(authManager: authManager) { session, manager in
                 // After auth, gate on organization selection
                 OrganizationGateView(
                     viewModel: OrganizationGateViewModel()

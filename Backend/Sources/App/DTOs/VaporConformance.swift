@@ -22,6 +22,12 @@ extension RegisterRequest: @retroactive Content {}
 extension LoginRequest: @retroactive Content {}
 
 // Organization types
+extension SpaceDTO: @retroactive Content {}
+extension ProjectDTO: @retroactive Content {}
+extension TaskListDTO: @retroactive Content {}
+extension HierarchyTreeDTO: @retroactive Content {}
+extension HierarchyTreeDTO.SpaceNode: @retroactive Content {}
+extension HierarchyTreeDTO.ProjectNode: @retroactive Content {}
 extension OrganizationDTO: @retroactive Content {}
 extension OrganizationMemberDTO: @retroactive Content {}
 extension OrganizationInviteDTO: @retroactive Content {}

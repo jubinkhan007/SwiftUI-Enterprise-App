@@ -24,6 +24,15 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     @OptionalParent(key: "org_id")
     var organization: OrganizationModel?
 
+    @OptionalParent(key: "list_id") // Optional for migration step 1
+    var list: TaskListModel?
+
+    @Field(key: "position")
+    var position: Double
+
+    @OptionalField(key: "archived_at")
+    var archivedAt: Date?
+
     @OptionalField(key: "start_date")
     var startDate: Date?
 
@@ -47,6 +56,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     init(
         id: UUID? = nil,
         orgId: UUID? = nil,
+        listId: UUID? = nil,
         title: String,
         description: String? = nil,
         status: TaskStatus = .todo,
@@ -54,10 +64,13 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
-        version: Int = 1
+        version: Int = 1,
+        position: Double = 0.0,
+        archivedAt: Date? = nil
     ) {
         self.id = id
         self.$organization.id = orgId
+        self.$list.id = listId
         self.title = title
         self.description = description
         self.status = status
@@ -66,6 +79,8 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         self.dueDate = dueDate
         self.$assignee.id = assigneeId
         self.version = version
+        self.position = position
+        self.archivedAt = archivedAt
     }
 
     /// Convert to the shared DTO for API responses.
@@ -80,6 +95,8 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
             dueDate: dueDate,
             assigneeId: $assignee.id,
             version: version,
+            position: position,
+            archivedAt: archivedAt,
             createdAt: createdAt,
             updatedAt: updatedAt
         )

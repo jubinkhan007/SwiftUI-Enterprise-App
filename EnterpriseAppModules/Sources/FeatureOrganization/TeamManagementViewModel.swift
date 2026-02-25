@@ -86,7 +86,12 @@ public final class TeamManagementViewModel: ObservableObject {
             let response = try await apiClient.request(endpoint, responseType: APIResponse<[OrganizationMemberDTO]>.self)
             members = response.data ?? []
         } catch {
-            errorMessage = error.localizedDescription
+            if case NetworkError.unauthorized = error {
+                TokenStore.shared.clear()
+                NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
 
         isLoadingMembers = false
@@ -135,7 +140,12 @@ public final class TeamManagementViewModel: ObservableObject {
                 inviteRole = .member
             }
         } catch {
-            errorMessage = error.localizedDescription
+            if case NetworkError.unauthorized = error {
+                TokenStore.shared.clear()
+                NotificationCenter.default.post(name: .apiUnauthorized, object: nil)
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
 
         isSendingInvite = false

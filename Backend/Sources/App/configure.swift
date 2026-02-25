@@ -27,6 +27,9 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateOrganizationInvite())
     app.migrations.add(AddOrgIdToTaskItem())
     app.migrations.add(CreateAuditLog())
+    app.migrations.add(AddTaskListHierarchy())
+    app.migrations.add(BackfillTasksToDefaultHierarchies())
+    app.migrations.add(EnforceTaskListIdOnTasks())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

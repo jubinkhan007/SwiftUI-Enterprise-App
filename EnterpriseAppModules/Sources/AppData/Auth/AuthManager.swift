@@ -32,7 +32,9 @@ public final class AuthManager: ObservableObject {
         }
     }
 
-    /// Decode the JWT payload (no verification) and check the `exp` claim.
+    /// Decode the JWT payload (no verification) and check the expiration claim.
+    /// Vapor's JWTKit serializes ExpirationClaim using the Swift property name "expiration",
+    /// not the standard JWT short name "exp".
     private static func isTokenExpired(_ token: String) -> Bool {
         let parts = token.split(separator: ".")
         guard parts.count == 3 else { return true }
@@ -47,7 +49,7 @@ public final class AuthManager: ObservableObject {
 
         guard let data = Data(base64Encoded: base64),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let exp = json["exp"] as? TimeInterval else { return true }
+              let exp = json["expiration"] as? TimeInterval else { return true }
 
         return Date().timeIntervalSince1970 >= exp
     }
@@ -60,6 +62,9 @@ public final class AuthManager: ObservableObject {
         try sessionStore.saveSession(newSession)
         session = newSession
         TokenStore.shared.token = newSession.token
+#if DEBUG
+        print("AuthManager signIn ok hasSession=\(session != nil)")
+#endif
     }
 
     public func register(email: String, password: String, displayName: String) async throws {
@@ -70,12 +75,17 @@ public final class AuthManager: ObservableObject {
         try sessionStore.saveSession(newSession)
         session = newSession
         TokenStore.shared.token = newSession.token
+#if DEBUG
+        print("AuthManager register ok hasSession=\(session != nil)")
+#endif
     }
 
     public func signOut() {
         try? sessionStore.clearSession()
         session = nil
         TokenStore.shared.clear()
+#if DEBUG
+        print("AuthManager signOut")
+#endif
     }
 }
-
