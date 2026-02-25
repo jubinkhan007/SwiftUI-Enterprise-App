@@ -64,7 +64,10 @@ let package = Package(
         ),
         .target(
             name: "FeatureDashboard",
-            dependencies: ["Core", "Domain", "DesignSystem"]
+            dependencies: [
+                "Core", "Domain", "AppNetwork", "DesignSystem",
+                .product(name: "SharedModels", package: "SharedModels"),
+            ]
         ),
         .testTarget(
             name: "EnterpriseAppModulesTests",

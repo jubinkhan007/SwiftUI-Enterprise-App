@@ -27,6 +27,13 @@ public final class DashboardViewModel: ObservableObject {
             Task { await fetchTasks() }
         }
     }
+    @Published public var filterTaskType: TaskType? = nil {
+        didSet {
+            query.taskType = filterTaskType
+            query.page = 1
+            Task { await fetchTasks() }
+        }
+    }
     @Published public var searchQuery: String = ""
     
     // Selection state for potential bulk actions

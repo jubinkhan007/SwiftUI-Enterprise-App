@@ -21,6 +21,18 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     @Enum(key: "priority")
     var priority: TaskPriority
 
+    @Enum(key: "task_type")
+    var taskType: TaskType
+
+    @OptionalParent(key: "parent_id")
+    var parent: TaskItemModel?
+
+    @OptionalField(key: "story_points")
+    var storyPoints: Int?
+
+    @OptionalField(key: "labels")
+    var labels: [String]?
+
     @OptionalParent(key: "org_id")
     var organization: OrganizationModel?
 
@@ -61,6 +73,10 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         description: String? = nil,
         status: TaskStatus = .todo,
         priority: TaskPriority = .medium,
+        taskType: TaskType = .task,
+        parentId: UUID? = nil,
+        storyPoints: Int? = nil,
+        labels: [String]? = nil,
         startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
@@ -75,6 +91,10 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.taskType = taskType
+        self.$parent.id = parentId
+        self.storyPoints = storyPoints
+        self.labels = labels
         self.startDate = startDate
         self.dueDate = dueDate
         self.$assignee.id = assigneeId
@@ -84,13 +104,22 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     }
 
     /// Convert to the shared DTO for API responses.
-    func toDTO() -> TaskItemDTO {
+    /// - Parameters:
+    ///   - subtaskCount: Total number of direct subtasks (pass from a pre-computed aggregate).
+    ///   - completedSubtaskCount: Number of subtasks with status `.done`.
+    func toDTO(subtaskCount: Int = 0, completedSubtaskCount: Int = 0) -> TaskItemDTO {
         TaskItemDTO(
             id: id ?? UUID(),
             title: title,
             description: description,
             status: status,
             priority: priority,
+            taskType: taskType,
+            parentId: $parent.id,
+            subtaskCount: subtaskCount,
+            completedSubtaskCount: completedSubtaskCount,
+            storyPoints: storyPoints,
+            labels: labels,
             startDate: startDate,
             dueDate: dueDate,
             assigneeId: $assignee.id,

@@ -6,6 +6,9 @@ public enum ActivityType: String, Codable, Sendable {
     case comment
     case assigned
     case priorityChanged
+    case moved
+    case typeChanged
+    case parentChanged
 }
 
 /// Represents an activity item in the task's timeline.

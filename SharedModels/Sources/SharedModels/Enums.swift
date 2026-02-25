@@ -50,6 +50,57 @@ public enum TaskPriority: String, Codable, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Task Type
+
+/// Defines the category of a work item.
+public enum TaskType: String, Codable, CaseIterable, Sendable {
+    case task
+    case bug
+    case story
+    case epic
+    case subtask
+
+    public var displayName: String {
+        switch self {
+        case .task: return "Task"
+        case .bug: return "Bug"
+        case .story: return "Story"
+        case .epic: return "Epic"
+        case .subtask: return "Subtask"
+        }
+    }
+
+    /// SF Symbol name for the type icon.
+    public var iconName: String {
+        switch self {
+        case .task: return "checkmark.circle"
+        case .bug: return "ladybug.fill"
+        case .story: return "book.fill"
+        case .epic: return "bolt.fill"
+        case .subtask: return "arrow.turn.down.right"
+        }
+    }
+
+    /// Hex color string for visual coding.
+    public var colorHex: String {
+        switch self {
+        case .task: return "#4A90D9"    // Blue
+        case .bug: return "#E74C3C"     // Red
+        case .story: return "#2ECC71"   // Green
+        case .epic: return "#9B59B6"    // Purple
+        case .subtask: return "#95A5A6" // Gray
+        }
+    }
+
+    /// Whether this type can have children (subtask support).
+    public var canHaveChildren: Bool {
+        switch self {
+        case .subtask: return false
+        default: return true
+        }
+    }
+}
+
 // MARK: - User Role (RBAC)
 
 /// Defines the access level of a user within an organization.
@@ -115,6 +166,12 @@ public enum Permission: String, Codable, Sendable, CaseIterable {
     case orgSettings     = "org.settings"
     case orgDelete       = "org.delete"
     case auditLogView    = "audit_log.view"
+
+    // Advanced Tasks (Phase 8)
+    case tasksCreateSubtask = "tasks.create_subtask"
+    case tasksChangeType    = "tasks.change_type"
+    case tasksRelate        = "tasks.relate"
+    case tasksManageChecklist = "tasks.manage_checklist"
 }
 
 /// A set of permissions for the current user within an org context.
@@ -143,6 +200,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
         case .manager:
             return PermissionSet(permissions: [
                 .tasksRead, .tasksCreate, .tasksEdit, .tasksDelete, .tasksAssign,
+                .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
                 .membersView, .membersInvite,
                 .projectsCreate, .projectsEdit,
                 .analyticsView, .analyticsExport
@@ -150,6 +208,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
         case .admin:
             return PermissionSet(permissions: [
                 .tasksRead, .tasksCreate, .tasksEdit, .tasksDelete, .tasksAssign,
+                .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
                 .membersView, .membersInvite, .membersManage, .membersRemove,
                 .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
                 .analyticsView, .analyticsExport,

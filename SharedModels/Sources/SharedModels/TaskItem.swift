@@ -10,11 +10,17 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let description: String?
     public let status: TaskStatus
     public let priority: TaskPriority
+    public let taskType: TaskType
+    public let parentId: UUID?
+    public let subtaskCount: Int
+    public let completedSubtaskCount: Int
+    public let storyPoints: Int?
+    public let labels: [String]?
     public let startDate: Date?
     public let dueDate: Date?
     public let assigneeId: UUID?
     public let version: Int
-    public let listId: UUID? // Optional for now during migration
+    public let listId: UUID?
     public let position: Double
     public let archivedAt: Date?
     public let createdAt: Date?
@@ -26,6 +32,12 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         description: String? = nil,
         status: TaskStatus = .todo,
         priority: TaskPriority = .medium,
+        taskType: TaskType = .task,
+        parentId: UUID? = nil,
+        subtaskCount: Int = 0,
+        completedSubtaskCount: Int = 0,
+        storyPoints: Int? = nil,
+        labels: [String]? = nil,
         startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
@@ -41,6 +53,12 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.taskType = taskType
+        self.parentId = parentId
+        self.subtaskCount = subtaskCount
+        self.completedSubtaskCount = completedSubtaskCount
+        self.storyPoints = storyPoints
+        self.labels = labels
         self.startDate = startDate
         self.dueDate = dueDate
         self.assigneeId = assigneeId
@@ -61,6 +79,10 @@ public struct CreateTaskRequest: Codable, Sendable {
     public let description: String?
     public let status: TaskStatus?
     public let priority: TaskPriority?
+    public let taskType: TaskType?
+    public let parentId: UUID?
+    public let storyPoints: Int?
+    public let labels: [String]?
     public let startDate: Date?
     public let dueDate: Date?
     public let assigneeId: UUID?
@@ -71,6 +93,10 @@ public struct CreateTaskRequest: Codable, Sendable {
         description: String? = nil,
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
+        taskType: TaskType? = nil,
+        parentId: UUID? = nil,
+        storyPoints: Int? = nil,
+        labels: [String]? = nil,
         startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
@@ -80,6 +106,10 @@ public struct CreateTaskRequest: Codable, Sendable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.taskType = taskType
+        self.parentId = parentId
+        self.storyPoints = storyPoints
+        self.labels = labels
         self.startDate = startDate
         self.dueDate = dueDate
         self.assigneeId = assigneeId
@@ -93,6 +123,9 @@ public struct UpdateTaskRequest: Codable, Sendable {
     public let description: String?
     public let status: TaskStatus?
     public let priority: TaskPriority?
+    public let taskType: TaskType?
+    public let storyPoints: Int?
+    public let labels: [String]?
     public let startDate: Date?
     public let dueDate: Date?
     public let assigneeId: UUID?
@@ -106,6 +139,9 @@ public struct UpdateTaskRequest: Codable, Sendable {
         description: String? = nil,
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
+        taskType: TaskType? = nil,
+        storyPoints: Int? = nil,
+        labels: [String]? = nil,
         startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
@@ -118,6 +154,9 @@ public struct UpdateTaskRequest: Codable, Sendable {
         self.description = description
         self.status = status
         self.priority = priority
+        self.taskType = taskType
+        self.storyPoints = storyPoints
+        self.labels = labels
         self.startDate = startDate
         self.dueDate = dueDate
         self.assigneeId = assigneeId

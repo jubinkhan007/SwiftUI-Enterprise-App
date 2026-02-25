@@ -75,7 +75,7 @@ public struct DashboardView: View {
                     ) {
                         viewModel.filterStatus = nil
                     }
-                    
+
                     ForEach(TaskStatus.allCases, id: \.self) { status in
                         FilterChip(
                             title: status.displayName,
@@ -84,18 +84,34 @@ public struct DashboardView: View {
                             viewModel.filterStatus = status
                         }
                     }
-                    
+
                     Divider().frame(height: 20)
-                    
+
                     ForEach(TaskPriority.allCases, id: \.self) { priority in
                         FilterChip(
                             title: priority.displayName,
                             isSelected: viewModel.filterPriority == priority
                         ) {
                             if viewModel.filterPriority == priority {
-                                viewModel.filterPriority = nil // Toggle off
+                                viewModel.filterPriority = nil
                             } else {
                                 viewModel.filterPriority = priority
+                            }
+                        }
+                    }
+
+                    Divider().frame(height: 20)
+
+                    ForEach(TaskType.allCases, id: \.self) { type in
+                        FilterChipWithIcon(
+                            title: type.displayName,
+                            iconName: type.iconName,
+                            isSelected: viewModel.filterTaskType == type
+                        ) {
+                            if viewModel.filterTaskType == type {
+                                viewModel.filterTaskType = nil
+                            } else {
+                                viewModel.filterTaskType = type
                             }
                         }
                     }
@@ -144,7 +160,7 @@ struct FilterChip: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -159,6 +175,34 @@ struct FilterChip: View {
                     Capsule()
                         .stroke(isSelected ? Color.clear : AppColors.borderDefault, lineWidth: 1)
                 )
+        }
+    }
+}
+
+struct FilterChipWithIcon: View {
+    let title: String
+    let iconName: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: iconName)
+                    .font(.caption)
+                Text(title)
+                    .appFont(AppTypography.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.xs)
+            .background(isSelected ? AppColors.brandPrimary : AppColors.surfaceElevated)
+            .foregroundColor(isSelected ? .white : AppColors.textPrimary)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(isSelected ? Color.clear : AppColors.borderDefault, lineWidth: 1)
+            )
         }
     }
 }

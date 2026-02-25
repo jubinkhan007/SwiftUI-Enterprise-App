@@ -30,6 +30,9 @@ func configure(_ app: Application) throws {
     app.migrations.add(AddTaskListHierarchy())
     app.migrations.add(BackfillTasksToDefaultHierarchies())
     app.migrations.add(EnforceTaskListIdOnTasks())
+    app.migrations.add(AddAdvancedTaskFields())
+    app.migrations.add(CreateTaskRelation())
+    app.migrations.add(CreateChecklistItem())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

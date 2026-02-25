@@ -37,3 +37,11 @@ extension CreateOrganizationRequest: @retroactive Content {}
 extension CreateInviteRequest: @retroactive Content {}
 extension UpdateMemberRoleRequest: @retroactive Content {}
 extension AuditLogDTO: @retroactive Content {}
+
+// Phase 8 types
+extension TaskRelationDTO: @retroactive Content {}
+extension ChecklistItemDTO: @retroactive Content {}
+extension CreateRelationRequest: @retroactive Content {}
+extension CreateChecklistItemRequest: @retroactive Content {}
+extension UpdateChecklistItemRequest: @retroactive Content {}
+extension ReorderChecklistRequest: @retroactive Content {}

@@ -23,7 +23,7 @@ public struct SidebarView: View {
             
             if viewModel.isLoading && viewModel.areas.isEmpty {
                 Section {
-                    LoadingView()
+                    ProgressView()
                 }
             }
             
