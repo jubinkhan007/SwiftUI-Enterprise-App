@@ -13,4 +13,7 @@ public protocol TaskRepositoryProtocol: Sendable {
     
     /// Delete a task.
     func deleteTask(id: UUID) async throws
+    
+    /// Atomically move multiple tasks (used for board drag & drop).
+    func moveMultiple(payload: BulkMoveTaskRequest) async throws -> [TaskItemDTO]
 }

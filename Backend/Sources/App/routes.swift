@@ -23,6 +23,9 @@ func routes(_ app: Application) throws {
     
     let hierarchyController = HierarchyController()
     try orgScopedAPI.register(collection: hierarchyController)
+    
+    let viewConfigController = ViewConfigController()
+    try authenticatedAPI.register(collection: viewConfigController)
 
     let organizationController = OrganizationController()
     try authenticatedAPI.register(collection: organizationController)

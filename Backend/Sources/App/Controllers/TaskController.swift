@@ -19,6 +19,8 @@ struct TaskController: RouteCollection {
         task.put(use: update)
         task.patch("move", use: move)
         task.delete(use: delete)
+
+        tasks.post("move-multiple", use: moveMultiple)
         task.get("activity", use: getActivities)
         task.post("comments", use: createComment)
 
@@ -45,58 +47,21 @@ struct TaskController: RouteCollection {
 
     @Sendable
     func index(req: Request) async throws -> APIResponse<[TaskItemDTO]> {
-        let includeArchived = (try? req.query.get(Bool.self, at: "include_archived")) ?? false
         let page = (try? req.query.get(Int.self, at: "page")) ?? 1
         let perPage = min((try? req.query.get(Int.self, at: "per_page")) ?? 20, 100)
-        let statusFilter: TaskStatus? = try? req.query.get(TaskStatus.self, at: "status")
-        let priorityFilter: TaskPriority? = try? req.query.get(TaskPriority.self, at: "priority")
-        let taskTypeFilter: TaskType? = try? req.query.get(TaskType.self, at: "task_type")
-        let parentIdFilter: UUID? = try? req.query.get(UUID.self, at: "parent_id")
-        let includeSubtasks = (try? req.query.get(Bool.self, at: "include_subtasks")) ?? false
-
-        let spaceId: UUID? = try? req.query.get(UUID.self, at: "space_id")
-        let projectId: UUID? = try? req.query.get(UUID.self, at: "project_id")
-        let listId: UUID? = try? req.query.get(UUID.self, at: "list_id")
-
         let ctx = try req.orgContext
+        
+        let parsedQuery = TaskQueryParser.parse(from: req)
+
         var query = TaskItemModel.query(on: req.db)
             .filter(\.$organization.$id == ctx.orgId)
 
-        if let status = statusFilter {
-            query = query.filter(\.$status == status)
-        }
-        if let priority = priorityFilter {
-            query = query.filter(\.$priority == priority)
-        }
-        if let taskType = taskTypeFilter {
-            query = query.filter(\.$taskType == taskType)
-        }
-        if let parentId = parentIdFilter {
-            query = query.filter(\.$parent.$id == parentId)
-        } else if !includeSubtasks {
-            // By default, top-level view excludes subtasks (tasks with a parent)
-            query = query.filter(\.$parent.$id == nil)
-        }
-
-        if let listId = listId {
-            query = query.filter(\.$list.$id == listId)
-        } else if let projectId = projectId {
-            query = query.join(TaskListModel.self, on: \TaskItemModel.$list.$id == \TaskListModel.$id)
-                .filter(TaskListModel.self, \.$project.$id == projectId)
-        } else if let spaceId = spaceId {
-            query = query.join(TaskListModel.self, on: \TaskItemModel.$list.$id == \TaskListModel.$id)
-                .join(ProjectModel.self, on: \TaskListModel.$project.$id == \ProjectModel.$id)
-                .filter(ProjectModel.self, \.$space.$id == spaceId)
-        }
-
-        if !includeArchived {
-            query = query.filter(\.$archivedAt == nil)
-        }
+        query = TaskQueryApplier.applyFilters(parsedQuery, to: query)
+        query = TaskQueryApplier.applySorts(parsedQuery, to: query)
 
         let total = try await query.count()
 
         let taskModels = try await query
-            .sort(\.$createdAt, .descending)
             .range(((page - 1) * perPage)..<(page * perPage))
             .all()
 
@@ -352,6 +317,89 @@ struct TaskController: RouteCollection {
         }
 
         return .success(task.toDTO())
+    }
+
+    // MARK: - POST /api/tasks/move-multiple
+
+    @Sendable
+    func moveMultiple(req: Request) async throws -> APIResponse<[TaskItemDTO]> {
+        let ctx = try req.orgContext
+        let payload = try req.content.decode(BulkMoveTaskRequest.self)
+        
+        guard !payload.moves.isEmpty else {
+            return .success([]) // Nothing to do
+        }
+        
+        let taskIds = payload.moves.map { $0.taskId }
+        
+        // Fetch all involved tasks and verify org ownership
+        let tasks = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id ~~ taskIds)
+            .filter(\.$organization.$id == ctx.orgId)
+            .all()
+            
+        guard tasks.count == taskIds.count else {
+            throw Abort(.notFound, reason: "One or more tasks not found in this organization.")
+        }
+        
+        // If changing list, verify list ownership
+        if let targetListId = payload.targetListId {
+            let listExists = try await TaskListModel.query(on: req.db)
+                .filter(\.$id == targetListId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .first()?.project.space.$organization.id == ctx.orgId
+
+            guard listExists else {
+                throw Abort(.notFound, reason: "Target list not found in this organization.")
+            }
+        }
+        
+        // Use a dictionary for O(1) lookups during the update loop
+        let taskMap = Dictionary(uniqueKeysWithValues: tasks.compactMap { task -> (UUID, TaskItemModel)? in
+            guard let id = task.id else { return nil }
+            return (id, task)
+        })
+        
+        var activities: [TaskActivityModel] = []
+        
+        try await req.db.transaction { db in
+            for moveAction in payload.moves {
+                guard let task = taskMap[moveAction.taskId] else { continue }
+                
+                var movedList = false
+                var changedStatus = false
+                
+                if let targetListId = payload.targetListId, task.$list.id != targetListId {
+                    task.$list.id = targetListId
+                    movedList = true
+                }
+                
+                if let targetStatus = payload.targetStatus, task.status != targetStatus {
+                    let md = ["from": task.status.rawValue, "to": targetStatus.rawValue]
+                    activities.append(TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .statusChanged, metadata: md))
+                    task.status = targetStatus
+                    changedStatus = true
+                }
+                
+                task.position = moveAction.newPosition
+                task.version += 1
+                try await task.save(on: db)
+                
+                if movedList || changedStatus {
+                    var md: [String: String] = [:]
+                    if movedList { md["to_list"] = payload.targetListId?.uuidString }
+                    md["position"] = String(moveAction.newPosition)
+                    activities.append(TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .moved, metadata: md))
+                }
+            }
+            
+            for activity in activities {
+                try await activity.save(on: db)
+            }
+        }
+        
+        let dtos = try await withSubtaskCounts(tasks: tasks, db: req.db)
+        return .success(dtos)
     }
 
     // MARK: - DELETE /api/tasks/:taskID

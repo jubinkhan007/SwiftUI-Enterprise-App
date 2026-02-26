@@ -177,3 +177,27 @@ public struct MoveTaskRequest: Codable, Sendable {
         self.position = position
     }
 }
+
+/// A specific move instruction for a single task within a bulk move operation.
+public struct TaskMoveAction: Codable, Sendable {
+    public let taskId: UUID
+    public let newPosition: Double
+
+    public init(taskId: UUID, newPosition: Double) {
+        self.taskId = taskId
+        self.newPosition = newPosition
+    }
+}
+
+/// Payload for atomically moving multiple tasks (e.g. reordering a Kanban column).
+public struct BulkMoveTaskRequest: Codable, Sendable {
+    public let targetListId: UUID?
+    public let targetStatus: TaskStatus?
+    public let moves: [TaskMoveAction]
+
+    public init(targetListId: UUID? = nil, targetStatus: TaskStatus? = nil, moves: [TaskMoveAction]) {
+        self.targetListId = targetListId
+        self.targetStatus = targetStatus
+        self.moves = moves
+    }
+}

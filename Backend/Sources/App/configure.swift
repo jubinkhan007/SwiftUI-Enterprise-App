@@ -33,6 +33,8 @@ func configure(_ app: Application) throws {
     app.migrations.add(AddAdvancedTaskFields())
     app.migrations.add(CreateTaskRelation())
     app.migrations.add(CreateChecklistItem())
+    app.migrations.add(CreateViewConfig())
+    app.migrations.add(AddViewIndexes())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

@@ -9,6 +9,7 @@ public enum TaskEndpoint {
     case updateTask(id: UUID, payload: UpdateTaskRequest, configuration: APIConfiguration)
     case deleteTask(id: UUID, configuration: APIConfiguration)
     case moveTask(id: UUID, payload: MoveTaskRequest, configuration: APIConfiguration)
+    case moveMultiple(payload: BulkMoveTaskRequest, configuration: APIConfiguration)
     case getActivity(taskId: UUID, configuration: APIConfiguration)
     case createComment(taskId: UUID, payload: CreateCommentRequest, configuration: APIConfiguration)
 
@@ -37,6 +38,7 @@ extension TaskEndpoint: APIEndpoint {
         switch self {
         case .getTasks(_, let c), .getTask(_, let c), .createTask(_, let c),
              .updateTask(_, _, let c), .deleteTask(_, let c), .moveTask(_, _, let c),
+             .moveMultiple(_, let c),
              .getActivity(_, let c), .createComment(_, _, let c),
              .getSubtasks(_, _, let c),
              .getRelations(_, let c), .createRelation(_, _, let c), .deleteRelation(_, _, let c),
@@ -55,6 +57,8 @@ extension TaskEndpoint: APIEndpoint {
             return "/api/tasks/\(id.uuidString)"
         case .moveTask(let id, _, _):
             return "/api/tasks/\(id.uuidString)/move"
+        case .moveMultiple:
+            return "/api/tasks/move-multiple"
         case .getActivity(let taskId, _):
             return "/api/tasks/\(taskId.uuidString)/activity"
         case .createComment(let taskId, _, _):
@@ -78,7 +82,7 @@ extension TaskEndpoint: APIEndpoint {
         switch self {
         case .getTasks, .getTask, .getActivity, .getSubtasks, .getRelations, .getChecklist:
             return .get
-        case .createTask, .createComment, .createRelation, .createChecklistItem:
+        case .createTask, .createComment, .createRelation, .createChecklistItem, .moveMultiple:
             return .post
         case .updateTask:
             return .put
@@ -131,6 +135,8 @@ extension TaskEndpoint: APIEndpoint {
         case .updateTask(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .moveTask(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .moveMultiple(let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .createComment(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)

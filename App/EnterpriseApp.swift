@@ -47,6 +47,7 @@ struct EnterpriseApp: App {
 
 struct AuthenticatedRootView: View {
     let session: Domain.AuthSession
+    let authManager: AppData.AuthManager
     let selectedOrg: OrganizationDTO
     let viewModel: DashboardViewModel
     @StateObject private var sidebarViewModel: SidebarViewModel

@@ -2,9 +2,16 @@ import SwiftUI
 import SharedModels
 import DesignSystem
 
+public enum DashboardViewType: String, CaseIterable, Identifiable {
+    case list = "List"
+    case board = "Board"
+    public var id: String { self.rawValue }
+}
+
 public struct DashboardView: View {
     @StateObject private var viewModel: DashboardViewModel
     @State private var showingCreateTask = false
+    @State private var viewType: DashboardViewType = .list
     
     public init(viewModel: DashboardViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -29,12 +36,26 @@ public struct DashboardView: View {
                     } else if viewModel.tasks.isEmpty {
                         EmptyStateView(title: "No Tasks Found", message: "Try adjusting your search or filters.")
                     } else {
-                        taskList
+                        if viewType == .list {
+                            taskList
+                        } else {
+                            BoardView(tasks: viewModel.tasks, repository: viewModel.taskRepository)
+                        }
                     }
                 }
             }
             .navigationTitle("Tasks")
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("View", selection: $viewType) {
+                        ForEach(DashboardViewType.allCases) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
+                }
+                
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { showingCreateTask = true }) {
                         Image(systemName: "plus")

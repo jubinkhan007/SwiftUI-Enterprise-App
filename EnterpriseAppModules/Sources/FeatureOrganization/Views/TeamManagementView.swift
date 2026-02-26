@@ -437,7 +437,8 @@ public struct TeamManagementView: View {
         case .owner: return AppColors.statusError
         case .admin: return AppColors.statusWarning
         case .manager: return AppColors.brandPrimary
-        case .member: return AppColors.statusSuccess
+        case .member: return AppColors.textSecondary
+        case .viewer: return AppColors.textTertiary
         case .guest: return AppColors.textTertiary
         }
     }

@@ -139,6 +139,52 @@ public final class TaskRepository: TaskRepositoryProtocol {
             throw error
         }
     }
+
+    public func moveMultiple(payload: BulkMoveTaskRequest) async throws -> [TaskItemDTO] {
+        // Optimistic local update involves fetching all tasks and applying moves
+        let localTasks = try await localStore.getTasks(query: TaskQuery()) // Simple fetch to get tasks in memory, optimized in real app
+        var updatedDTOs = [TaskItemDTO]()
+        
+        for moveAction in payload.moves {
+            if let task = try await localStore.getTask(id: moveAction.taskId) {
+                if let targetListId = payload.targetListId {
+                    task.listId = targetListId
+                }
+                if let targetStatus = payload.targetStatus {
+                    task.statusRawValue = targetStatus.rawValue
+                }
+                task.position = moveAction.newPosition
+                task.isPendingSync = true
+                try await localStore.save(task: task)
+                updatedDTOs.append(task.toDTO())
+            }
+        }
+        
+        do {
+            let endpoint = TaskEndpoint.moveMultiple(payload: payload, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<[TaskItemDTO]>.self)
+            guard let data = response.data else { throw NetworkError.underlying("No data") }
+            
+            // Sync confirmed server changes
+            for dto in data {
+                if let localTask = try await localStore.getTask(id: dto.id) {
+                    await MainActor.run {
+                        localTask.update(from: dto)
+                    }
+                    try await localStore.save(task: localTask)
+                }
+            }
+            return data
+            
+        } catch let error as NetworkError {
+            if error == .offline {
+                // In an advanced scenario, queue the bulk operation or individual moves
+                // For MVP offline bulk move, we'll return the optimistic DTOs
+                return updatedDTOs
+            }
+            throw error
+        }
+    }
     
     public func deleteTask(id: UUID) async throws {
         // Mark for deletion but keep it around for the SyncQueue to try

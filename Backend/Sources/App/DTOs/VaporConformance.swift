@@ -45,3 +45,8 @@ extension CreateRelationRequest: @retroactive Content {}
 extension CreateChecklistItemRequest: @retroactive Content {}
 extension UpdateChecklistItemRequest: @retroactive Content {}
 extension ReorderChecklistRequest: @retroactive Content {}
+
+// View Config types
+extension ViewConfigDTO: @retroactive Content {}
+extension CreateViewConfigRequest: @retroactive Content {}
+extension UpdateViewConfigRequest: @retroactive Content {}

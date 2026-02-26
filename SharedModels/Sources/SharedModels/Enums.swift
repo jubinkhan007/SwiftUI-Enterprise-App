@@ -107,6 +107,7 @@ public enum TaskType: String, Codable, CaseIterable, Sendable {
 /// Ordered from least to most privileged.
 public enum UserRole: String, Codable, CaseIterable, Sendable {
     case guest
+    case viewer
     case member
     case manager
     case admin
@@ -115,6 +116,7 @@ public enum UserRole: String, Codable, CaseIterable, Sendable {
     public var displayName: String {
         switch self {
         case .guest: return "Guest"
+        case .viewer: return "Viewer"
         case .member: return "Member"
         case .manager: return "Manager"
         case .admin: return "Admin"
@@ -126,10 +128,11 @@ public enum UserRole: String, Codable, CaseIterable, Sendable {
     public var privilegeLevel: Int {
         switch self {
         case .guest: return 0
-        case .member: return 1
-        case .manager: return 2
-        case .admin: return 3
-        case .owner: return 4
+        case .viewer: return 1
+        case .member: return 2
+        case .manager: return 3
+        case .admin: return 4
+        case .owner: return 5
         }
     }
 }
@@ -153,6 +156,7 @@ public enum Permission: String, Codable, Sendable, CaseIterable {
     case membersRemove   = "members.remove"
 
     // Projects (future, but define now)
+    case projectsRead    = "projects.read"
     case projectsCreate  = "projects.create"
     case projectsEdit    = "projects.edit"
     case projectsDelete  = "projects.delete"
@@ -172,6 +176,13 @@ public enum Permission: String, Codable, Sendable, CaseIterable {
     case tasksChangeType    = "tasks.change_type"
     case tasksRelate        = "tasks.relate"
     case tasksManageChecklist = "tasks.manage_checklist"
+
+    // Views (Phase 9)
+    case viewsCreate     = "views.create"
+    case viewsUpdate     = "views.update"
+    case viewsDelete     = "views.delete"
+    case viewsShare      = "views.share"
+    case viewsSetDefault = "views.set_default"
 }
 
 /// A set of permissions for the current user within an org context.
@@ -192,15 +203,23 @@ public struct PermissionSet: Codable, Sendable, Equatable {
         switch role {
         case .guest:
             return PermissionSet(permissions: [.tasksRead, .membersView])
+        case .viewer:
+            return PermissionSet(permissions: [
+                .tasksRead, .membersView, .projectsRead, .analyticsView
+            ])
         case .member:
             return PermissionSet(permissions: [
                 .tasksRead, .tasksCreate, .tasksEdit, .tasksAssign,
-                .membersView, .analyticsView
+                .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
+                .viewsCreate, .viewsUpdate, .viewsDelete,
+                .membersView,
+                .projectsRead
             ])
         case .manager:
             return PermissionSet(permissions: [
                 .tasksRead, .tasksCreate, .tasksEdit, .tasksDelete, .tasksAssign,
                 .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
+                .viewsCreate, .viewsUpdate, .viewsDelete, .viewsShare, .viewsSetDefault,
                 .membersView, .membersInvite,
                 .projectsCreate, .projectsEdit,
                 .analyticsView, .analyticsExport
@@ -209,6 +228,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
             return PermissionSet(permissions: [
                 .tasksRead, .tasksCreate, .tasksEdit, .tasksDelete, .tasksAssign,
                 .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
+                .viewsCreate, .viewsUpdate, .viewsDelete, .viewsShare, .viewsSetDefault,
                 .membersView, .membersInvite, .membersManage, .membersRemove,
                 .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
                 .analyticsView, .analyticsExport,
