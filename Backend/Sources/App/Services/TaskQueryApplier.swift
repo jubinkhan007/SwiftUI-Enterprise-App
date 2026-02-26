@@ -91,6 +91,22 @@ struct TaskQueryApplier {
                     q = q.filter(\.$startDate <= t)
                 }
 
+            case .dateOverlap(let from, let to):
+                q = q.group(.or) { or in
+                    // Case 1: Standard intersection [startDate, dueDate] intersects [from, to]
+                    or.group(.and) { and in
+                        and.filter(\.$startDate <= to).filter(\.$dueDate >= from)
+                    }
+                    // Case 2: Milestone (only dueDate) falls in [from, to]
+                    or.group(.and) { and in
+                        and.filter(\.$startDate == nil).filter(\.$dueDate >= from).filter(\.$dueDate <= to)
+                    }
+                    // Case 3: Open-ended start (only startDate) falls in [from, to]
+                    or.group(.and) { and in
+                        and.filter(\.$dueDate == nil).filter(\.$startDate >= from).filter(\.$startDate <= to)
+                    }
+                }
+
             case .archived(let flag):
                 if flag {
                     // Do nothing, includes archived

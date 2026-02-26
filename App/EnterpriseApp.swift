@@ -3,6 +3,7 @@ import SwiftData
 import FeatureAuth
 import FeatureOrganization
 import FeatureDashboard
+import DesignSystem
 import AppNetwork
 import AppData
 import Domain
@@ -46,6 +47,7 @@ struct EnterpriseApp: App {
 }
 
 struct AuthenticatedRootView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let session: Domain.AuthSession
     let authManager: AppData.AuthManager
     let selectedOrg: OrganizationDTO
@@ -53,6 +55,8 @@ struct AuthenticatedRootView: View {
     @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
     @State private var showTeamManagement = false
+    @State private var showingCreateTask = false
+    @State private var viewType: DashboardViewType = .list
     
     init(session: Domain.AuthSession, authManager: AppData.AuthManager, selectedOrg: OrganizationDTO, modelContainer: ModelContainer) {
         self.session = session
@@ -67,7 +71,8 @@ struct AuthenticatedRootView: View {
             localStore: localStore,
             syncQueue: syncQueue
         )
-        self.viewModel = DashboardViewModel(taskRepository: taskRepository)
+        let activityRepository = TaskActivityRepository(apiClient: apiClient)
+        self.viewModel = DashboardViewModel(taskRepository: taskRepository, activityRepository: activityRepository)
         
         let hierarchyRepo = HierarchyRepository(apiClient: apiClient)
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
@@ -83,12 +88,47 @@ struct AuthenticatedRootView: View {
             SidebarView(viewModel: sidebarViewModel)
         } detail: {
             NavigationStack {
-                DashboardView(viewModel: viewModel)
-                    .toolbar {
+                VStack(spacing: 0) {
+                    if horizontalSizeClass == .compact {
+                        compactHeaderControls
+                    }
+
+                    DashboardView(viewModel: viewModel, viewType: $viewType)
+                }
+                .navigationTitle("Tasks")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        personMenu
+                    }
+
+                    if horizontalSizeClass != .compact {
                         ToolbarItem(placement: .principal) {
-                            WorkspaceSwitcherView(viewModel: orgGateViewModel)
+                            HStack(spacing: AppSpacing.sm) {
+                                WorkspaceSwitcherView(viewModel: orgGateViewModel)
+
+                                Picker("View", selection: $viewType) {
+                                    ForEach(DashboardViewType.allCases) { type in
+                                        Text(type.rawValue).tag(type)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 150)
+                            }
                         }
-                        ToolbarItem(placement: .primaryAction) {
+                    }
+
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showingCreateTask = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .appFont(AppTypography.headline)
+                                .foregroundColor(AppColors.brandPrimary)
+                        }
+                    }
+
+                    if horizontalSizeClass != .compact {
+                        ToolbarItem(placement: .topBarTrailing) {
                             Button {
                                 showTeamManagement = true
                             } label: {
@@ -96,20 +136,30 @@ struct AuthenticatedRootView: View {
                                     .font(.subheadline)
                             }
                         }
-                        ToolbarItem(placement: .cancellationAction) {
-                            personMenu
-                        }
                     }
-                    .sheet(isPresented: $showTeamManagement) {
-                        TeamManagementView(orgId: selectedOrg.id)
+                }
+                .sheet(isPresented: $showTeamManagement) {
+                    TeamManagementView(orgId: selectedOrg.id)
+                }
+                .sheet(isPresented: $showingCreateTask) {
+                    CreateTaskSheet(
+                        viewModel: CreateTaskViewModel(taskRepository: viewModel.taskRepository, listId: viewModel.query.listId),
+                        hierarchy: sidebarViewModel.areas
+                    ) {
+                        Task { await viewModel.refresh() }
                     }
+                    .presentationDetents([.medium, .large])
+                }
             }
         }
         .onChange(of: sidebarViewModel.selectedArea) { oldValue, newValue in
-            viewModel.handleSidebarSelection(newValue)
+            viewModel.handleSidebarSelection(newValue, viewType: viewType)
         }
         .task {
             await orgGateViewModel.fetchOrganizations()
+            if sidebarViewModel.areas.isEmpty {
+                await sidebarViewModel.fetchHierarchy()
+            }
         }
     }
     
@@ -132,5 +182,25 @@ struct AuthenticatedRootView: View {
             Image(systemName: "person.circle")
                 .font(.title3)
         }
+    }
+
+    private var compactHeaderControls: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack {
+                WorkspaceSwitcherView(viewModel: orgGateViewModel)
+                Spacer(minLength: 0)
+            }
+
+            Picker("View", selection: $viewType) {
+                ForEach(DashboardViewType.allCases) { type in
+                    Text(type.rawValue).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal)
+        .padding(.top, AppSpacing.xs)
+        .padding(.bottom, AppSpacing.sm)
+        .background(AppColors.backgroundPrimary)
     }
 }

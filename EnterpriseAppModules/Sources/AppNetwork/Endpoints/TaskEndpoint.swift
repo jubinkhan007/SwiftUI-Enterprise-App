@@ -4,9 +4,13 @@ import SharedModels
 public enum TaskEndpoint {
     // Core CRUD
     case getTasks(query: TaskQuery, configuration: APIConfiguration)
+    case getAssignedTasks(query: TaskQuery, configuration: APIConfiguration)
+    case getCalendarTasks(query: TaskQuery, configuration: APIConfiguration)
+    case getTimeline(query: TaskQuery, configuration: APIConfiguration)
     case getTask(id: UUID, configuration: APIConfiguration)
     case createTask(payload: CreateTaskRequest, configuration: APIConfiguration)
     case updateTask(id: UUID, payload: UpdateTaskRequest, configuration: APIConfiguration)
+    case partialUpdateTask(id: UUID, payload: UpdateTaskRequest, configuration: APIConfiguration)
     case deleteTask(id: UUID, configuration: APIConfiguration)
     case moveTask(id: UUID, payload: MoveTaskRequest, configuration: APIConfiguration)
     case moveMultiple(payload: BulkMoveTaskRequest, configuration: APIConfiguration)
@@ -36,8 +40,8 @@ extension TaskEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .getTasks(_, let c), .getTask(_, let c), .createTask(_, let c),
-             .updateTask(_, _, let c), .deleteTask(_, let c), .moveTask(_, _, let c),
+        case .getTasks(_, let c), .getAssignedTasks(_, let c), .getCalendarTasks(_, let c), .getTimeline(_, let c), .getTask(_, let c), .createTask(_, let c),
+             .updateTask(_, _, let c), .partialUpdateTask(_, _, let c), .deleteTask(_, let c), .moveTask(_, _, let c),
              .moveMultiple(_, let c),
              .getActivity(_, let c), .createComment(_, _, let c),
              .getSubtasks(_, _, let c),
@@ -53,7 +57,13 @@ extension TaskEndpoint: APIEndpoint {
         switch self {
         case .getTasks, .createTask:
             return "/api/tasks"
-        case .getTask(let id, _), .updateTask(let id, _, _), .deleteTask(let id, _):
+        case .getAssignedTasks:
+            return "/api/tasks/assigned"
+        case .getCalendarTasks:
+            return "/api/tasks/calendar"
+        case .getTimeline:
+            return "/api/tasks/timeline"
+        case .getTask(let id, _), .updateTask(let id, _, _), .partialUpdateTask(let id, _, _), .deleteTask(let id, _):
             return "/api/tasks/\(id.uuidString)"
         case .moveTask(let id, _, _):
             return "/api/tasks/\(id.uuidString)/move"
@@ -80,13 +90,13 @@ extension TaskEndpoint: APIEndpoint {
 
     public var method: HTTPMethod {
         switch self {
-        case .getTasks, .getTask, .getActivity, .getSubtasks, .getRelations, .getChecklist:
+        case .getTasks, .getAssignedTasks, .getCalendarTasks, .getTimeline, .getTask, .getActivity, .getSubtasks, .getRelations, .getChecklist:
             return .get
         case .createTask, .createComment, .createRelation, .createChecklistItem, .moveMultiple:
             return .post
         case .updateTask:
             return .put
-        case .moveTask, .updateChecklistItem, .reorderChecklist:
+        case .partialUpdateTask, .moveTask, .updateChecklistItem, .reorderChecklist:
             return .patch
         case .deleteTask, .deleteRelation, .deleteChecklistItem:
             return .delete
@@ -95,12 +105,13 @@ extension TaskEndpoint: APIEndpoint {
 
     public var queryParameters: [String: String]? {
         switch self {
-        case .getTasks(let query, _):
+        case .getTasks(let query, _), .getAssignedTasks(let query, _), .getCalendarTasks(let query, _), .getTimeline(let query, _):
             var params: [String: String] = [
                 "page": "\(query.page)",
                 "per_page": "\(query.perPage)",
                 "include_subtasks": query.includeSubtasks ? "true" : "false"
             ]
+            if let cursor = query.cursor { params["cursor"] = cursor }
             if let status = query.status { params["status"] = status.rawValue }
             if let priority = query.priority { params["priority"] = priority.rawValue }
             if let taskType = query.taskType { params["task_type"] = taskType.rawValue }
@@ -109,6 +120,8 @@ extension TaskEndpoint: APIEndpoint {
             if let spaceId = query.spaceId { params["space_id"] = spaceId.uuidString }
             if let projectId = query.projectId { params["project_id"] = projectId.uuidString }
             if let listId = query.listId { params["list_id"] = listId.uuidString }
+            if let from = query.from { params["from"] = ISO8601DateFormatter().string(from: from) }
+            if let to = query.to { params["to"] = ISO8601DateFormatter().string(from: to) }
             return params
         case .getSubtasks(_, let page, _):
             return ["page": "\(page)", "per_page": "50"]
@@ -133,6 +146,8 @@ extension TaskEndpoint: APIEndpoint {
         case .createTask(let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .updateTask(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .partialUpdateTask(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .moveTask(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)

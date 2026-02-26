@@ -4,6 +4,7 @@ import SharedModels
 
 public struct SidebarView: View {
     @ObservedObject var viewModel: SidebarViewModel
+    @State private var showingCreateSheet = false
     
     public init(viewModel: SidebarViewModel) {
         self.viewModel = viewModel
@@ -14,6 +15,10 @@ public struct SidebarView: View {
             Section("Navigation") {
                 NavigationLink(value: SidebarViewModel.SidebarItem.allTasks) {
                     Label("All Tasks", systemImage: "tray.2.fill")
+                }
+
+                NavigationLink(value: SidebarViewModel.SidebarItem.myTasks) {
+                    Label("My Tasks", systemImage: "person.fill")
                 }
                 
                 NavigationLink(value: SidebarViewModel.SidebarItem.inbox) {
@@ -58,6 +63,21 @@ public struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .navigationTitle("Workspace")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingCreateSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .foregroundColor(AppColors.brandPrimary)
+                }
+                .accessibilityLabel("Create Team, Project, or List")
+            }
+        }
+        .sheet(isPresented: $showingCreateSheet) {
+            CreateHierarchyItemSheet(viewModel: viewModel)
+                .presentationDetents([.medium, .large])
+        }
         .refreshable {
             await viewModel.fetchHierarchy()
         }

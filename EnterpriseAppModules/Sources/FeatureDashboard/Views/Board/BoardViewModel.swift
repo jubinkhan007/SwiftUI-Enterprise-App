@@ -79,6 +79,12 @@ public final class BoardViewModel: ObservableObject {
         // Find the current representation of the task
         guard let originalTask = allTasks.first(where: { $0.id == taskId }) else { return }
         let originalColumnId = groupKey(for: originalTask)
+
+        // Only status grouping supports cross-column moves right now (BulkMoveTaskRequest targets status).
+        // Other groupings can still reorder within the same column.
+        if config.groupBy != .status, originalColumnId != targetColumnId {
+            return
+        }
         
         // Rebuild columns with optimistic update
         var updatedColumns = columns

@@ -27,7 +27,7 @@ public final class CreateTaskViewModel: ObservableObject {
     @Published public var isSuccess = false
 
     public var isValid: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && listId != nil
     }
 
     /// Parsed story points — nil if field is empty or invalid.

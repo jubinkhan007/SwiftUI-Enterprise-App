@@ -50,3 +50,6 @@ extension ReorderChecklistRequest: @retroactive Content {}
 extension ViewConfigDTO: @retroactive Content {}
 extension CreateViewConfigRequest: @retroactive Content {}
 extension UpdateViewConfigRequest: @retroactive Content {}
+
+// Calendar / Timeline types
+extension TimelineResponseDTO: @retroactive Content {}

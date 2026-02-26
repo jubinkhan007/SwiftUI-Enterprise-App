@@ -13,10 +13,14 @@ struct TaskController: RouteCollection {
 
         tasks.get(use: index)
         tasks.post(use: create)
+        tasks.get("assigned", use: assignedTasks)
+        tasks.get("calendar", use: calendarTasks)
+        tasks.get("timeline", use: timelineTasks)
 
         let task = tasks.grouped(":taskID")
         task.get(use: show)
         task.put(use: update)
+        task.patch(use: partialUpdate)
         task.patch("move", use: move)
         task.delete(use: delete)
 
@@ -56,18 +60,162 @@ struct TaskController: RouteCollection {
         var query = TaskItemModel.query(on: req.db)
             .filter(\.$organization.$id == ctx.orgId)
 
+        let cursor = try? req.query.get(String.self, at: "cursor")
+
+        query = TaskQueryApplier.applyFilters(parsedQuery, to: query)
+
+        // If cursor is provided, we override normal sorting to ensure cursor keyset stability
+        if let cursor = cursor {
+            let parts = cursor.split(separator: ",")
+            if parts.count == 2,
+               let timestamp = Double(parts[0]),
+               let cursorId = UUID(uuidString: String(parts[1])) {
+                let cursorDate = Date(timeIntervalSince1970: timestamp)
+
+                // Keysets: WHERE (updated_at < cursorDate) OR (updated_at == cursorDate AND id < cursorId)
+                query = query.group(.or) { or in
+                    or.filter(\.$updatedAt < cursorDate)
+                    or.group(.and) { and in
+                        and.filter(\.$updatedAt == cursorDate)
+                        and.filter(\.$id < cursorId)
+                    }
+                }
+            }
+            // Force sort by updated_at DESC, id DESC for cursor stability over the whole query
+            // We ignore TaskQueryApplier.applySorts entirely when a cursor is used to prevent sort thrashing.
+            query = query.sort(\.$updatedAt, .descending).sort(\.$id, .descending)
+        } else {
+            // Normal offset pagination fallback with default sorts or specified view sorts
+            query = TaskQueryApplier.applySorts(parsedQuery, to: query)
+        }
+
+        let total = try await query.count()
+
+        let taskModels: [TaskItemModel]
+        if cursor != nil {
+            // Cursor pagination just uses limit, ignoring offset page calculations
+            taskModels = try await query.limit(perPage).all()
+        } else {
+            // Standard offset pagination
+            taskModels = try await query
+                .range(((page - 1) * perPage)..<(page * perPage))
+                .all()
+        }
+
+        let dtos = try await withSubtaskCounts(tasks: taskModels, db: req.db)
+
+        // Generate next cursor based on the last item for continuous pagination
+        var nextCursor: String? = nil
+        if let last = taskModels.last, let updatedAt = last.updatedAt, let id = last.id, taskModels.count == perPage {
+            nextCursor = "\(updatedAt.timeIntervalSince1970),\(id.uuidString)"
+        }
+
+        let pagination = PaginationMeta(page: page, perPage: perPage, total: total, cursor: nextCursor)
+        return .success(dtos, pagination: pagination)
+    }
+
+    // MARK: - GET /api/tasks/assigned
+
+    @Sendable
+    func assignedTasks(req: Request) async throws -> APIResponse<[TaskItemDTO]> {
+        let ctx = try req.orgContext
+        var parsedQuery = try await mergeViewConfig(into: TaskQueryParser.parse(from: req), req: req, ctx: ctx)
+
+        let page = (try? req.query.get(Int.self, at: "page")) ?? 1
+        let perPage = min((try? req.query.get(Int.self, at: "per_page")) ?? 50, 100)
+
+        var query = TaskItemModel.query(on: req.db)
+            .filter(\TaskItemModel.$organization.$id == ctx.orgId)
+            .filter(\TaskItemModel.$assignee.$id == ctx.userId)
+
         query = TaskQueryApplier.applyFilters(parsedQuery, to: query)
         query = TaskQueryApplier.applySorts(parsedQuery, to: query)
 
         let total = try await query.count()
-
-        let taskModels = try await query
-            .range(((page - 1) * perPage)..<(page * perPage))
-            .all()
+        let taskModels = try await query.paginate(PageRequest(page: page, per: perPage)).items
 
         let dtos = try await withSubtaskCounts(tasks: taskModels, db: req.db)
-        let pagination = PaginationMeta(page: page, perPage: perPage, total: total)
-        return .success(dtos, pagination: pagination)
+        return APIResponse(
+            data: dtos,
+            pagination: PaginationMeta(page: page, perPage: perPage, total: total)
+        )
+    }
+
+    // MARK: - Phase 9D: Calendar & Timeline
+
+    @Sendable
+    func calendarTasks(req: Request) async throws -> APIResponse<[TaskItemDTO]> {
+        let ctx = try req.orgContext
+        var parsedQuery = try await mergeViewConfig(into: TaskQueryParser.parse(from: req), req: req, ctx: ctx)
+
+        var query = TaskItemModel.query(on: req.db)
+            .filter(\TaskItemModel.$organization.$id == ctx.orgId)
+
+        query = TaskQueryApplier.applyFilters(parsedQuery, to: query)
+        query = TaskQueryApplier.applySorts(parsedQuery, to: query)
+
+        let taskModels = try await query.limit(500).all()
+        let dtos = try await withSubtaskCounts(tasks: taskModels, db: req.db)
+        return .success(dtos)
+    }
+
+    @Sendable
+    func timelineTasks(req: Request) async throws -> APIResponse<TimelineResponseDTO> {
+        let ctx = try req.orgContext
+        var parsedQuery = try await mergeViewConfig(into: TaskQueryParser.parse(from: req), req: req, ctx: ctx)
+
+        var query = TaskItemModel.query(on: req.db)
+            .filter(\TaskItemModel.$organization.$id == ctx.orgId)
+
+        query = TaskQueryApplier.applyFilters(parsedQuery, to: query)
+        query = query.sort(\.$startDate, .ascending).sort(\.$id, .ascending)
+
+        let taskModels = try await query.limit(500).all()
+        let taskIds = taskModels.compactMap { $0.id }
+
+        let relations = try await TaskRelationModel.query(on: req.db)
+            .group(.and) { group in
+                group.filter(\.$sourceTask.$id ~~ taskIds)
+                group.filter(\.$targetTask.$id ~~ taskIds)
+            }
+            .all()
+
+        let taskDTOs = try await withSubtaskCounts(tasks: taskModels, db: req.db)
+        let relationDTOs = relations.map { $0.toDTO(viewingTaskId: $0.$sourceTask.id) }
+        return .success(TimelineResponseDTO(tasks: taskDTOs, relations: relationDTOs))
+    }
+
+    // MARK: - Shared helper: merge ViewConfig filters into a ParsedTaskQuery
+
+    /// If `?view_id=<UUID>` is present and accessible, merges its filters/sorts into `base`.
+    private func mergeViewConfig(
+        into base: ParsedTaskQuery,
+        req: Request,
+        ctx: OrgContext
+    ) async throws -> ParsedTaskQuery {
+        guard
+            let viewIdStr = try? req.query.get(String.self, at: "view_id"),
+            let viewId = UUID(uuidString: viewIdStr),
+            let viewConfig = try? await ViewConfigModel.query(on: req.db)
+                .filter(\.$id == viewId)
+                .filter(\.$organization.$id == ctx.orgId)
+                .first(),
+            viewConfig.isPublic || viewConfig.ownerUserId == ctx.userId
+        else {
+            return base
+        }
+
+        let viewParsed = try TaskQueryParser.parse(
+            filtersJson: viewConfig.filtersJson,
+            sortsJson: viewConfig.sortsJson
+        )
+
+        var merged = base
+        merged.filters.append(contentsOf: viewParsed.filters)
+        if !viewParsed.sorts.isEmpty {
+            merged.sorts = viewParsed.sorts
+        }
+        return merged
     }
 
     // MARK: - GET /api/tasks/:taskID
@@ -262,6 +410,99 @@ struct TaskController: RouteCollection {
             task.archivedAt = archivedAt
         }
 
+        task.version += 1
+
+        let finalActivities = activities
+        try await req.db.transaction { db in
+            try await task.save(on: db)
+            for activity in finalActivities {
+                try await activity.save(on: db)
+            }
+        }
+
+        let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
+        return .success(dtos[0])
+    }
+
+    // MARK: - PATCH /api/tasks/:taskID
+    // Partial update bypasses expectedVersion checks to allow rapid inline editing.
+
+    @Sendable
+    func partialUpdate(req: Request) async throws -> APIResponse<TaskItemDTO> {
+        let ctx = try req.orgContext
+        guard let task = try await TaskItemModel.query(on: req.db)
+            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+            .filter(\.$organization.$id == ctx.orgId)
+            .first() else {
+            throw Abort(.notFound, reason: "Task not found in this organization.")
+        }
+
+        let payload = try req.content.decode(UpdateTaskRequest.self)
+
+        // Bypass expectedVersion validation for partialUpdate (inline table edits)
+        // Validate storyPoints range
+        if let sp = payload.storyPoints, !(0...1000).contains(sp) {
+            throw Abort(.badRequest, reason: "Story points must be between 0 and 1000.")
+        }
+
+        // Validate labels count
+        if let labels = payload.labels, labels.count > 20 {
+            throw Abort(.badRequest, reason: "A task can have at most 20 labels.")
+        }
+
+        var activities: [TaskActivityModel] = []
+        let taskId = try task.requireID()
+
+        if let title = payload.title, task.title != title {
+            task.title = title
+        }
+        if let description = payload.description, task.description != description {
+            task.description = description
+        }
+        if let status = payload.status, task.status != status {
+            let metadata = ["from": task.status.rawValue, "to": status.rawValue]
+            activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .statusChanged, metadata: metadata))
+            task.status = status
+        }
+        if let priority = payload.priority, task.priority != priority {
+            let metadata = ["from": task.priority.rawValue, "to": priority.rawValue]
+            activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .priorityChanged, metadata: metadata))
+            task.priority = priority
+        }
+        if let taskType = payload.taskType, task.taskType != taskType {
+            let metadata = ["from": task.taskType.rawValue, "to": taskType.rawValue]
+            activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .typeChanged, metadata: metadata))
+            task.taskType = taskType
+        }
+        if let sp = payload.storyPoints {
+            task.storyPoints = sp
+        }
+        if let labels = payload.labels {
+            task.labels = labels
+        }
+        if let startDate = payload.startDate {
+            task.startDate = startDate
+        }
+        if let dueDate = payload.dueDate {
+            task.dueDate = dueDate
+        }
+        if let assigneeId = payload.assigneeId, task.$assignee.id != assigneeId {
+            let metadata = ["assignee_id": assigneeId.uuidString]
+            activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .assigned, metadata: metadata))
+            task.$assignee.id = assigneeId
+        }
+        if let listId = payload.listId, task.$list.id != listId {
+            activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .moved, metadata: ["to_list": listId.uuidString]))
+            task.$list.id = listId
+        }
+        if let position = payload.position {
+            task.position = position
+        }
+        if let archivedAt = payload.archivedAt {
+            task.archivedAt = archivedAt
+        }
+
+        // Only increment version if there are changes
         task.version += 1
 
         let finalActivities = activities

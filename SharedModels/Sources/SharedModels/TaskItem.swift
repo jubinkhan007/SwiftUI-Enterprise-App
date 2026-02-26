@@ -119,20 +119,20 @@ public struct CreateTaskRequest: Codable, Sendable {
 
 /// Payload for updating an existing task.
 public struct UpdateTaskRequest: Codable, Sendable {
-    public let title: String?
-    public let description: String?
-    public let status: TaskStatus?
-    public let priority: TaskPriority?
-    public let taskType: TaskType?
-    public let storyPoints: Int?
-    public let labels: [String]?
-    public let startDate: Date?
-    public let dueDate: Date?
-    public let assigneeId: UUID?
-    public let listId: UUID?
-    public let position: Double?
-    public let archivedAt: Date?
-    public let expectedVersion: Int
+    public var title: String?
+    public var description: String?
+    public var status: TaskStatus?
+    public var priority: TaskPriority?
+    public var taskType: TaskType?
+    public var storyPoints: Int?
+    public var labels: [String]?
+    public var startDate: Date?
+    public var dueDate: Date?
+    public var assigneeId: UUID?
+    public var listId: UUID?
+    public var position: Double?
+    public var archivedAt: Date?
+    public var expectedVersion: Int?
 
     public init(
         title: String? = nil,
@@ -148,7 +148,7 @@ public struct UpdateTaskRequest: Codable, Sendable {
         listId: UUID? = nil,
         position: Double? = nil,
         archivedAt: Date? = nil,
-        expectedVersion: Int
+        expectedVersion: Int? = nil
     ) {
         self.title = title
         self.description = description

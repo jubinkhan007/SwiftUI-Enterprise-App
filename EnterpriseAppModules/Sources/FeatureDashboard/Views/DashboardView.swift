@@ -5,16 +5,19 @@ import DesignSystem
 public enum DashboardViewType: String, CaseIterable, Identifiable {
     case list = "List"
     case board = "Board"
+    case calendar = "Calendar"
+    case timeline = "Timeline"
     public var id: String { self.rawValue }
 }
 
 public struct DashboardView: View {
     @StateObject private var viewModel: DashboardViewModel
     @State private var showingCreateTask = false
-    @State private var viewType: DashboardViewType = .list
+    @Binding var viewType: DashboardViewType
     
-    public init(viewModel: DashboardViewModel) {
+    public init(viewModel: DashboardViewModel, viewType: Binding<DashboardViewType>) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        _viewType = viewType
     }
     
     public var body: some View {
@@ -37,40 +40,35 @@ public struct DashboardView: View {
                         EmptyStateView(title: "No Tasks Found", message: "Try adjusting your search or filters.")
                     } else {
                         if viewType == .list {
-                            taskList
-                        } else {
-                            BoardView(tasks: viewModel.tasks, repository: viewModel.taskRepository)
+                            TaskTableView(viewModel: viewModel)
+                        } else if viewType == .board {
+                            BoardView(
+                                tasks: viewModel.tasks,
+                                taskRepository: viewModel.taskRepository,
+                                activityRepository: viewModel.activityRepository
+                            )
+                        } else if viewType == .calendar {
+                            CalendarView(viewModel: viewModel)
+                        } else if viewType == .timeline {
+                            TimelineView(viewModel: viewModel)
                         }
                     }
                 }
             }
             .navigationTitle("Tasks")
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("View", selection: $viewType) {
-                        ForEach(DashboardViewType.allCases) { type in
-                            Text(type.rawValue).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 150)
-                }
-                
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: { showingCreateTask = true }) {
-                        Image(systemName: "plus")
-                            .appFont(AppTypography.headline)
-                            .foregroundColor(AppColors.brandPrimary)
-                    }
-                }
-            }
+            // The toolbar items have been lifted to the parent AuthenticatedRootView in EnterpriseApp.swift
             .task {
                 if viewModel.tasks.isEmpty {
-                    await viewModel.fetchTasks()
+                    await viewModel.fetchTasks(for: viewType)
                 }
             }
             .refreshable {
-                await viewModel.refresh()
+                await viewModel.refresh(viewType: viewType)
+            }
+            .onChange(of: viewType) { oldValue, newValue in
+                Task {
+                    await viewModel.fetchTasks(for: newValue)
+                }
             }
             .sheet(isPresented: $showingCreateTask) {
                 CreateTaskSheet(viewModel: CreateTaskViewModel(taskRepository: viewModel.taskRepository, listId: viewModel.query.listId)) {
@@ -147,32 +145,7 @@ public struct DashboardView: View {
         .zIndex(1)
     }
     
-    private var taskList: some View {
-        ScrollView {
-            LazyVStack(spacing: AppSpacing.md) {
-                ForEach(viewModel.tasks) { task in
-                    NavigationLink(destination: Text("Task Details for \(task.title)")) {
-                        TaskRowView(
-                            task: task,
-                            isSelected: viewModel.selectedTaskIds.contains(task.id)
-                        ) {
-                            viewModel.toggleSelection(for: task.id)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .onAppear {
-                        viewModel.loadMoreIfNeeded(currentItem: task)
-                    }
-                }
-                
-                if viewModel.isLoading {
-                    ProgressView()
-                        .padding()
-                }
-            }
-            .padding()
-        }
-    }
+    // Omitted taskList property as it is replaced by TaskTableView
 }
 
 // MARK: - Supporting Views

@@ -18,6 +18,7 @@ public final class SidebarViewModel: ObservableObject {
     
     public enum SidebarItem: Hashable {
         case allTasks
+        case myTasks
         case inbox
         case space(UUID)
         case project(UUID)
@@ -26,6 +27,7 @@ public final class SidebarViewModel: ObservableObject {
         public var id: String {
             switch self {
             case .allTasks: return "all"
+            case .myTasks: return "my-tasks"
             case .inbox: return "inbox"
             case .space(let id): return "space-\(id.uuidString)"
             case .project(let id): return "project-\(id.uuidString)"
@@ -51,5 +53,29 @@ public final class SidebarViewModel: ObservableObject {
         }
         
         isLoading = false
+    }
+
+    @discardableResult
+    public func createSpace(name: String, description: String?) async throws -> SpaceDTO {
+        let created = try await hierarchyRepository.createSpace(name: name, description: description)
+        await fetchHierarchy()
+        selectedArea = .space(created.id)
+        return created
+    }
+
+    @discardableResult
+    public func createProject(spaceId: UUID, name: String, description: String?) async throws -> ProjectDTO {
+        let created = try await hierarchyRepository.createProject(spaceId: spaceId, name: name, description: description)
+        await fetchHierarchy()
+        selectedArea = .project(created.id)
+        return created
+    }
+
+    @discardableResult
+    public func createList(projectId: UUID, name: String, color: String?) async throws -> TaskListDTO {
+        let created = try await hierarchyRepository.createList(projectId: projectId, name: name, color: color)
+        await fetchHierarchy()
+        selectedArea = .list(created.id)
+        return created
     }
 }

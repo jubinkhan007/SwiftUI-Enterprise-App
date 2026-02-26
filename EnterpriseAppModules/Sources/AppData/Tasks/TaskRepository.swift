@@ -61,6 +61,61 @@ public final class TaskRepository: TaskRepositoryProtocol {
         }
     }
     
+    public func getAssignedTasks(query: TaskQuery) async throws -> APIResponse<[TaskItemDTO]> {
+        do {
+            let endpoint = TaskEndpoint.getAssignedTasks(query: query, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<[TaskItemDTO]>.self)
+            
+            guard let data = response.data else {
+                throw NetworkError.underlying("No data returned from server")
+            }
+            
+            // Sync fresh data to local store
+            let localItems = data.map { dto in
+                LocalTaskItem(
+                    id: dto.id,
+                    title: dto.title,
+                    taskDescription: dto.description,
+                    status: dto.status,
+                    priority: dto.priority,
+                    dueDate: dto.dueDate,
+                    assigneeId: dto.assigneeId,
+                    version: dto.version,
+                    createdAt: dto.createdAt,
+                    updatedAt: dto.updatedAt
+                )
+            }
+            try await localStore.save(tasks: localItems)
+            return response
+            
+        } catch let error as NetworkError {
+            if error == .offline {
+                // Return a mock successful response with cached data based on the assignee filter
+                // Ideally local cache would also filter by current user if offline, 
+                // but local store fallback just matches the query filters for now.
+                let cachedTasks = try await localStore.getTasks(query: query)
+                let dtos = cachedTasks.map { $0.toDTO() }
+                
+                return APIResponse(
+                    success: true,
+                    data: dtos,
+                    pagination: PaginationMeta(page: query.page, perPage: query.perPage, total: dtos.count)
+                )
+            }
+            throw error
+        }
+    }
+    
+    public func getCalendarTasks(query: TaskQuery) async throws -> APIResponse<[TaskItemDTO]> {
+        let endpoint = TaskEndpoint.getCalendarTasks(query: query, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[TaskItemDTO]>.self)
+    }
+    
+    public func getTimeline(query: TaskQuery) async throws -> APIResponse<TimelineResponseDTO> {
+        let endpoint = TaskEndpoint.getTimeline(query: query, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<TimelineResponseDTO>.self)
+    }
+    
     public func createTask(payload: CreateTaskRequest) async throws -> TaskItemDTO {
         let localTask = LocalTaskItem(
             id: UUID(), // Optimistic ID
@@ -132,6 +187,41 @@ public final class TaskRepository: TaskRepositoryProtocol {
                 // Revert optimistic changes or throw conflict error for ViewModel to handle
                 throw error
             }
+            if error == .offline {
+                // Defer to sync queue
+                return localTask.toDTO()
+            }
+            throw error
+        }
+    }
+
+    public func partialUpdateTask(id: UUID, payload: UpdateTaskRequest) async throws -> TaskItemDTO {
+        // Fetch current local state for optimistic update
+        guard let localTask = try await localStore.getTask(id: id) else {
+            throw NetworkError.underlying("Task not found locally")
+        }
+        
+        // Apply optimistic changes, mark for sync
+        applyUpdates(to: localTask, payload: payload)
+        await MainActor.run {
+            localTask.isPendingSync = true
+        }
+        
+        try await localStore.save(task: localTask)
+        
+        do {
+            let endpoint = TaskEndpoint.partialUpdateTask(id: id, payload: payload, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<TaskItemDTO>.self)
+            guard let data = response.data else { throw NetworkError.underlying("No data") }
+            
+            // Apply true server state
+            await MainActor.run {
+                localTask.update(from: data)
+            }
+            try await localStore.save(task: localTask)
+            return data
+            
+        } catch let error as NetworkError {
             if error == .offline {
                 // Defer to sync queue
                 return localTask.toDTO()

@@ -1,14 +1,25 @@
 import SwiftUI
 import SharedModels
+import Domain
 import DesignSystem
 
 public struct BoardColumnView: View {
     let column: BoardColumn
     @ObservedObject var viewModel: BoardViewModel
+    private let taskRepository: TaskRepositoryProtocol
+    private let activityRepository: TaskActivityRepositoryProtocol
+    @State private var isColumnDropTargeted = false
     
-    public init(column: BoardColumn, viewModel: BoardViewModel) {
+    public init(
+        column: BoardColumn,
+        viewModel: BoardViewModel,
+        taskRepository: TaskRepositoryProtocol,
+        activityRepository: TaskActivityRepositoryProtocol
+    ) {
         self.column = column
         self.viewModel = viewModel
+        self.taskRepository = taskRepository
+        self.activityRepository = activityRepository
     }
     
     public var body: some View {
@@ -36,13 +47,33 @@ public struct BoardColumnView: View {
             // Cards
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 8) {
-                    ForEach(column.items) { task in
-                        BoardCardView(task: task)
-                            // Basic Drag operation
-                            .onDrag {
-                                let provider = NSItemProvider(object: task.id.uuidString as NSString)
-                                return provider
+                    ForEach(Array(column.items.enumerated()), id: \.element.id) { index, task in
+                        NavigationLink(
+                            destination: TaskDetailView(
+                                viewModel: TaskDetailViewModel(
+                                    task: task,
+                                    taskRepository: taskRepository,
+                                    activityRepository: activityRepository
+                                )
+                            )
+                        ) {
+                            BoardCardView(task: task)
+                        }
+                        .buttonStyle(.plain)
+                        .onDrag {
+                            NSItemProvider(object: task.id.uuidString as NSString)
+                        }
+                        .onDrop(of: [.text], isTargeted: nil) { providers in
+                            guard let provider = providers.first else { return false }
+                            _ = provider.loadObject(ofClass: String.self) { uuidString, _ in
+                                guard let uuidString,
+                                      let taskId = UUID(uuidString: uuidString) else { return }
+                                Task {
+                                    await viewModel.moveTask(taskId: taskId, to: column.id, atIndex: index)
+                                }
                             }
+                            return true
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -50,7 +81,7 @@ public struct BoardColumnView: View {
             }
             .background(AppColors.backgroundPrimary)
             // Basic Drop operation
-            .onDrop(of: [.text], isTargeted: nil) { providers in
+            .onDrop(of: [.text], isTargeted: $isColumnDropTargeted) { providers in
                 guard let provider = providers.first else { return false }
                 
                 _ = provider.loadObject(ofClass: String.self) { uuidString, error in
@@ -68,6 +99,10 @@ public struct BoardColumnView: View {
         .background(AppColors.surfacePrimary)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isColumnDropTargeted ? AppColors.brandPrimary.opacity(0.6) : Color.clear, lineWidth: 2)
+        )
     }
 }
 

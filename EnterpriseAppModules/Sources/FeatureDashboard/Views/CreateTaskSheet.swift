@@ -5,10 +5,27 @@ import SharedModels
 public struct CreateTaskSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: CreateTaskViewModel
+    private let hierarchy: [HierarchyTreeDTO.SpaceNode]
 
     let onTaskCreated: () -> Void
 
+    private struct ListOption: Identifiable, Hashable {
+        let id: UUID
+        let title: String
+    }
+
     public init(viewModel: CreateTaskViewModel, onTaskCreated: @escaping () -> Void) {
+        self.hierarchy = []
+        _viewModel = StateObject(wrappedValue: viewModel)
+        self.onTaskCreated = onTaskCreated
+    }
+
+    public init(
+        viewModel: CreateTaskViewModel,
+        hierarchy: [HierarchyTreeDTO.SpaceNode],
+        onTaskCreated: @escaping () -> Void
+    ) {
+        self.hierarchy = hierarchy
         _viewModel = StateObject(wrappedValue: viewModel)
         self.onTaskCreated = onTaskCreated
     }
@@ -29,6 +46,11 @@ public struct CreateTaskSheet: View {
             if viewModel.isSuccess {
                 onTaskCreated()
                 dismiss()
+            }
+        }
+        .task(id: listOptions.first?.id) {
+            if viewModel.listId == nil, let first = listOptions.first {
+                viewModel.listId = first.id
             }
         }
     }
@@ -57,6 +79,29 @@ public struct CreateTaskSheet: View {
     @ViewBuilder
     private var formContent: some View {
         VStack(spacing: AppSpacing.lg) {
+            pickerCard(title: "List (Required)") {
+                if listOptions.isEmpty {
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Text("No lists available")
+                            .appFont(AppTypography.subheadline)
+                            .foregroundColor(AppColors.textSecondary)
+                        Text("Go to Workspace and create/select a list, then come back.")
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(AppSpacing.sm)
+                    .background(AppColors.surfacePrimary)
+                    .cornerRadius(AppRadius.small)
+                } else {
+                    Picker("List", selection: listIdBinding) {
+                        ForEach(listOptions) { option in
+                            Text(option.title).tag(Optional(option.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+            }
             AppTextField(
                 "Task Title (Required)",
                 text: $viewModel.title,
@@ -81,6 +126,13 @@ public struct CreateTaskSheet: View {
             AppTextField("Labels (comma-separated)", text: $viewModel.labelsText, validationState: .normal)
             if let error = viewModel.error {
                 Text(error.localizedDescription)
+                    .appFont(AppTypography.caption1)
+                    .foregroundColor(AppColors.statusError)
+                    .multilineTextAlignment(.center)
+            }
+
+            if viewModel.listId == nil {
+                Text("Task must belong to a list. Select a list first.")
                     .appFont(AppTypography.caption1)
                     .foregroundColor(AppColors.statusError)
                     .multilineTextAlignment(.center)
@@ -181,6 +233,13 @@ public struct CreateTaskSheet: View {
         return UUID(uuidString: text) != nil ? .success : .error("Must be a valid UUID")
     }
 
+    private var listIdBinding: Binding<UUID?> {
+        Binding(
+            get: { viewModel.listId },
+            set: { viewModel.listId = $0 }
+        )
+    }
+
     private func pickerCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading) {
             Text(title)
@@ -261,5 +320,23 @@ public struct CreateTaskSheet: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    private static func buildListOptions(from hierarchy: [HierarchyTreeDTO.SpaceNode]) -> [ListOption] {
+        var options: [ListOption] = []
+        for spaceNode in hierarchy {
+            let spaceName = spaceNode.space.name
+            for projectNode in spaceNode.projects {
+                let projectName = projectNode.project.name
+                for list in projectNode.lists {
+                    options.append(ListOption(id: list.id, title: "\(spaceName) / \(projectName) / \(list.name)"))
+                }
+            }
+        }
+        return options
+    }
+
+    private var listOptions: [ListOption] {
+        Self.buildListOptions(from: hierarchy)
     }
 }

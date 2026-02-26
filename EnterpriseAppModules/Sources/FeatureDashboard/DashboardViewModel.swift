@@ -16,21 +16,21 @@ public final class DashboardViewModel: ObservableObject {
     @Published public var filterStatus: TaskStatus? = nil {
         didSet {
             query.status = filterStatus
-            query.page = 1
+            resetPagination()
             Task { await fetchTasks() }
         }
     }
     @Published public var filterPriority: TaskPriority? = nil {
         didSet {
             query.priority = filterPriority
-            query.page = 1
+            resetPagination()
             Task { await fetchTasks() }
         }
     }
     @Published public var filterTaskType: TaskType? = nil {
         didSet {
             query.taskType = filterTaskType
-            query.page = 1
+            resetPagination()
             Task { await fetchTasks() }
         }
     }
@@ -40,11 +40,20 @@ public final class DashboardViewModel: ObservableObject {
     @Published public var selectedTaskIds: Set<UUID> = []
     
     public let taskRepository: TaskRepositoryProtocol
+    public let activityRepository: TaskActivityRepositoryProtocol
     private var cancellables = Set<AnyCancellable>()
     private var hasMorePages = true
+    private var nextCursor: String? = nil
+    private var isMyTasksMode = false
     
-    public init(taskRepository: TaskRepositoryProtocol) {
+    // Range state for Calendar/Timeline
+    @Published public var startDate: Date = Date().startOfMonth()
+    @Published public var endDate: Date = Date().endOfMonth()
+    @Published public var timelineResponse: TimelineResponseDTO? = nil
+    
+    public init(taskRepository: TaskRepositoryProtocol, activityRepository: TaskActivityRepositoryProtocol) {
         self.taskRepository = taskRepository
+        self.activityRepository = activityRepository
         setupSearchDebounce()
     }
     
@@ -56,35 +65,50 @@ public final class DashboardViewModel: ObservableObject {
             .sink { [weak self] searchText in
                 guard let self = self else { return }
                 self.query.search = searchText.isEmpty ? nil : searchText
-                self.query.page = 1
+                self.resetPagination()
                 Task { await self.fetchTasks() }
             }
             .store(in: &cancellables)
     }
     
-    public func fetchTasks() async {
+    public func fetchTasks(for viewType: DashboardViewType = .list) async {
+        switch viewType {
+        case .list, .board:
+            await fetchStandardTasks()
+        case .calendar:
+            await fetchCalendarTasks()
+        case .timeline:
+            await fetchTimeline()
+        }
+    }
+    
+    private func fetchStandardTasks() async {
         guard !isLoading else { return }
         
         isLoading = true
         error = nil
         
         do {
-            let response = try await taskRepository.getTasks(query: query)
+            let response: APIResponse<[TaskItemDTO]>
+            if isMyTasksMode {
+                response = try await taskRepository.getAssignedTasks(query: query)
+            } else {
+                response = try await taskRepository.getTasks(query: query)
+            }
             guard let data = response.data else {
                 throw NetworkError.underlying("No task data returned")
             }
-            
-            if query.page == 1 {
+
+            // Cursor mode = append; fresh load (no cursor sent) = replace
+            if query.cursor == nil {
                 self.tasks = data
             } else {
                 self.tasks.append(contentsOf: data)
             }
-            
-            if let meta = response.pagination {
-                self.hasMorePages = meta.page < meta.totalPages
-            } else {
-                self.hasMorePages = false
-            }
+
+            // Store next cursor for subsequent "load more" calls
+            self.nextCursor = response.pagination?.cursor
+            self.hasMorePages = self.nextCursor != nil || (response.pagination.map { $0.page < $0.totalPages } ?? false)
             
         } catch {
             self.error = error
@@ -101,11 +125,50 @@ public final class DashboardViewModel: ObservableObject {
         guard hasMorePages, !isLoading, let lastItem = tasks.last, currentItem.id == lastItem.id else {
             return
         }
-        
-        query.page += 1
-        Task {
-            await fetchTasks()
+
+        if let cursor = nextCursor {
+            // Keyset mode: pass cursor, keep page as-is (backend ignores page when cursor present)
+            query.cursor = cursor
+        } else {
+            // Offset fallback
+            query.page += 1
         }
+        Task { await fetchTasks() }
+    }
+    
+    public func fetchCalendarTasks() async {
+        guard !isLoading else { return }
+        isLoading = true
+        error = nil
+        
+        query.from = startDate
+        query.to = endDate
+        
+        do {
+            let response = try await taskRepository.getCalendarTasks(query: query)
+            self.tasks = response.data ?? []
+        } catch {
+            self.error = error
+        }
+        isLoading = false
+    }
+    
+    public func fetchTimeline() async {
+        guard !isLoading else { return }
+        isLoading = true
+        error = nil
+        
+        query.from = startDate
+        query.to = endDate
+        
+        do {
+            let response = try await taskRepository.getTimeline(query: query)
+            self.timelineResponse = response.data
+            self.tasks = response.data?.tasks ?? []
+        } catch {
+            self.error = error
+        }
+        isLoading = false
     }
     
     public func toggleSelection(for taskId: UUID) {
@@ -116,34 +179,57 @@ public final class DashboardViewModel: ObservableObject {
         }
     }
     
-    public func refresh() async {
+    public func refresh(viewType: DashboardViewType = .list) async {
+        resetPagination()
+        await fetchTasks(for: viewType)
+    }
+
+    /// Update a single task in the in-memory list without a full refresh.
+    /// Called after a successful inline partial-update.
+    public func updateTaskLocally(_ updated: TaskItemDTO) {
+        if let idx = tasks.firstIndex(where: { $0.id == updated.id }) {
+            tasks[idx] = updated
+        }
+    }
+
+    // MARK: - Private helpers
+
+    /// Resets page/cursor state before a fresh fetch triggered by a filter or search change.
+    /// Callers are responsible for triggering the fetch afterwards.
+    private func resetPagination() {
         query.page = 1
-        await fetchTasks()
+        query.cursor = nil
+        nextCursor = nil
     }
     
-    public func handleSidebarSelection(_ selection: SidebarViewModel.SidebarItem?) {
+    public func handleSidebarSelection(_ selection: SidebarViewModel.SidebarItem?, viewType: DashboardViewType = .list) {
         // Reset query state
-        query.page = 1
+        resetPagination()
         query.spaceId = nil
         query.projectId = nil
         query.listId = nil
         
         guard let selection = selection else {
-            Task { await fetchTasks() }
+            Task { await fetchTasks(for: viewType) }
             return
         }
         
         switch selection {
         case .allTasks, .inbox:
-            break // No extra filters for now
+            isMyTasksMode = false
+        case .myTasks:
+            isMyTasksMode = true
         case .space(let id):
+            isMyTasksMode = false
             query.spaceId = id
         case .project(let id):
+            isMyTasksMode = false
             query.projectId = id
         case .list(let id):
+            isMyTasksMode = false
             query.listId = id
         }
         
-        Task { await fetchTasks() }
+        Task { await fetchTasks(for: viewType) }
     }
 }

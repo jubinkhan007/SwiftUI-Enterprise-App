@@ -27,6 +27,7 @@ enum TaskFilter {
     case spaceId(UUID)
     case dueDateRange(from: Date?, to: Date?)
     case startDateRange(from: Date?, to: Date?)
+    case dateOverlap(from: Date, to: Date)
     case archived(Bool)
     case includeSubtasks(Bool)
 }
@@ -60,7 +61,7 @@ struct TaskQueryParser {
 
     static let allowedFilterFields: Set<String> = [
         "status", "priority", "assignee_id", "task_type", "label",
-        "due_date_range", "start_date_range", "archived", "list_id",
+        "due_date_range", "start_date_range", "date_overlap", "archived", "list_id",
         "project_id", "space_id", "parent_id", "include_subtasks"
     ]
 
@@ -123,6 +124,11 @@ struct TaskQueryParser {
 
         let includeSubtasks = (try? req.query.get(Bool.self, at: "include_subtasks")) ?? false
         query.filters.append(.includeSubtasks(includeSubtasks))
+
+        if let from = try? req.query.get(Date.self, at: "from"),
+           let to = try? req.query.get(Date.self, at: "to") {
+            query.filters.append(.dateOverlap(from: from, to: to))
+        }
 
         return query
     }

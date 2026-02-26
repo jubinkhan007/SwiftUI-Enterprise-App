@@ -6,11 +6,19 @@ import DesignSystem
 public struct BoardView: View {
     @StateObject private var viewModel: BoardViewModel
     var tasks: [TaskItemDTO]
+    private let taskRepository: TaskRepositoryProtocol
+    private let activityRepository: TaskActivityRepositoryProtocol
     
-    public init(tasks: [TaskItemDTO], repository: TaskRepositoryProtocol) {
+    public init(
+        tasks: [TaskItemDTO],
+        taskRepository: TaskRepositoryProtocol,
+        activityRepository: TaskActivityRepositoryProtocol
+    ) {
         self.tasks = tasks
+        self.taskRepository = taskRepository
+        self.activityRepository = activityRepository
         // Initialize with default status grouping
-        self._viewModel = StateObject(wrappedValue: BoardViewModel(taskRepository: repository))
+        self._viewModel = StateObject(wrappedValue: BoardViewModel(taskRepository: taskRepository))
     }
     
     public var body: some View {
@@ -46,7 +54,12 @@ public struct BoardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 16) {
                     ForEach(viewModel.columns) { column in
-                        BoardColumnView(column: column, viewModel: viewModel)
+                        BoardColumnView(
+                            column: column,
+                            viewModel: viewModel,
+                            taskRepository: taskRepository,
+                            activityRepository: activityRepository
+                        )
                     }
                 }
                 .padding()

@@ -55,11 +55,14 @@ public struct PaginationMeta: Codable, Sendable, Equatable {
     public let perPage: Int
     public let total: Int
     public let totalPages: Int
+    /// Opaque keyset cursor for fetching the next page. Nil when no more pages exist.
+    public let cursor: String?
 
-    public init(page: Int, perPage: Int, total: Int) {
+    public init(page: Int, perPage: Int, total: Int, cursor: String? = nil) {
         self.page = page
         self.perPage = perPage
         self.total = total
         self.totalPages = total > 0 ? Int(ceil(Double(total) / Double(perPage))) : 0
+        self.cursor = cursor
     }
 }
