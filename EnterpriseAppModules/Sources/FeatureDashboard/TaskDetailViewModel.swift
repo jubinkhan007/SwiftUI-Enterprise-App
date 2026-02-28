@@ -8,9 +8,12 @@ import AppNetwork
 public final class TaskDetailViewModel: ObservableObject {
     @Published public private(set) var task: TaskItemDTO
     @Published public private(set) var activities: [TaskActivityDTO] = []
+    @Published public private(set) var workflowStatuses: [WorkflowStatusDTO] = []
+    @Published public private(set) var workflowProjectId: UUID? = nil
     
     @Published public var isLoadingTask = false
     @Published public var isLoadingActivities = false
+    @Published public var isLoadingWorkflow = false
     @Published public var isSaving = false
     @Published public var error: Error?
     
@@ -18,6 +21,7 @@ public final class TaskDetailViewModel: ObservableObject {
     @Published public var editTitle: String
     @Published public var editDescription: String
     @Published public var editStatus: TaskStatus
+    @Published public var editStatusId: UUID?
     @Published public var editPriority: TaskPriority
     
     // Conflict State
@@ -29,19 +33,26 @@ public final class TaskDetailViewModel: ObservableObject {
     
     private let taskRepository: TaskRepositoryProtocol
     private let activityRepository: TaskActivityRepositoryProtocol
+    private let hierarchyRepository: HierarchyRepositoryProtocol
+    private let workflowRepository: WorkflowRepositoryProtocol
     
     public init(
         task: TaskItemDTO,
         taskRepository: TaskRepositoryProtocol,
-        activityRepository: TaskActivityRepositoryProtocol
+        activityRepository: TaskActivityRepositoryProtocol,
+        hierarchyRepository: HierarchyRepositoryProtocol,
+        workflowRepository: WorkflowRepositoryProtocol
     ) {
         self.task = task
         self.taskRepository = taskRepository
         self.activityRepository = activityRepository
+        self.hierarchyRepository = hierarchyRepository
+        self.workflowRepository = workflowRepository
         
         self.editTitle = task.title
         self.editDescription = task.description ?? ""
         self.editStatus = task.status
+        self.editStatusId = task.statusId
         self.editPriority = task.priority
     }
     
@@ -66,11 +77,17 @@ public final class TaskDetailViewModel: ObservableObject {
         isSaving = true
         error = nil
         hasConflict = false
-        
+
+        let statusIdDelta: UUID? = {
+            guard !workflowStatuses.isEmpty, let selected = editStatusId else { return nil }
+            return selected != task.statusId ? selected : nil
+        }()
+
         let payload = UpdateTaskRequest(
             title: editTitle != task.title ? editTitle : nil,
             description: editDescription != (task.description ?? "") ? editDescription : nil,
-            status: editStatus != task.status ? editStatus : nil,
+            statusId: statusIdDelta,
+            status: (statusIdDelta == nil && editStatus != task.status) ? editStatus : nil,
             priority: editPriority != task.priority ? editPriority : nil,
             dueDate: nil,
             assigneeId: nil,
@@ -84,6 +101,7 @@ public final class TaskDetailViewModel: ObservableObject {
             self.editTitle = updatedTask.title
             self.editDescription = updatedTask.description ?? ""
             self.editStatus = updatedTask.status
+            self.editStatusId = updatedTask.statusId
             self.editPriority = updatedTask.priority
             
             await fetchActivities() // Refresh activity log
@@ -96,6 +114,46 @@ public final class TaskDetailViewModel: ObservableObject {
         }
         
         isSaving = false
+    }
+
+    public func loadWorkflowIfNeeded() async {
+        guard !isLoadingWorkflow else { return }
+        guard workflowStatuses.isEmpty else { return }
+        guard let listId = task.listId else { return }
+
+        isLoadingWorkflow = true
+        defer { isLoadingWorkflow = false }
+
+        do {
+            let tree = try await hierarchyRepository.getHierarchy()
+            guard let projectId = Self.projectId(for: listId, in: tree) else { return }
+            self.workflowProjectId = projectId
+
+            let bundle = try await workflowRepository.getWorkflow(projectId: projectId)
+            self.workflowStatuses = bundle.statuses.sorted { $0.position < $1.position }
+
+            // Prefer the task's canonical statusId; fall back to legacy mapping; otherwise default.
+            if let current = task.statusId, workflowStatuses.contains(where: { $0.id == current }) {
+                self.editStatusId = current
+            } else if let mapped = workflowStatuses.first(where: { $0.legacyStatus == task.status.rawValue }) {
+                self.editStatusId = mapped.id
+            } else if let def = workflowStatuses.first(where: { $0.isDefault }) {
+                self.editStatusId = def.id
+            }
+        } catch {
+            self.error = error
+        }
+    }
+
+    private static func projectId(for listId: UUID, in tree: HierarchyTreeDTO) -> UUID? {
+        for space in tree.spaces {
+            for project in space.projects {
+                if project.lists.contains(where: { $0.id == listId }) {
+                    return project.project.id
+                }
+            }
+        }
+        return nil
     }
     
     public func submitComment() async {

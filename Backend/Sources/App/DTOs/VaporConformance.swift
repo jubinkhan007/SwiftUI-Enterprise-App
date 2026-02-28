@@ -53,3 +53,12 @@ extension UpdateViewConfigRequest: @retroactive Content {}
 
 // Calendar / Timeline types
 extension TimelineResponseDTO: @retroactive Content {}
+
+// Phase 10: Workflow & Automation
+extension WorkflowBundleDTO: @retroactive Content {}
+extension WorkflowStatusDTO: @retroactive Content {}
+extension CreateWorkflowStatusRequest: @retroactive Content {}
+extension UpdateWorkflowStatusRequest: @retroactive Content {}
+extension AutomationRuleDTO: @retroactive Content {}
+extension CreateAutomationRuleRequest: @retroactive Content {}
+extension UpdateAutomationRuleRequest: @retroactive Content {}

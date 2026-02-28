@@ -5,6 +5,7 @@ import DesignSystem
 public struct TaskTableView: View {
     @ObservedObject var viewModel: DashboardViewModel
     @State private var hoveredTaskId: UUID? = nil
+    private var workflowStatuses: [WorkflowStatusDTO] { viewModel.workflowBundle?.statuses ?? [] }
     
     // Column configuration (fixed widths for horizontal scrolling)
     private let selectWidth: CGFloat = 40
@@ -33,12 +34,15 @@ public struct TaskTableView: View {
                                     viewModel: TaskDetailViewModel(
                                         task: task,
                                         taskRepository: viewModel.taskRepository,
-                                        activityRepository: viewModel.activityRepository
+                                        activityRepository: viewModel.activityRepository,
+                                        hierarchyRepository: viewModel.hierarchyRepository,
+                                        workflowRepository: viewModel.workflowRepository
                                     )
                                 )
                             ) {
                                 TableRow(
                                     task: task,
+                                    workflowStatuses: workflowStatuses,
                                     isSelected: viewModel.selectedTaskIds.contains(task.id),
                                     selectionAction: { viewModel.toggleSelection(for: task.id) },
                                     updateAction: { updatedTask in
@@ -143,6 +147,7 @@ public struct TaskTableView: View {
 
 private struct TableRow: View {
     let task: TaskItemDTO
+    let workflowStatuses: [WorkflowStatusDTO]
     let isSelected: Bool
     let selectionAction: () -> Void
     let updateAction: (UpdateTaskRequest) -> Void
@@ -182,16 +187,34 @@ private struct TableRow: View {
             
             // 3. Status (Inline Menu)
             Menu {
-                ForEach(TaskStatus.allCases, id: \.self) { status in
-                    Button(status.displayName) {
-                        var req = UpdateTaskRequest()
-                        req.status = status
-                        updateAction(req)
+                if !workflowStatuses.isEmpty {
+                    ForEach(workflowStatuses.sorted(by: { $0.position < $1.position })) { status in
+                        Button(status.name) {
+                            var req = UpdateTaskRequest()
+                            req.statusId = status.id
+                            updateAction(req)
+                        }
+                    }
+                } else {
+                    ForEach(TaskStatus.allCases, id: \.self) { status in
+                        Button(status.displayName) {
+                            var req = UpdateTaskRequest()
+                            req.status = status
+                            updateAction(req)
+                        }
                     }
                 }
             } label: {
-                StatusBadge(status: task.status)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Group {
+                    if !workflowStatuses.isEmpty,
+                       let statusId = task.statusId,
+                       let status = workflowStatuses.first(where: { $0.id == statusId }) {
+                        DesignSystem.StatusBadge(.custom(color: Color(hex: status.color) ?? AppColors.brandPrimary, label: status.name))
+                    } else {
+                        StatusBadge(status: task.status)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.borderless)
             .frame(width: statusWidth, alignment: .leading)

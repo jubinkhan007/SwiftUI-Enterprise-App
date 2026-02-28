@@ -32,6 +32,7 @@ public final class TaskRepository: TaskRepositoryProtocol {
                     id: dto.id,
                     title: dto.title,
                     taskDescription: dto.description,
+                    statusId: dto.statusId,
                     status: dto.status,
                     priority: dto.priority,
                     dueDate: dto.dueDate,
@@ -76,6 +77,7 @@ public final class TaskRepository: TaskRepositoryProtocol {
                     id: dto.id,
                     title: dto.title,
                     taskDescription: dto.description,
+                    statusId: dto.statusId,
                     status: dto.status,
                     priority: dto.priority,
                     dueDate: dto.dueDate,
@@ -121,6 +123,7 @@ public final class TaskRepository: TaskRepositoryProtocol {
             id: UUID(), // Optimistic ID
             title: payload.title,
             taskDescription: payload.description,
+            statusId: payload.statusId,
             status: payload.status ?? .todo,
             priority: payload.priority ?? .medium,
             dueDate: payload.dueDate,
@@ -307,6 +310,7 @@ public final class TaskRepository: TaskRepositoryProtocol {
     private func applyUpdates(to localTask: LocalTaskItem, payload: UpdateTaskRequest) {
         if let title = payload.title { localTask.title = title }
         if let desc = payload.description { localTask.taskDescription = desc }
+        if let statusId = payload.statusId { localTask.statusId = statusId }
         if let status = payload.status { localTask.statusRawValue = status.rawValue }
         if let prio = payload.priority { localTask.priorityRawValue = prio.rawValue }
         if let due = payload.dueDate { localTask.dueDate = due }

@@ -38,9 +38,14 @@ public final class DashboardViewModel: ObservableObject {
     
     // Selection state for potential bulk actions
     @Published public var selectedTaskIds: Set<UUID> = []
+
+    // Phase 10: workflow context for current project/list scope (used by Board + TaskDetail fallbacks)
+    @Published public private(set) var workflowBundle: WorkflowBundleDTO? = nil
     
     public let taskRepository: TaskRepositoryProtocol
     public let activityRepository: TaskActivityRepositoryProtocol
+    public let hierarchyRepository: HierarchyRepositoryProtocol
+    public let workflowRepository: WorkflowRepositoryProtocol
     private var cancellables = Set<AnyCancellable>()
     private var hasMorePages = true
     private var nextCursor: String? = nil
@@ -51,9 +56,16 @@ public final class DashboardViewModel: ObservableObject {
     @Published public var endDate: Date = Date().endOfMonth()
     @Published public var timelineResponse: TimelineResponseDTO? = nil
     
-    public init(taskRepository: TaskRepositoryProtocol, activityRepository: TaskActivityRepositoryProtocol) {
+    public init(
+        taskRepository: TaskRepositoryProtocol,
+        activityRepository: TaskActivityRepositoryProtocol,
+        hierarchyRepository: HierarchyRepositoryProtocol,
+        workflowRepository: WorkflowRepositoryProtocol
+    ) {
         self.taskRepository = taskRepository
         self.activityRepository = activityRepository
+        self.hierarchyRepository = hierarchyRepository
+        self.workflowRepository = workflowRepository
         setupSearchDebounce()
     }
     
@@ -208,9 +220,13 @@ public final class DashboardViewModel: ObservableObject {
         query.spaceId = nil
         query.projectId = nil
         query.listId = nil
+        workflowBundle = nil
         
         guard let selection = selection else {
-            Task { await fetchTasks(for: viewType) }
+            Task {
+                await fetchTasks(for: viewType)
+                await loadWorkflowForScope(selection: nil)
+            }
             return
         }
         
@@ -230,6 +246,54 @@ public final class DashboardViewModel: ObservableObject {
             query.listId = id
         }
         
-        Task { await fetchTasks(for: viewType) }
+        Task {
+            await fetchTasks(for: viewType)
+            await loadWorkflowForScope(selection: selection)
+        }
+    }
+
+    // MARK: - Workflow loading
+
+    private func loadWorkflowForScope(selection: SidebarViewModel.SidebarItem?) async {
+        // Only meaningful when scoped to a single project (project selection) or a single list.
+        let projectId: UUID?
+        switch selection {
+        case .project(let id):
+            projectId = id
+        case .list(let listId):
+            do {
+                let tree = try await hierarchyRepository.getHierarchy()
+                projectId = Self.projectId(for: listId, in: tree)
+            } catch {
+                self.error = error
+                self.workflowBundle = nil
+                return
+            }
+        default:
+            projectId = nil
+        }
+
+        guard let projectId else {
+            self.workflowBundle = nil
+            return
+        }
+
+        do {
+            self.workflowBundle = try await workflowRepository.getWorkflow(projectId: projectId)
+        } catch {
+            self.error = error
+            self.workflowBundle = nil
+        }
+    }
+
+    private static func projectId(for listId: UUID, in tree: HierarchyTreeDTO) -> UUID? {
+        for space in tree.spaces {
+            for project in space.projects {
+                if project.lists.contains(where: { $0.id == listId }) {
+                    return project.project.id
+                }
+            }
+        }
+        return nil
     }
 }

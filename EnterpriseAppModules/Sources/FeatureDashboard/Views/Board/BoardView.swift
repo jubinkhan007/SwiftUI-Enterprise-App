@@ -6,17 +6,26 @@ import DesignSystem
 public struct BoardView: View {
     @StateObject private var viewModel: BoardViewModel
     var tasks: [TaskItemDTO]
+    var workflowStatuses: [WorkflowStatusDTO]
     private let taskRepository: TaskRepositoryProtocol
     private let activityRepository: TaskActivityRepositoryProtocol
+    private let hierarchyRepository: HierarchyRepositoryProtocol
+    private let workflowRepository: WorkflowRepositoryProtocol
     
     public init(
         tasks: [TaskItemDTO],
+        workflowStatuses: [WorkflowStatusDTO] = [],
         taskRepository: TaskRepositoryProtocol,
-        activityRepository: TaskActivityRepositoryProtocol
+        activityRepository: TaskActivityRepositoryProtocol,
+        hierarchyRepository: HierarchyRepositoryProtocol,
+        workflowRepository: WorkflowRepositoryProtocol
     ) {
         self.tasks = tasks
+        self.workflowStatuses = workflowStatuses
         self.taskRepository = taskRepository
         self.activityRepository = activityRepository
+        self.hierarchyRepository = hierarchyRepository
+        self.workflowRepository = workflowRepository
         // Initialize with default status grouping
         self._viewModel = StateObject(wrappedValue: BoardViewModel(taskRepository: taskRepository))
     }
@@ -58,7 +67,9 @@ public struct BoardView: View {
                             column: column,
                             viewModel: viewModel,
                             taskRepository: taskRepository,
-                            activityRepository: activityRepository
+                            activityRepository: activityRepository,
+                            hierarchyRepository: hierarchyRepository,
+                            workflowRepository: workflowRepository
                         )
                     }
                 }
@@ -66,10 +77,14 @@ public struct BoardView: View {
             }
         }
         .onAppear {
+            viewModel.updateWorkflowStatuses(workflowStatuses)
             viewModel.updateTasks(tasks)
         }
         .onChange(of: tasks) { newTasks in
             viewModel.updateTasks(newTasks)
+        }
+        .onChange(of: workflowStatuses) { newValue in
+            viewModel.updateWorkflowStatuses(newValue)
         }
     }
 }

@@ -29,4 +29,7 @@ func routes(_ app: Application) throws {
 
     let organizationController = OrganizationController()
     try authenticatedAPI.register(collection: organizationController)
+
+    let workflowController = WorkflowController()
+    try orgScopedAPI.register(collection: workflowController)
 }

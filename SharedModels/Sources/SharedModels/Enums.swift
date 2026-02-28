@@ -21,6 +21,16 @@ public enum TaskStatus: String, Codable, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Workflow Status Category
+
+/// Coarse category mapping for custom workflow statuses (used for analytics and fallbacks).
+public enum WorkflowStatusCategory: String, Codable, CaseIterable, Sendable {
+    case backlog
+    case active
+    case completed
+    case cancelled
+}
+
 // MARK: - Task Priority
 
 /// Represents the urgency level of a task.

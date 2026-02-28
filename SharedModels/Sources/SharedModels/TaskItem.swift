@@ -8,6 +8,8 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let id: UUID
     public let title: String
     public let description: String?
+    /// Canonical workflow status (project-scoped). May be nil for legacy tasks.
+    public let statusId: UUID?
     public let status: TaskStatus
     public let priority: TaskPriority
     public let taskType: TaskType
@@ -30,6 +32,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         id: UUID = UUID(),
         title: String,
         description: String? = nil,
+        statusId: UUID? = nil,
         status: TaskStatus = .todo,
         priority: TaskPriority = .medium,
         taskType: TaskType = .task,
@@ -51,6 +54,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         self.id = id
         self.title = title
         self.description = description
+        self.statusId = statusId
         self.status = status
         self.priority = priority
         self.taskType = taskType
@@ -77,6 +81,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
 public struct CreateTaskRequest: Codable, Sendable {
     public let title: String
     public let description: String?
+    public let statusId: UUID?
     public let status: TaskStatus?
     public let priority: TaskPriority?
     public let taskType: TaskType?
@@ -91,6 +96,7 @@ public struct CreateTaskRequest: Codable, Sendable {
     public init(
         title: String,
         description: String? = nil,
+        statusId: UUID? = nil,
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
         taskType: TaskType? = nil,
@@ -104,6 +110,7 @@ public struct CreateTaskRequest: Codable, Sendable {
     ) {
         self.title = title
         self.description = description
+        self.statusId = statusId
         self.status = status
         self.priority = priority
         self.taskType = taskType
@@ -121,6 +128,7 @@ public struct CreateTaskRequest: Codable, Sendable {
 public struct UpdateTaskRequest: Codable, Sendable {
     public var title: String?
     public var description: String?
+    public var statusId: UUID?
     public var status: TaskStatus?
     public var priority: TaskPriority?
     public var taskType: TaskType?
@@ -137,6 +145,7 @@ public struct UpdateTaskRequest: Codable, Sendable {
     public init(
         title: String? = nil,
         description: String? = nil,
+        statusId: UUID? = nil,
         status: TaskStatus? = nil,
         priority: TaskPriority? = nil,
         taskType: TaskType? = nil,
@@ -152,6 +161,7 @@ public struct UpdateTaskRequest: Codable, Sendable {
     ) {
         self.title = title
         self.description = description
+        self.statusId = statusId
         self.status = status
         self.priority = priority
         self.taskType = taskType
@@ -192,11 +202,13 @@ public struct TaskMoveAction: Codable, Sendable {
 /// Payload for atomically moving multiple tasks (e.g. reordering a Kanban column).
 public struct BulkMoveTaskRequest: Codable, Sendable {
     public let targetListId: UUID?
+    public let targetStatusId: UUID?
     public let targetStatus: TaskStatus?
     public let moves: [TaskMoveAction]
 
-    public init(targetListId: UUID? = nil, targetStatus: TaskStatus? = nil, moves: [TaskMoveAction]) {
+    public init(targetListId: UUID? = nil, targetStatusId: UUID? = nil, targetStatus: TaskStatus? = nil, moves: [TaskMoveAction]) {
         self.targetListId = targetListId
+        self.targetStatusId = targetStatusId
         self.targetStatus = targetStatus
         self.moves = moves
     }

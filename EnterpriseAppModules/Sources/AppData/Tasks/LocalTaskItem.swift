@@ -8,6 +8,7 @@ public final class LocalTaskItem: @unchecked Sendable {
     @Attribute(.unique) public var id: UUID
     public var title: String
     public var taskDescription: String?
+    public var statusId: UUID?
     public var statusRawValue: String
     public var priorityRawValue: String
     public var dueDate: Date?
@@ -39,6 +40,7 @@ public final class LocalTaskItem: @unchecked Sendable {
         id: UUID = UUID(),
         title: String,
         taskDescription: String? = nil,
+        statusId: UUID? = nil,
         status: TaskStatus = .todo,
         priority: TaskPriority = .medium,
         taskType: TaskType = .task,
@@ -62,6 +64,7 @@ public final class LocalTaskItem: @unchecked Sendable {
         self.id = id
         self.title = title
         self.taskDescription = taskDescription
+        self.statusId = statusId
         self.statusRawValue = status.rawValue
         self.priorityRawValue = priority.rawValue
         self.taskTypeRawValue = taskType.rawValue
@@ -89,6 +92,7 @@ public final class LocalTaskItem: @unchecked Sendable {
             id: id,
             title: title,
             description: taskDescription,
+            statusId: statusId,
             status: TaskStatus(rawValue: statusRawValue) ?? .todo,
             priority: TaskPriority(rawValue: priorityRawValue) ?? .medium,
             taskType: TaskType(rawValue: taskTypeRawValue) ?? .task,
@@ -113,6 +117,7 @@ public final class LocalTaskItem: @unchecked Sendable {
     public func update(from dto: TaskItemDTO) {
         self.title = dto.title
         self.taskDescription = dto.description
+        self.statusId = dto.statusId
         self.statusRawValue = dto.status.rawValue
         self.priorityRawValue = dto.priority.rawValue
         self.taskTypeRawValue = dto.taskType.rawValue

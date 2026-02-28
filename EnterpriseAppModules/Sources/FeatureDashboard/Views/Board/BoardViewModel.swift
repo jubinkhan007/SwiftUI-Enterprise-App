@@ -28,10 +28,16 @@ public final class BoardViewModel: ObservableObject {
     
     private let taskRepository: TaskRepositoryProtocol
     private var allTasks: [TaskItemDTO] = []
+    private var workflowStatuses: [WorkflowStatusDTO] = []
     
     public init(taskRepository: TaskRepositoryProtocol, initialConfig: BoardColumnConfigDTO = BoardColumnConfigDTO()) {
         self.taskRepository = taskRepository
         self.config = initialConfig
+    }
+
+    public func updateWorkflowStatuses(_ statuses: [WorkflowStatusDTO]) {
+        self.workflowStatuses = statuses.sorted { $0.position < $1.position }
+        rebuildColumns()
     }
     
     /// Re-groups the provided tasks according to the current `config.groupBy`.
@@ -57,7 +63,7 @@ public final class BoardViewModel: ObservableObject {
         // Build columns list respecting columnOrder if provided
         var newColumns: [BoardColumn] = []
         
-        let order = config.columnOrder ?? defaultColumnOrder()
+        let order = resolvedColumnOrder(fallbackGroups: groups)
         
         for key in order {
             let items = groups[key] ?? []
@@ -65,6 +71,14 @@ public final class BoardViewModel: ObservableObject {
             let limit = config.wipLimits?[key]
             
             newColumns.append(BoardColumn(id: key, title: title, items: items, wipLimit: limit))
+        }
+
+        // Append unknown group keys (e.g., unmapped status ids) to avoid "missing tasks" in UI.
+        let known = Set(order)
+        for key in groups.keys.sorted() where !known.contains(key) {
+            let items = groups[key] ?? []
+            guard !items.isEmpty else { continue }
+            newColumns.append(BoardColumn(id: key, title: displayTitle(for: key), items: items, wipLimit: config.wipLimits?[key]))
         }
         
         self.columns = newColumns
@@ -147,15 +161,21 @@ public final class BoardViewModel: ObservableObject {
         
         // Extract what changed for the API
         var patchStatus: TaskStatus? = nil
+        var patchStatusId: UUID? = nil
         // We only support patching status automatically in bulk move right now.
         // If grouped by assignee/priority, we would need to map those fields too,
         // but BulkMoveTaskRequest currently strongly types `targetStatus`.
         if config.groupBy == .status {
-            patchStatus = TaskStatus(rawValue: targetColumnId)
+            if !workflowStatuses.isEmpty, let uuid = UUID(uuidString: targetColumnId) {
+                patchStatusId = uuid
+            } else {
+                patchStatus = TaskStatus(rawValue: targetColumnId)
+            }
         }
         
         let payload = BulkMoveTaskRequest(
             targetListId: nil, // Retain list
+            targetStatusId: patchStatusId,
             targetStatus: patchStatus,
             moves: [TaskMoveAction(taskId: taskId, newPosition: newPosition)]
         )
@@ -190,6 +210,9 @@ public final class BoardViewModel: ObservableObject {
     private func groupKey(for task: TaskItemDTO) -> String {
         switch config.groupBy {
         case .status:
+            if !workflowStatuses.isEmpty, let statusId = task.statusId {
+                return statusId.uuidString
+            }
             return task.status.rawValue
         case .priority:
             return task.priority.rawValue
@@ -201,6 +224,9 @@ public final class BoardViewModel: ObservableObject {
     private func defaultColumnOrder() -> [String] {
         switch config.groupBy {
         case .status:
+            if !workflowStatuses.isEmpty {
+                return workflowStatuses.map { $0.id.uuidString }
+            }
             return TaskStatus.allCases.map { $0.rawValue }
         case .priority:
             return TaskPriority.allCases.sorted { $0.sortOrder > $1.sortOrder }.map { $0.rawValue }
@@ -219,6 +245,11 @@ public final class BoardViewModel: ObservableObject {
     private func displayTitle(for key: String) -> String {
         switch config.groupBy {
         case .status:
+            if !workflowStatuses.isEmpty,
+               let uuid = UUID(uuidString: key),
+               let s = workflowStatuses.first(where: { $0.id == uuid }) {
+                return s.name
+            }
             return TaskStatus(rawValue: key)?.displayName ?? key.capitalized
         case .priority:
             return TaskPriority(rawValue: key)?.displayName ?? key.capitalized
@@ -226,5 +257,36 @@ public final class BoardViewModel: ObservableObject {
             if key == "unassigned" { return "Unassigned" }
             return "User..." // We don't have member models mapped here directly yet
         }
+    }
+
+    private func resolvedColumnOrder(fallbackGroups: [String: [TaskItemDTO]]) -> [String] {
+        guard let configured = config.columnOrder, !configured.isEmpty else {
+            return defaultColumnOrder()
+        }
+
+        if config.groupBy != .status || workflowStatuses.isEmpty {
+            return configured
+        }
+
+        let ids = Set(workflowStatuses.map { $0.id.uuidString })
+        if configured.allSatisfy({ ids.contains($0) }) {
+            return configured
+        }
+
+        // If configured uses legacy TaskStatus raw values, map to workflow ids where possible.
+        let legacyToId: [String: String] = Dictionary(uniqueKeysWithValues: workflowStatuses.compactMap { s in
+            guard let legacy = s.legacyStatus else { return nil }
+            return (legacy, s.id.uuidString)
+        })
+        if configured.allSatisfy({ TaskStatus(rawValue: $0) != nil }) {
+            let mapped = configured.compactMap { legacyToId[$0] }
+            if !mapped.isEmpty { return mapped }
+        }
+
+        // Default to workflow order, then append any visible unknown keys.
+        var base = defaultColumnOrder()
+        let extras = fallbackGroups.keys.filter { !Set(base).contains($0) }.sorted()
+        base.append(contentsOf: extras)
+        return base
     }
 }

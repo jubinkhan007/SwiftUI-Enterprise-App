@@ -1,4 +1,5 @@
 import Foundation
+import SharedModels
 
 public enum NetworkError: Error, LocalizedError, Sendable, Equatable {
     case invalidURL
@@ -83,6 +84,14 @@ public struct APIClient: APIClientProtocol {
 
             switch httpResponse.statusCode {
             case 200...299:
+                if data.isEmpty {
+                    if T.self == EmptyResponse.self {
+                        return EmptyResponse() as! T
+                    }
+                    if T.self == APIResponse<EmptyResponse>.self {
+                        return APIResponse(success: true, data: EmptyResponse()) as! T
+                    }
+                }
                 do {
                     return try JSONCoding.decoder.decode(T.self, from: data)
                 } catch {

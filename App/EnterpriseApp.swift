@@ -57,6 +57,8 @@ struct AuthenticatedRootView: View {
     @State private var showTeamManagement = false
     @State private var showingCreateTask = false
     @State private var viewType: DashboardViewType = .list
+    @State private var showingProjectSettings = false
+    @State private var projectSettingsProjectId: UUID? = nil
     
     init(session: Domain.AuthSession, authManager: AppData.AuthManager, selectedOrg: OrganizationDTO, modelContainer: ModelContainer) {
         self.session = session
@@ -72,9 +74,15 @@ struct AuthenticatedRootView: View {
             syncQueue: syncQueue
         )
         let activityRepository = TaskActivityRepository(apiClient: apiClient)
-        self.viewModel = DashboardViewModel(taskRepository: taskRepository, activityRepository: activityRepository)
-        
         let hierarchyRepo = HierarchyRepository(apiClient: apiClient)
+        let workflowRepo = WorkflowRepository(apiClient: apiClient)
+        self.viewModel = DashboardViewModel(
+            taskRepository: taskRepository,
+            activityRepository: activityRepository,
+            hierarchyRepository: hierarchyRepo,
+            workflowRepository: workflowRepo
+        )
+        
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
         
         let gateVM = OrganizationGateViewModel()
@@ -127,6 +135,18 @@ struct AuthenticatedRootView: View {
                         }
                     }
 
+                    if case .project(let projectId) = sidebarViewModel.selectedArea {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                projectSettingsProjectId = projectId
+                                showingProjectSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                                    .font(.subheadline)
+                            }
+                        }
+                    }
+
                     if horizontalSizeClass != .compact {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
@@ -149,6 +169,11 @@ struct AuthenticatedRootView: View {
                         Task { await viewModel.refresh() }
                     }
                     .presentationDetents([.medium, .large])
+                }
+                .sheet(isPresented: $showingProjectSettings) {
+                    if let projectId = projectSettingsProjectId {
+                        ProjectSettingsView(projectId: projectId, workflowRepository: viewModel.workflowRepository)
+                    }
                 }
             }
         }

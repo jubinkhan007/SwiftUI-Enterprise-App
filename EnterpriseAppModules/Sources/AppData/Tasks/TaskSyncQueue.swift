@@ -34,6 +34,7 @@ public final class TaskSyncQueue: TaskSyncQueueProtocol {
                         let payload = CreateTaskRequest(
                             title: localTask.title,
                             description: localTask.taskDescription,
+                            statusId: localTask.statusId,
                             status: TaskStatus(rawValue: localTask.statusRawValue) ?? .todo,
                             priority: TaskPriority(rawValue: localTask.priorityRawValue) ?? .medium,
                             dueDate: localTask.dueDate,
@@ -54,6 +55,7 @@ public final class TaskSyncQueue: TaskSyncQueueProtocol {
                         let payload = UpdateTaskRequest(
                             title: localTask.title,
                             description: localTask.taskDescription,
+                            statusId: localTask.statusId,
                             status: TaskStatus(rawValue: localTask.statusRawValue) ?? .todo,
                             priority: TaskPriority(rawValue: localTask.priorityRawValue) ?? .medium,
                             dueDate: localTask.dueDate,

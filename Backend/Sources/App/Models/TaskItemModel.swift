@@ -18,6 +18,11 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     @Enum(key: "status")
     var status: TaskStatus
 
+    /// Canonical workflow status (project-scoped).
+    /// `status` (TaskStatus enum) remains as a compatibility/analytics layer.
+    @OptionalParent(key: "status_id")
+    var customStatus: CustomStatusModel?
+
     @Enum(key: "priority")
     var priority: TaskPriority
 
@@ -72,6 +77,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         title: String,
         description: String? = nil,
         status: TaskStatus = .todo,
+        statusId: UUID? = nil,
         priority: TaskPriority = .medium,
         taskType: TaskType = .task,
         parentId: UUID? = nil,
@@ -90,6 +96,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
         self.title = title
         self.description = description
         self.status = status
+        self.$customStatus.id = statusId
         self.priority = priority
         self.taskType = taskType
         self.$parent.id = parentId
@@ -112,6 +119,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
             id: id ?? UUID(),
             title: title,
             description: description,
+            statusId: $customStatus.id,
             status: status,
             priority: priority,
             taskType: taskType,

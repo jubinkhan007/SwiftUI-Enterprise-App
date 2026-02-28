@@ -44,8 +44,11 @@ public struct DashboardView: View {
                         } else if viewType == .board {
                             BoardView(
                                 tasks: viewModel.tasks,
+                                workflowStatuses: viewModel.workflowBundle?.statuses ?? [],
                                 taskRepository: viewModel.taskRepository,
-                                activityRepository: viewModel.activityRepository
+                                activityRepository: viewModel.activityRepository,
+                                hierarchyRepository: viewModel.hierarchyRepository,
+                                workflowRepository: viewModel.workflowRepository
                             )
                         } else if viewType == .calendar {
                             CalendarView(viewModel: viewModel)

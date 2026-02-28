@@ -58,6 +58,7 @@ public struct TaskDetailView: View {
         }
         .task {
             await viewModel.fetchActivities()
+            await viewModel.loadWorkflowIfNeeded()
         }
     }
     
@@ -84,12 +85,21 @@ public struct TaskDetailView: View {
                     Text("Status")
                         .appFont(AppTypography.caption1)
                         .foregroundColor(AppColors.textSecondary)
-                    Picker("Status", selection: $viewModel.editStatus) {
-                        ForEach(TaskStatus.allCases, id: \.self) { status in
-                            Text(status.displayName).tag(status)
+                    if !viewModel.workflowStatuses.isEmpty {
+                        Picker("Status", selection: $viewModel.editStatusId) {
+                            ForEach(viewModel.workflowStatuses) { status in
+                                Text(status.name).tag(Optional(status.id))
+                            }
                         }
+                        .pickerStyle(.menu)
+                    } else {
+                        Picker("Status", selection: $viewModel.editStatus) {
+                            ForEach(TaskStatus.allCases, id: \.self) { status in
+                                Text(status.displayName).tag(status)
+                            }
+                        }
+                        .pickerStyle(.menu)
                     }
-                    .pickerStyle(.menu)
                 }
                 
                 VStack(alignment: .leading) {

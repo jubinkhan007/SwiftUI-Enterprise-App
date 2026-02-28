@@ -25,6 +25,11 @@ final class ProjectModel: Model, @unchecked Sendable {
     @OptionalField(key: "archived_at")
     var archivedAt: Date?
 
+    /// Incremented whenever statuses / automation rules change for this project.
+    /// Used to provide stable automation evaluation context and debugging.
+    @Field(key: "workflow_version")
+    var workflowVersion: Int
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -37,12 +42,21 @@ final class ProjectModel: Model, @unchecked Sendable {
 
     init() {}
 
-    init(id: UUID? = nil, spaceId: UUID, name: String, description: String? = nil, position: Double = 0.0, archivedAt: Date? = nil) {
+    init(
+        id: UUID? = nil,
+        spaceId: UUID,
+        name: String,
+        description: String? = nil,
+        position: Double = 0.0,
+        archivedAt: Date? = nil,
+        workflowVersion: Int = 1
+    ) {
         self.id = id
         self.$space.id = spaceId
         self.name = name
         self.description = description
         self.position = position
         self.archivedAt = archivedAt
+        self.workflowVersion = workflowVersion
     }
 }

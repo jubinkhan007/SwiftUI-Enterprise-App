@@ -36,6 +36,14 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateViewConfig())
     app.migrations.add(AddViewIndexes())
 
+    // Phase 10: Workflow & Automation
+    app.migrations.add(AddWorkflowVersionToProjects())
+    app.migrations.add(CreateCustomStatuses())
+    app.migrations.add(AddStatusIdToTaskItems())
+    app.migrations.add(CreateAutomationTables())
+    app.migrations.add(BackfillTaskStatusIds())
+    app.migrations.add(EnforceStatusIdOnTasks())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

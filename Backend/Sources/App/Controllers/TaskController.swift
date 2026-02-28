@@ -266,6 +266,7 @@ struct TaskController: RouteCollection {
         }
 
         let taskType = payload.taskType ?? .task
+        let projectId = list.$project.id
 
         // Validate parentId constraints
         if let parentId = payload.parentId {
@@ -294,12 +295,20 @@ struct TaskController: RouteCollection {
             throw Abort(.badRequest, reason: "A task can have at most 20 labels.")
         }
 
+        let resolvedStatus = try await resolveStatusForProject(
+            projectId: projectId,
+            requestedStatusId: payload.statusId,
+            requestedLegacyStatus: payload.status,
+            db: req.db
+        )
+
         let task = TaskItemModel(
             orgId: ctx.orgId,
             listId: listId,
             title: payload.title,
             description: payload.description,
-            status: payload.status ?? .todo,
+            status: resolvedStatus.legacyEnum,
+            statusId: resolvedStatus.statusId,
             priority: payload.priority ?? .medium,
             taskType: taskType,
             parentId: payload.parentId,
@@ -312,8 +321,9 @@ struct TaskController: RouteCollection {
 
         try await req.db.transaction { db in
             try await task.save(on: db)
+            let taskId = try task.requireID()
             let activity = TaskActivityModel(
-                taskId: try task.requireID(),
+                taskId: taskId,
                 userId: ctx.userId,
                 type: .created
             )
@@ -325,6 +335,20 @@ struct TaskController: RouteCollection {
                 resourceType: "task", resourceId: task.id,
                 details: "Created task: \(task.title)"
             )
+
+            let event = AutomationService.TaskEvent(
+                eventId: UUID().uuidString,
+                orgId: ctx.orgId,
+                projectId: projectId,
+                workflowVersion: list.project.workflowVersion,
+                taskId: taskId,
+                userId: ctx.userId,
+                isCreated: true,
+                statusIdChange: nil,
+                priorityChange: nil,
+                typeChange: nil
+            )
+            await AutomationService.applyAutomations(event: event, task: task, db: db, logger: req.logger)
         }
 
         return .success(task.toDTO())
@@ -335,11 +359,20 @@ struct TaskController: RouteCollection {
     @Sendable
     func update(req: Request) async throws -> APIResponse<TaskItemDTO> {
         let ctx = try req.orgContext
-        guard let task = try await TaskItemModel.query(on: req.db)
-            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+        let requestedTaskId = req.parameters.get("taskID", as: UUID.self) ?? UUID()
+        let query = TaskItemModel.query(on: req.db)
+            .filter(\.$id == requestedTaskId)
             .filter(\.$organization.$id == ctx.orgId)
-            .first() else {
+            .with(\.$list) { list in
+                list.with(\.$project)
+            }
+
+        guard let task = try await query.first() else {
             throw Abort(.notFound, reason: "Task not found in this organization.")
+        }
+
+        guard let list = task.list else {
+            throw Abort(.conflict, reason: "Task is missing a list association.")
         }
 
         let payload = try req.content.decode(UpdateTaskRequest.self)
@@ -360,6 +393,11 @@ struct TaskController: RouteCollection {
 
         var activities: [TaskActivityModel] = []
         let taskId = try task.requireID()
+        let projectId = list.$project.id
+
+        let oldStatusId = task.$customStatus.id
+        let oldPriority = task.priority
+        let oldType = task.taskType
 
         if let title = payload.title, task.title != title {
             task.title = title
@@ -367,10 +405,24 @@ struct TaskController: RouteCollection {
         if let description = payload.description, task.description != description {
             task.description = description
         }
-        if let status = payload.status, task.status != status {
-            let metadata = ["from": task.status.rawValue, "to": status.rawValue]
-            activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .statusChanged, metadata: metadata))
-            task.status = status
+        if payload.statusId != nil || payload.status != nil {
+            let resolvedStatus = try await resolveStatusForProject(
+                projectId: projectId,
+                requestedStatusId: payload.statusId,
+                requestedLegacyStatus: payload.status,
+                db: req.db
+            )
+            if task.$customStatus.id != resolvedStatus.statusId || task.status != resolvedStatus.legacyEnum {
+                let metadata: [String: String] = [
+                    "from": task.status.rawValue,
+                    "to": resolvedStatus.legacyEnum.rawValue,
+                    "from_status_id": task.$customStatus.id?.uuidString ?? "",
+                    "to_status_id": resolvedStatus.statusId.uuidString
+                ]
+                activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .statusChanged, metadata: metadata))
+                task.status = resolvedStatus.legacyEnum
+                task.$customStatus.id = resolvedStatus.statusId
+            }
         }
         if let priority = payload.priority, task.priority != priority {
             let metadata = ["from": task.priority.rawValue, "to": priority.rawValue]
@@ -413,11 +465,40 @@ struct TaskController: RouteCollection {
         task.version += 1
 
         let finalActivities = activities
+        let eventId = UUID().uuidString
+        let statusIdChange: AutomationService.TaskEvent.Change<UUID?>? = {
+            let newId = task.$customStatus.id
+            if oldStatusId != newId { return .init(from: oldStatusId, to: newId) }
+            return nil
+        }()
+        let priorityChange: AutomationService.TaskEvent.Change<TaskPriority>? = {
+            if oldPriority != task.priority { return .init(from: oldPriority, to: task.priority) }
+            return nil
+        }()
+        let typeChange: AutomationService.TaskEvent.Change<TaskType>? = {
+            if oldType != task.taskType { return .init(from: oldType, to: task.taskType) }
+            return nil
+        }()
+
         try await req.db.transaction { db in
             try await task.save(on: db)
             for activity in finalActivities {
                 try await activity.save(on: db)
             }
+
+            let event = AutomationService.TaskEvent(
+                eventId: eventId,
+                orgId: ctx.orgId,
+                projectId: projectId,
+                workflowVersion: list.project.workflowVersion,
+                taskId: taskId,
+                userId: ctx.userId,
+                isCreated: false,
+                statusIdChange: statusIdChange,
+                priorityChange: priorityChange,
+                typeChange: typeChange
+            )
+            await AutomationService.applyAutomations(event: event, task: task, db: db, logger: req.logger)
         }
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
@@ -430,12 +511,22 @@ struct TaskController: RouteCollection {
     @Sendable
     func partialUpdate(req: Request) async throws -> APIResponse<TaskItemDTO> {
         let ctx = try req.orgContext
-        guard let task = try await TaskItemModel.query(on: req.db)
-            .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
+        let requestedTaskId = req.parameters.get("taskID", as: UUID.self) ?? UUID()
+        let query = TaskItemModel.query(on: req.db)
+            .filter(\.$id == requestedTaskId)
             .filter(\.$organization.$id == ctx.orgId)
-            .first() else {
+            .with(\.$list) { list in
+                list.with(\.$project)
+            }
+
+        guard let task = try await query.first() else {
             throw Abort(.notFound, reason: "Task not found in this organization.")
         }
+
+        guard let list = task.list else {
+            throw Abort(.conflict, reason: "Task is missing a list association.")
+        }
+        let projectId = list.$project.id
 
         let payload = try req.content.decode(UpdateTaskRequest.self)
 
@@ -453,16 +544,34 @@ struct TaskController: RouteCollection {
         var activities: [TaskActivityModel] = []
         let taskId = try task.requireID()
 
+        let oldStatusId = task.$customStatus.id
+        let oldPriority = task.priority
+        let oldType = task.taskType
+
         if let title = payload.title, task.title != title {
             task.title = title
         }
         if let description = payload.description, task.description != description {
             task.description = description
         }
-        if let status = payload.status, task.status != status {
-            let metadata = ["from": task.status.rawValue, "to": status.rawValue]
-            activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .statusChanged, metadata: metadata))
-            task.status = status
+        if payload.statusId != nil || payload.status != nil {
+            let resolvedStatus = try await resolveStatusForProject(
+                projectId: projectId,
+                requestedStatusId: payload.statusId,
+                requestedLegacyStatus: payload.status,
+                db: req.db
+            )
+            if task.$customStatus.id != resolvedStatus.statusId || task.status != resolvedStatus.legacyEnum {
+                let metadata: [String: String] = [
+                    "from": task.status.rawValue,
+                    "to": resolvedStatus.legacyEnum.rawValue,
+                    "from_status_id": task.$customStatus.id?.uuidString ?? "",
+                    "to_status_id": resolvedStatus.statusId.uuidString
+                ]
+                activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .statusChanged, metadata: metadata))
+                task.status = resolvedStatus.legacyEnum
+                task.$customStatus.id = resolvedStatus.statusId
+            }
         }
         if let priority = payload.priority, task.priority != priority {
             let metadata = ["from": task.priority.rawValue, "to": priority.rawValue]
@@ -506,11 +615,40 @@ struct TaskController: RouteCollection {
         task.version += 1
 
         let finalActivities = activities
+        let eventId = UUID().uuidString
+        let statusIdChange: AutomationService.TaskEvent.Change<UUID?>? = {
+            let newId = task.$customStatus.id
+            if oldStatusId != newId { return .init(from: oldStatusId, to: newId) }
+            return nil
+        }()
+        let priorityChange: AutomationService.TaskEvent.Change<TaskPriority>? = {
+            if oldPriority != task.priority { return .init(from: oldPriority, to: task.priority) }
+            return nil
+        }()
+        let typeChange: AutomationService.TaskEvent.Change<TaskType>? = {
+            if oldType != task.taskType { return .init(from: oldType, to: task.taskType) }
+            return nil
+        }()
+
         try await req.db.transaction { db in
             try await task.save(on: db)
             for activity in finalActivities {
                 try await activity.save(on: db)
             }
+
+            let event = AutomationService.TaskEvent(
+                eventId: eventId,
+                orgId: ctx.orgId,
+                projectId: projectId,
+                workflowVersion: list.project.workflowVersion,
+                taskId: taskId,
+                userId: ctx.userId,
+                isCreated: false,
+                statusIdChange: statusIdChange,
+                priorityChange: priorityChange,
+                typeChange: typeChange
+            )
+            await AutomationService.applyAutomations(event: event, task: task, db: db, logger: req.logger)
         }
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
@@ -577,21 +715,48 @@ struct TaskController: RouteCollection {
         let tasks = try await TaskItemModel.query(on: req.db)
             .filter(\.$id ~~ taskIds)
             .filter(\.$organization.$id == ctx.orgId)
+            .with(\.$list) { list in
+                list.with(\.$project)
+            }
             .all()
             
         guard tasks.count == taskIds.count else {
             throw Abort(.notFound, reason: "One or more tasks not found in this organization.")
         }
         
-        // If changing list, verify list ownership
+        // If changing list, verify list ownership and (for now) disallow cross-project bulk moves.
+        var targetList: TaskListModel? = nil
         if let targetListId = payload.targetListId {
-            let listExists = try await TaskListModel.query(on: req.db)
+            let fetched = try await TaskListModel.query(on: req.db)
                 .filter(\.$id == targetListId)
                 .with(\.$project) { project in project.with(\.$space) }
-                .first()?.project.space.$organization.id == ctx.orgId
+                .first()
 
-            guard listExists else {
+            guard let fetched, fetched.project.space.$organization.id == ctx.orgId else {
                 throw Abort(.notFound, reason: "Target list not found in this organization.")
+            }
+            targetList = fetched
+
+            // Cross-project moves introduce project-scoped status complexity; keep it explicit for now.
+            let targetProjectId = fetched.$project.id
+            let taskProjectIds = Set(tasks.compactMap { $0.list?.$project.id })
+            if taskProjectIds.count > 1 || (taskProjectIds.first != nil && taskProjectIds.first != targetProjectId) {
+                throw Abort(.badRequest, reason: "Bulk moving tasks across projects is not supported.")
+            }
+        }
+
+        // Build project-scoped status lookup for fast resolution.
+        let projectIds = Array(Set(tasks.compactMap { $0.list?.$project.id }))
+        let statuses = try await CustomStatusModel.query(on: req.db)
+            .filter(\.$project.$id ~~ projectIds)
+            .all()
+
+        var statusById: [UUID: CustomStatusModel] = [:]
+        var statusIdByProjectAndLegacy: [UUID: [String: UUID]] = [:]
+        for s in statuses {
+            if let id = s.id { statusById[id] = s }
+            if let legacy = s.legacyStatus, let id = s.id {
+                statusIdByProjectAndLegacy[s.$project.id, default: [:]][legacy] = id
             }
         }
         
@@ -601,7 +766,10 @@ struct TaskController: RouteCollection {
             return (id, task)
         })
         
-        var activities: [TaskActivityModel] = []
+        let batchEventId = UUID().uuidString
+        let targetListSnapshot = targetList
+        let statusByIdSnapshot = statusById
+        let statusIdByProjectAndLegacySnapshot = statusIdByProjectAndLegacy
         
         try await req.db.transaction { db in
             for moveAction in payload.moves {
@@ -609,17 +777,54 @@ struct TaskController: RouteCollection {
                 
                 var movedList = false
                 var changedStatus = false
+                let oldStatusId = task.$customStatus.id
                 
                 if let targetListId = payload.targetListId, task.$list.id != targetListId {
                     task.$list.id = targetListId
                     movedList = true
                 }
                 
-                if let targetStatus = payload.targetStatus, task.status != targetStatus {
-                    let md = ["from": task.status.rawValue, "to": targetStatus.rawValue]
-                    activities.append(TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .statusChanged, metadata: md))
-                    task.status = targetStatus
-                    changedStatus = true
+                let projectId = targetListSnapshot?.$project.id ?? task.list?.$project.id
+                if let projectId {
+                    if let targetStatusId = payload.targetStatusId {
+                        guard let status = statusByIdSnapshot[targetStatusId], status.$project.id == projectId else {
+                            throw Abort(.badRequest, reason: "targetStatusId is not valid for the project.")
+                        }
+                        if task.$customStatus.id != targetStatusId {
+                            let legacyEnum: TaskStatus
+                            if let legacyRaw = status.legacyStatus, let mapped = TaskStatus(rawValue: legacyRaw) {
+                                legacyEnum = mapped
+                            } else {
+                                legacyEnum = (status.category == .completed) ? .done : (status.category == .cancelled ? .cancelled : .inProgress)
+                            }
+                            let md: [String: String] = [
+                                "from": task.status.rawValue,
+                                "to": legacyEnum.rawValue,
+                                "from_status_id": task.$customStatus.id?.uuidString ?? "",
+                                "to_status_id": targetStatusId.uuidString
+                            ]
+                            try await TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .statusChanged, metadata: md).save(on: db)
+                            task.$customStatus.id = targetStatusId
+                            task.status = legacyEnum
+                            changedStatus = true
+                        }
+                    } else if let targetStatus = payload.targetStatus {
+                        if task.status != targetStatus {
+                            let resolvedId = statusIdByProjectAndLegacySnapshot[projectId]?[targetStatus.rawValue]
+                            if let resolvedId {
+                                let md: [String: String] = [
+                                    "from": task.status.rawValue,
+                                    "to": targetStatus.rawValue,
+                                    "from_status_id": task.$customStatus.id?.uuidString ?? "",
+                                    "to_status_id": resolvedId.uuidString
+                                ]
+                                try await TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .statusChanged, metadata: md).save(on: db)
+                                task.status = targetStatus
+                                task.$customStatus.id = resolvedId
+                                changedStatus = true
+                            }
+                        }
+                    }
                 }
                 
                 task.position = moveAction.newPosition
@@ -630,12 +835,30 @@ struct TaskController: RouteCollection {
                     var md: [String: String] = [:]
                     if movedList { md["to_list"] = payload.targetListId?.uuidString }
                     md["position"] = String(moveAction.newPosition)
-                    activities.append(TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .moved, metadata: md))
+                    try await TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .moved, metadata: md).save(on: db)
                 }
-            }
-            
-            for activity in activities {
-                try await activity.save(on: db)
+
+                if changedStatus, let projectId = projectId {
+                    let workflowVersion = targetListSnapshot?.project.workflowVersion ?? task.list?.project.workflowVersion ?? 1
+                    let statusIdChange: AutomationService.TaskEvent.Change<UUID?>? = {
+                        let newId = task.$customStatus.id
+                        if oldStatusId != newId { return .init(from: oldStatusId, to: newId) }
+                        return nil
+                    }()
+                    let event = AutomationService.TaskEvent(
+                        eventId: batchEventId,
+                        orgId: ctx.orgId,
+                        projectId: projectId,
+                        workflowVersion: workflowVersion,
+                        taskId: moveAction.taskId,
+                        userId: ctx.userId,
+                        isCreated: false,
+                        statusIdChange: statusIdChange,
+                        priorityChange: nil,
+                        typeChange: nil
+                    )
+                    await AutomationService.applyAutomations(event: event, task: task, db: db, logger: req.logger)
+                }
             }
         }
         
@@ -1147,6 +1370,106 @@ struct TaskController: RouteCollection {
     }
 
     // MARK: - Helpers
+
+    private struct ResolvedWorkflowStatus: Sendable {
+        let statusId: UUID
+        let legacyEnum: TaskStatus
+    }
+
+    private func resolveStatusForProject(
+        projectId: UUID,
+        requestedStatusId: UUID?,
+        requestedLegacyStatus: TaskStatus?,
+        db: Database
+    ) async throws -> ResolvedWorkflowStatus {
+        // Ensure a baseline workflow exists for brand-new projects.
+        let existingCount = try await CustomStatusModel.query(on: db)
+            .filter(\.$project.$id == projectId)
+            .count()
+        if existingCount == 0 {
+            let standard: [(TaskStatus, String, Double, WorkflowStatusCategory, Bool, Bool)] = [
+                (.todo, "#94A3B8", 0, .backlog, true, false),
+                (.inProgress, "#3B82F6", 1000, .active, false, false),
+                (.inReview, "#F59E0B", 2000, .active, false, false),
+                (.done, "#22C55E", 3000, .completed, false, true),
+                (.cancelled, "#64748B", 4000, .cancelled, false, true)
+            ]
+            for (legacy, color, pos, category, isDefault, isFinal) in standard {
+                let s = CustomStatusModel(
+                    projectId: projectId,
+                    name: legacy.displayName,
+                    color: color,
+                    position: pos,
+                    category: category,
+                    isDefault: isDefault,
+                    isFinal: isFinal,
+                    isLocked: true,
+                    legacyStatus: legacy.rawValue
+                )
+                try? await s.save(on: db)
+            }
+        }
+
+        if let requestedStatusId {
+            guard let status = try await CustomStatusModel.query(on: db)
+                .filter(\.$id == requestedStatusId)
+                .filter(\.$project.$id == projectId)
+                .first()
+            else {
+                throw Abort(.badRequest, reason: "Invalid statusId for this project.")
+            }
+            return .init(statusId: requestedStatusId, legacyEnum: legacyEnum(for: status))
+        }
+
+        if let requestedLegacyStatus {
+            if let status = try await CustomStatusModel.query(on: db)
+                .filter(\.$project.$id == projectId)
+                .filter(\.$legacyStatus == requestedLegacyStatus.rawValue)
+                .first(),
+               let id = status.id
+            {
+                return .init(statusId: id, legacyEnum: legacyEnum(for: status))
+            }
+        }
+
+        if let status = try await CustomStatusModel.query(on: db)
+            .filter(\.$project.$id == projectId)
+            .filter(\.$isDefault == true)
+            .sort(\.$position, .ascending)
+            .first(),
+           let id = status.id
+        {
+            return .init(statusId: id, legacyEnum: legacyEnum(for: status))
+        }
+
+        // Last resort: pick the lowest position status.
+        if let status = try await CustomStatusModel.query(on: db)
+            .filter(\.$project.$id == projectId)
+            .sort(\.$position, .ascending)
+            .first(),
+           let id = status.id
+        {
+            return .init(statusId: id, legacyEnum: legacyEnum(for: status))
+        }
+
+        throw Abort(.internalServerError, reason: "Workflow is not initialized for this project.")
+    }
+
+    private func legacyEnum(for status: CustomStatusModel) -> TaskStatus {
+        if let legacy = status.legacyStatus, let mapped = TaskStatus(rawValue: legacy) {
+            return mapped
+        }
+        switch status.category {
+        case .backlog:
+            return .todo
+        case .active:
+            return .inProgress
+        case .completed:
+            return .done
+        case .cancelled:
+            return .cancelled
+        }
+    }
 
     /// Fetches subtask counts for a batch of tasks using a GROUP BY aggregate (no N+1).
     private func withSubtaskCounts(tasks: [TaskItemModel], db: any Database) async throws -> [TaskItemDTO] {

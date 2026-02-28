@@ -78,7 +78,38 @@ struct HierarchyController: RouteCollection {
         }
 
         let project = ProjectModel(spaceId: spaceId, name: payload.name, description: payload.description)
-        try await project.save(on: req.db)
+        try await req.db.transaction { db in
+            try await project.save(on: db)
+
+            // Phase 10: initialize standard workflow statuses for new projects.
+            let projectId = try project.requireID()
+            let existing = (try? await CustomStatusModel.query(on: db)
+                .filter(\.$project.$id == projectId)
+                .count()) ?? 0
+            if existing == 0 {
+                let standard: [(TaskStatus, String, Double, WorkflowStatusCategory, Bool, Bool)] = [
+                    (.todo, "#94A3B8", 0, .backlog, true, false),
+                    (.inProgress, "#3B82F6", 1000, .active, false, false),
+                    (.inReview, "#F59E0B", 2000, .active, false, false),
+                    (.done, "#22C55E", 3000, .completed, false, true),
+                    (.cancelled, "#64748B", 4000, .cancelled, false, true)
+                ]
+                for (legacy, color, pos, category, isDefault, isFinal) in standard {
+                    let s = CustomStatusModel(
+                        projectId: projectId,
+                        name: legacy.displayName,
+                        color: color,
+                        position: pos,
+                        category: category,
+                        isDefault: isDefault,
+                        isFinal: isFinal,
+                        isLocked: true,
+                        legacyStatus: legacy.rawValue
+                    )
+                    try? await s.save(on: db)
+                }
+            }
+        }
 
         let dto = ProjectDTO(
             id: project.id!,
