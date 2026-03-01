@@ -193,6 +193,12 @@ public enum Permission: String, Codable, Sendable, CaseIterable {
     case viewsDelete     = "views.delete"
     case viewsShare      = "views.share"
     case viewsSetDefault = "views.set_default"
+
+    // Collaboration (Phase 11)
+    case commentsCreate      = "comments.create"
+    case attachmentsUpload   = "attachments.upload"
+    case attachmentsDownload = "attachments.download"
+    case notificationsRead   = "notifications.read"
 }
 
 /// A set of permissions for the current user within an org context.
@@ -212,10 +218,11 @@ public struct PermissionSet: Codable, Sendable, Equatable {
     public static func defaultPermissions(for role: UserRole) -> PermissionSet {
         switch role {
         case .guest:
-            return PermissionSet(permissions: [.tasksRead, .membersView])
+            return PermissionSet(permissions: [.tasksRead, .membersView, .notificationsRead])
         case .viewer:
             return PermissionSet(permissions: [
-                .tasksRead, .membersView, .projectsRead, .analyticsView
+                .tasksRead, .membersView, .projectsRead, .analyticsView,
+                .attachmentsDownload, .notificationsRead
             ])
         case .member:
             return PermissionSet(permissions: [
@@ -223,7 +230,8 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
                 .viewsCreate, .viewsUpdate, .viewsDelete,
                 .membersView,
-                .projectsRead
+                .projectsRead,
+                .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])
         case .manager:
             return PermissionSet(permissions: [
@@ -232,7 +240,8 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .viewsCreate, .viewsUpdate, .viewsDelete, .viewsShare, .viewsSetDefault,
                 .membersView, .membersInvite,
                 .projectsCreate, .projectsEdit,
-                .analyticsView, .analyticsExport
+                .analyticsView, .analyticsExport,
+                .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])
         case .admin:
             return PermissionSet(permissions: [
@@ -242,7 +251,8 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .membersView, .membersInvite, .membersManage, .membersRemove,
                 .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
                 .analyticsView, .analyticsExport,
-                .orgSettings, .auditLogView
+                .orgSettings, .auditLogView,
+                .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])
         case .owner:
             return PermissionSet(permissions: Set(Permission.allCases))

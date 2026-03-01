@@ -36,7 +36,8 @@ public struct TaskTableView: View {
                                         taskRepository: viewModel.taskRepository,
                                         activityRepository: viewModel.activityRepository,
                                         hierarchyRepository: viewModel.hierarchyRepository,
-                                        workflowRepository: viewModel.workflowRepository
+                                        workflowRepository: viewModel.workflowRepository,
+                                        attachmentRepository: viewModel.attachmentRepository
                                     )
                                 )
                             ) {

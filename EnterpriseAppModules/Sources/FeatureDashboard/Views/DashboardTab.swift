@@ -7,6 +7,7 @@ public struct DashboardTab: View {
     private let activityRepository: TaskActivityRepositoryProtocol
     private let hierarchyRepository: HierarchyRepositoryProtocol
     private let workflowRepository: WorkflowRepositoryProtocol
+    private let attachmentRepository: AttachmentRepositoryProtocol
     
     @State private var viewType: DashboardViewType = .list
     
@@ -14,12 +15,14 @@ public struct DashboardTab: View {
         taskRepository: TaskRepositoryProtocol,
         activityRepository: TaskActivityRepositoryProtocol,
         hierarchyRepository: HierarchyRepositoryProtocol,
-        workflowRepository: WorkflowRepositoryProtocol
+        workflowRepository: WorkflowRepositoryProtocol,
+        attachmentRepository: AttachmentRepositoryProtocol
     ) {
         self.taskRepository = taskRepository
         self.activityRepository = activityRepository
         self.hierarchyRepository = hierarchyRepository
         self.workflowRepository = workflowRepository
+        self.attachmentRepository = attachmentRepository
     }
     
     public var body: some View {
@@ -28,7 +31,8 @@ public struct DashboardTab: View {
             taskRepository: taskRepository,
             activityRepository: activityRepository,
             hierarchyRepository: hierarchyRepository,
-            workflowRepository: workflowRepository
+            workflowRepository: workflowRepository,
+            attachmentRepository: attachmentRepository
         )
         
         DashboardView(viewModel: viewModel, viewType: $viewType)

@@ -32,4 +32,13 @@ func routes(_ app: Application) throws {
 
     let workflowController = WorkflowController()
     try orgScopedAPI.register(collection: workflowController)
+
+    let attachmentController = AttachmentController()
+    try orgScopedAPI.register(collection: attachmentController)
+
+    let notificationController = NotificationController()
+    try orgScopedAPI.register(collection: notificationController)
+
+    // Phase 11: Real-time collaboration
+    RealtimeController.register(on: app)
 }

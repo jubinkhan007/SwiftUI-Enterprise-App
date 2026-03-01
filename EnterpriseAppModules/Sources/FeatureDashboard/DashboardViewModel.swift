@@ -46,6 +46,7 @@ public final class DashboardViewModel: ObservableObject {
     public let activityRepository: TaskActivityRepositoryProtocol
     public let hierarchyRepository: HierarchyRepositoryProtocol
     public let workflowRepository: WorkflowRepositoryProtocol
+    public let attachmentRepository: AttachmentRepositoryProtocol
     private var cancellables = Set<AnyCancellable>()
     private var hasMorePages = true
     private var nextCursor: String? = nil
@@ -60,12 +61,14 @@ public final class DashboardViewModel: ObservableObject {
         taskRepository: TaskRepositoryProtocol,
         activityRepository: TaskActivityRepositoryProtocol,
         hierarchyRepository: HierarchyRepositoryProtocol,
-        workflowRepository: WorkflowRepositoryProtocol
+        workflowRepository: WorkflowRepositoryProtocol,
+        attachmentRepository: AttachmentRepositoryProtocol
     ) {
         self.taskRepository = taskRepository
         self.activityRepository = activityRepository
         self.hierarchyRepository = hierarchyRepository
         self.workflowRepository = workflowRepository
+        self.attachmentRepository = attachmentRepository
         setupSearchDebounce()
     }
     

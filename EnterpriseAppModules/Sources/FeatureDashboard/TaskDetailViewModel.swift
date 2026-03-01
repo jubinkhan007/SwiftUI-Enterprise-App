@@ -10,10 +10,12 @@ public final class TaskDetailViewModel: ObservableObject {
     @Published public private(set) var activities: [TaskActivityDTO] = []
     @Published public private(set) var workflowStatuses: [WorkflowStatusDTO] = []
     @Published public private(set) var workflowProjectId: UUID? = nil
+    @Published public private(set) var attachments: [AttachmentDTO] = []
     
     @Published public var isLoadingTask = false
     @Published public var isLoadingActivities = false
     @Published public var isLoadingWorkflow = false
+    @Published public var isLoadingAttachments = false
     @Published public var isSaving = false
     @Published public var error: Error?
     
@@ -30,24 +32,39 @@ public final class TaskDetailViewModel: ObservableObject {
     // Comment State
     @Published public var newCommentText = ""
     @Published public var isSubmittingComment = false
+    @Published public var isUploadingAttachment = false
+    @Published public private(set) var orgMembers: [OrganizationMemberDTO] = []
+    @Published public private(set) var isLoadingOrgMembers = false
+    @Published public private(set) var orgMembersLoadError: Error?
     
     private let taskRepository: TaskRepositoryProtocol
     private let activityRepository: TaskActivityRepositoryProtocol
     private let hierarchyRepository: HierarchyRepositoryProtocol
     private let workflowRepository: WorkflowRepositoryProtocol
+    private let attachmentRepository: AttachmentRepositoryProtocol
+    private var realtimeProvider: RealTimeProvider? = nil
+    private let apiClient: APIClientProtocol
+    private let apiConfiguration: APIConfiguration
+    private var pendingAttachmentsRefresh = false
     
     public init(
         task: TaskItemDTO,
         taskRepository: TaskRepositoryProtocol,
         activityRepository: TaskActivityRepositoryProtocol,
         hierarchyRepository: HierarchyRepositoryProtocol,
-        workflowRepository: WorkflowRepositoryProtocol
+        workflowRepository: WorkflowRepositoryProtocol,
+        attachmentRepository: AttachmentRepositoryProtocol,
+        apiClient: APIClientProtocol = APIClient(),
+        configuration: APIConfiguration = .localVapor
     ) {
         self.task = task
         self.taskRepository = taskRepository
         self.activityRepository = activityRepository
         self.hierarchyRepository = hierarchyRepository
         self.workflowRepository = workflowRepository
+        self.attachmentRepository = attachmentRepository
+        self.apiClient = apiClient
+        self.apiConfiguration = configuration
         
         self.editTitle = task.title
         self.editDescription = task.description ?? ""
@@ -70,6 +87,62 @@ public final class TaskDetailViewModel: ObservableObject {
         }
         
         isLoadingActivities = false
+    }
+
+    public func fetchAttachments() async {
+        if isLoadingAttachments {
+            pendingAttachmentsRefresh = true
+            return
+        }
+        isLoadingAttachments = true
+        pendingAttachmentsRefresh = false
+        defer {
+            isLoadingAttachments = false
+            if pendingAttachmentsRefresh {
+                pendingAttachmentsRefresh = false
+                Task { await self.fetchAttachments() }
+            }
+        }
+
+        do {
+            self.attachments = try await attachmentRepository.list(taskId: task.id)
+        } catch {
+            self.error = error
+        }
+    }
+
+    public func uploadJPEG(_ data: Data, filename: String = "image.jpg") async {
+        guard !isUploadingAttachment else { return }
+        isUploadingAttachment = true
+        defer { isUploadingAttachment = false }
+
+        do {
+            _ = try await attachmentRepository.upload(taskId: task.id, filename: filename, data: data, mimeType: "image/jpeg")
+            await fetchAttachments()
+        } catch {
+            self.error = error
+        }
+    }
+
+    public func loadOrgMembersIfNeeded() async {
+        guard orgMembers.isEmpty else { return }
+        guard !isLoadingOrgMembers else { return }
+        guard let orgId = OrganizationContext.shared.orgId else { return }
+        isLoadingOrgMembers = true
+        orgMembersLoadError = nil
+        defer { isLoadingOrgMembers = false }
+        do {
+            let endpoint = OrganizationEndpoint.listMembers(orgId: orgId, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<[OrganizationMemberDTO]>.self)
+            self.orgMembers = response.data ?? []
+        } catch {
+            orgMembersLoadError = error
+        }
+    }
+
+    public func reloadOrgMembers() async {
+        orgMembers = []
+        await loadOrgMembersIfNeeded()
     }
     
     public func saveChanges() async {
@@ -176,5 +249,39 @@ public final class TaskDetailViewModel: ObservableObject {
     public func refreshTask() async {
         // Needs a fetch single task method, but if we don't have it, we could rely on Dashboard Refresh.
         // Or we could implement it on TaskRepository.
+    }
+
+    public func startRealtime() async {
+        guard realtimeProvider == nil else { return }
+        guard let orgId = OrganizationContext.shared.orgId else { return }
+
+        let provider = RealTimeProvider()
+        provider.onEvent = { [weak self] event in
+            guard let self else { return }
+            // Only react to events for this task.
+            if event.payload?["taskId"] == self.task.id.uuidString {
+                Task {
+                    if event.type == "comment.created" {
+                        await self.fetchActivities()
+                    } else if event.type == "attachment.created" {
+                        await self.fetchAttachments()
+                    }
+                }
+            }
+        }
+        realtimeProvider = provider
+
+        await provider.connect(orgId: orgId)
+        if let listId = task.listId {
+            await provider.subscribe(channels: ["list:\(listId.uuidString)"])
+        }
+        if let projectId = workflowProjectId {
+            await provider.subscribe(channels: ["project:\(projectId.uuidString)"])
+        }
+    }
+
+    public func stopRealtime() {
+        realtimeProvider?.disconnect()
+        realtimeProvider = nil
     }
 }

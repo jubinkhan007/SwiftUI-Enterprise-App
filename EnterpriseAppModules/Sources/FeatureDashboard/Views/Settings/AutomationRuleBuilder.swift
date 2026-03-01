@@ -88,33 +88,8 @@ public struct AutomationRuleBuilder: View {
                 }
 
                 Section("Action") {
-                    Picker("Do", selection: $actionType) {
-                        ForEach(ActionType.allCases) { a in
-                            Text(a.title).tag(a)
-                        }
-                    }
-
-                    switch actionType {
-                    case .setStatusId:
-                        Picker("Status", selection: $actionStatusId) {
-                            Text("Select").tag(Optional<UUID>.none)
-                            ForEach(statuses) { s in
-                                Text(s.name).tag(Optional(s.id))
-                            }
-                        }
-                    case .setPriority:
-                        Picker("Priority", selection: $actionPriority) {
-                            ForEach(TaskPriority.allCases, id: \.self) { p in
-                                Text(p.displayName).tag(p)
-                            }
-                        }
-                    case .assignUserId:
-                        TextField("User UUID", text: $actionUserId)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    case .addLabel, .removeLabel:
-                        TextField("Label", text: $actionLabel)
-                    }
+                    actionTypePicker
+                    actionDetail
                 }
 
                 Section("Preview") {
@@ -198,6 +173,38 @@ public struct AutomationRuleBuilder: View {
         return "\(t) → \(a)"
     }
 
+    private var actionTypePicker: some View {
+        Picker("Do", selection: $actionType) {
+            ForEach(ActionType.allCases) { a in
+                Text(a.title).tag(a)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionDetail: some View {
+        switch actionType {
+        case .setStatusId:
+            Picker("Status", selection: $actionStatusId) {
+                Text("Select").tag(Optional<UUID>.none)
+                ForEach(statuses) { s in
+                    Text(s.name).tag(Optional(s.id))
+                }
+            }
+        case .setPriority:
+            Picker("Priority", selection: $actionPriority) {
+                ForEach(TaskPriority.allCases, id: \.self) { p in
+                    Text(p.displayName).tag(p)
+                }
+            }
+        case .assignUserId:
+            TextField("User UUID", text: $actionUserId)
+                .autocorrectionDisabled()
+        case .addLabel, .removeLabel:
+            TextField("Label", text: $actionLabel)
+        }
+    }
+
     private var triggerConfigJson: String? {
         guard trigger == .statusChanged, let to = triggerToStatusId else { return nil }
         return #"{"toStatusId":"\#(to.uuidString)"}"#
@@ -224,4 +231,3 @@ public struct AutomationRuleBuilder: View {
         }
     }
 }
-

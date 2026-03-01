@@ -44,6 +44,12 @@ func configure(_ app: Application) throws {
     app.migrations.add(BackfillTaskStatusIds())
     app.migrations.add(EnforceStatusIdOnTasks())
 
+    // Phase 11: Collaboration
+    app.migrations.add(CreateComments())
+    app.migrations.add(CreateMentions())
+    app.migrations.add(CreateAttachments())
+    app.migrations.add(CreateNotifications())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

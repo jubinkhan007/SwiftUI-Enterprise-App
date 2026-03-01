@@ -66,13 +66,19 @@ public struct APIClient: APIClientProtocol {
         request.httpMethod = endpoint.method.rawValue
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
-        
-        request.addValue("application/json", forHTTPHeaderField: "Accept")
-        request.addValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        endpoint.headers?.forEach { key, value in
-            request.addValue(value, forHTTPHeaderField: key)
+
+        // Header precedence: endpoint overrides defaults.
+        var headers = endpoint.headers ?? [:]
+        if headers["Accept"] == nil {
+            headers["Accept"] = "application/json"
         }
-        
+        if headers["Content-Type"] == nil, endpoint.body != nil {
+            headers["Content-Type"] = "application/json; charset=utf-8"
+        }
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
         request.httpBody = endpoint.body
 
         do {
@@ -109,6 +115,59 @@ public struct APIClient: APIClientProtocol {
                 throw NetworkError.unauthorized(message: decodeVaporErrorMessage(from: data))
             case 403:
                 // Immediately clear org context — user lost access
+                OrganizationContext.shared.clear()
+                throw NetworkError.forbidden(message: decodeVaporErrorMessage(from: data))
+            default:
+                throw NetworkError.serverError(
+                    statusCode: httpResponse.statusCode,
+                    message: decodeVaporErrorMessage(from: data)
+                )
+            }
+        } catch let error as NetworkError {
+            throw error
+        } catch let urlError as URLError where urlError.code == .notConnectedToInternet {
+            throw NetworkError.offline
+        } catch {
+            throw NetworkError.underlying(String(describing: error))
+        }
+    }
+
+    /// Issues a request and returns the raw response bytes (used for downloads / non-JSON responses).
+    public func requestData(_ endpoint: APIEndpoint) async throws -> Data {
+        guard let url = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
+            throw NetworkError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = endpoint.method.rawValue
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 60
+
+        var headers = endpoint.headers ?? [:]
+        if headers["Accept"] == nil {
+            headers["Accept"] = "*/*"
+        }
+        if headers["Content-Type"] == nil, endpoint.body != nil {
+            headers["Content-Type"] = "application/octet-stream"
+        }
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        request.httpBody = endpoint.body
+
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw NetworkError.serverError(statusCode: 0, message: "Invalid server response.")
+            }
+
+            switch httpResponse.statusCode {
+            case 200...299:
+                return data
+            case 401:
+                throw NetworkError.unauthorized(message: decodeVaporErrorMessage(from: data))
+            case 403:
                 OrganizationContext.shared.clear()
                 throw NetworkError.forbidden(message: decodeVaporErrorMessage(from: data))
             default:

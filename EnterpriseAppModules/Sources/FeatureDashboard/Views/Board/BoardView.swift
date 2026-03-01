@@ -11,6 +11,7 @@ public struct BoardView: View {
     private let activityRepository: TaskActivityRepositoryProtocol
     private let hierarchyRepository: HierarchyRepositoryProtocol
     private let workflowRepository: WorkflowRepositoryProtocol
+    private let attachmentRepository: AttachmentRepositoryProtocol
     
     public init(
         tasks: [TaskItemDTO],
@@ -18,7 +19,8 @@ public struct BoardView: View {
         taskRepository: TaskRepositoryProtocol,
         activityRepository: TaskActivityRepositoryProtocol,
         hierarchyRepository: HierarchyRepositoryProtocol,
-        workflowRepository: WorkflowRepositoryProtocol
+        workflowRepository: WorkflowRepositoryProtocol,
+        attachmentRepository: AttachmentRepositoryProtocol
     ) {
         self.tasks = tasks
         self.workflowStatuses = workflowStatuses
@@ -26,6 +28,7 @@ public struct BoardView: View {
         self.activityRepository = activityRepository
         self.hierarchyRepository = hierarchyRepository
         self.workflowRepository = workflowRepository
+        self.attachmentRepository = attachmentRepository
         // Initialize with default status grouping
         self._viewModel = StateObject(wrappedValue: BoardViewModel(taskRepository: taskRepository))
     }
@@ -69,7 +72,8 @@ public struct BoardView: View {
                             taskRepository: taskRepository,
                             activityRepository: activityRepository,
                             hierarchyRepository: hierarchyRepository,
-                            workflowRepository: workflowRepository
+                            workflowRepository: workflowRepository,
+                            attachmentRepository: attachmentRepository
                         )
                     }
                 }

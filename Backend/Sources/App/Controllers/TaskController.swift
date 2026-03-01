@@ -660,10 +660,14 @@ struct TaskController: RouteCollection {
     @Sendable
     func move(req: Request) async throws -> APIResponse<TaskItemDTO> {
         let ctx = try req.orgContext
-        guard let task = try await TaskItemModel.query(on: req.db)
+        let query = TaskItemModel.query(on: req.db)
             .filter(\.$id == req.parameters.get("taskID", as: UUID.self) ?? UUID())
             .filter(\.$organization.$id == ctx.orgId)
-            .first() else {
+            .with(\.$list) { list in
+                list.with(\.$project)
+            }
+
+        guard let task = try await query.first() else {
             throw Abort(.notFound, reason: "Task not found in this organization.")
         }
 
@@ -966,18 +970,58 @@ struct TaskController: RouteCollection {
         }
 
         let payload = try req.content.decode(CreateCommentRequest.self)
-        guard !payload.content.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let trimmed = payload.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
             throw Abort(.badRequest, reason: "Comment content cannot be empty.")
         }
 
-        let activity = TaskActivityModel(
-            taskId: try task.requireID(),
-            userId: ctx.userId,
-            type: .comment,
-            content: payload.content
-        )
+        let taskId = try task.requireID()
 
-        try await activity.save(on: req.db)
+        // Resolve mentions BEFORE the write transaction to avoid holding the SQLite write
+        // lock while executing reads (filterToOrgMembers queries OrganizationMemberModel).
+        let mentionedUserIds = MentionService.extractUserIds(from: trimmed)
+        let allowedMentions: [UUID] = mentionedUserIds.isEmpty
+            ? []
+            : (try? await MentionService.filterToOrgMembers(userIds: mentionedUserIds, orgId: ctx.orgId, db: req.db)) ?? []
+
+        // Transaction only contains writes — keeps the SQLite write lock duration minimal.
+        let (activity, commentId) = try await req.db.transaction { db in
+            let comment = CommentModel(taskId: taskId, userId: ctx.userId, orgId: ctx.orgId, body: trimmed)
+            try await comment.save(on: db)
+
+            let commentId = try comment.requireID()
+
+            let activity = TaskActivityModel(
+                taskId: taskId,
+                userId: ctx.userId,
+                type: .comment,
+                content: trimmed,
+                metadata: ["comment_id": commentId.uuidString]
+            )
+            try await activity.save(on: db)
+
+            for userId in allowedMentions where userId != ctx.userId {
+                do {
+                    try await MentionModel(userId: userId, commentId: commentId, taskId: taskId).save(on: db)
+                } catch {
+                    // Ignore mention duplicates.
+                }
+                try await NotificationService.createMentionNotification(
+                    mentionedUserId: userId,
+                    actorUserId: ctx.userId,
+                    orgId: ctx.orgId,
+                    taskId: taskId,
+                    commentId: commentId,
+                    db: db
+                )
+            }
+
+            return (activity, commentId)
+        }
+
+        // Broadcast to realtime channels (best-effort).
+        RealtimeBroadcaster.broadcastCommentCreated(app: req.application, orgId: ctx.orgId, task: task, commentId: commentId)
+
         return .success(activity.toDTO())
     }
 

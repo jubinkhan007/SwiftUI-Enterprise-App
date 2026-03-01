@@ -48,7 +48,8 @@ public struct DashboardView: View {
                                 taskRepository: viewModel.taskRepository,
                                 activityRepository: viewModel.activityRepository,
                                 hierarchyRepository: viewModel.hierarchyRepository,
-                                workflowRepository: viewModel.workflowRepository
+                                workflowRepository: viewModel.workflowRepository,
+                                attachmentRepository: viewModel.attachmentRepository
                             )
                         } else if viewType == .calendar {
                             CalendarView(viewModel: viewModel)

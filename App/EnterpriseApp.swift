@@ -57,8 +57,11 @@ struct AuthenticatedRootView: View {
     @State private var showTeamManagement = false
     @State private var showingCreateTask = false
     @State private var viewType: DashboardViewType = .list
-    @State private var showingProjectSettings = false
-    @State private var projectSettingsProjectId: UUID? = nil
+    @State private var projectSettingsSheet: ProjectSettingsSheetItem? = nil
+
+    private struct ProjectSettingsSheetItem: Identifiable {
+        let id: UUID
+    }
     
     init(session: Domain.AuthSession, authManager: AppData.AuthManager, selectedOrg: OrganizationDTO, modelContainer: ModelContainer) {
         self.session = session
@@ -76,11 +79,13 @@ struct AuthenticatedRootView: View {
         let activityRepository = TaskActivityRepository(apiClient: apiClient)
         let hierarchyRepo = HierarchyRepository(apiClient: apiClient)
         let workflowRepo = WorkflowRepository(apiClient: apiClient)
+        let attachmentRepo = AttachmentRepository(apiClient: apiClient)
         self.viewModel = DashboardViewModel(
             taskRepository: taskRepository,
             activityRepository: activityRepository,
             hierarchyRepository: hierarchyRepo,
-            workflowRepository: workflowRepo
+            workflowRepository: workflowRepo,
+            attachmentRepository: attachmentRepo
         )
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
@@ -138,8 +143,7 @@ struct AuthenticatedRootView: View {
                     if case .project(let projectId) = sidebarViewModel.selectedArea {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
-                                projectSettingsProjectId = projectId
-                                showingProjectSettings = true
+                                projectSettingsSheet = ProjectSettingsSheetItem(id: projectId)
                             } label: {
                                 Image(systemName: "gearshape")
                                     .font(.subheadline)
@@ -170,10 +174,8 @@ struct AuthenticatedRootView: View {
                     }
                     .presentationDetents([.medium, .large])
                 }
-                .sheet(isPresented: $showingProjectSettings) {
-                    if let projectId = projectSettingsProjectId {
-                        ProjectSettingsView(projectId: projectId, workflowRepository: viewModel.workflowRepository)
-                    }
+                .sheet(item: $projectSettingsSheet) { item in
+                    ProjectSettingsView(projectId: item.id, workflowRepository: viewModel.workflowRepository)
                 }
             }
         }

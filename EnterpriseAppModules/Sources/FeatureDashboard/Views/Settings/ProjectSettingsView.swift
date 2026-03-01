@@ -82,6 +82,7 @@ public struct ProjectSettingsView: View {
 
     @State private var showingCreateStatus = false
     @State private var showingCreateRule = false
+    @State private var showErrorAlert = false
 
     public init(projectId: UUID, workflowRepository: WorkflowRepositoryProtocol) {
         _viewModel = StateObject(wrappedValue: ProjectSettingsViewModel(projectId: projectId, workflowRepository: workflowRepository))
@@ -93,7 +94,29 @@ public struct ProjectSettingsView: View {
                 AppColors.backgroundPrimary.ignoresSafeArea()
 
                 if viewModel.isLoading && viewModel.workflow == nil {
-                    ProgressView()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading…")
+                            .appFont(AppTypography.body)
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+                    .padding()
+                } else if viewModel.workflow == nil, let error = viewModel.error {
+                    VStack(spacing: 12) {
+                        Text("Couldn’t load project settings.")
+                            .appFont(AppTypography.headline)
+                            .foregroundColor(AppColors.textPrimary)
+                        Text(error.localizedDescription)
+                            .appFont(AppTypography.body)
+                            .foregroundColor(AppColors.textSecondary)
+                            .multilineTextAlignment(.center)
+                        Button("Retry") {
+                            Task { await viewModel.refresh() }
+                        }
+                        .appFont(AppTypography.headline)
+                        .foregroundColor(AppColors.brandPrimary)
+                    }
+                    .padding()
                 } else {
                     List {
                         statusesSection
@@ -118,6 +141,14 @@ public struct ProjectSettingsView: View {
             }
             .task { await viewModel.refresh() }
             .refreshable { await viewModel.refresh() }
+            .onChange(of: viewModel.error != nil) { _, hasError in
+                showErrorAlert = (hasError && viewModel.workflow != nil)
+            }
+            .alert("Error", isPresented: $showErrorAlert) {
+                Button("OK", role: .cancel) { viewModel.error = nil }
+            } message: {
+                Text(viewModel.error?.localizedDescription ?? "Something went wrong.")
+            }
             .sheet(isPresented: $showingCreateStatus) {
                 CreateStatusSheet { payload in
                     Task { await viewModel.createStatus(payload) }

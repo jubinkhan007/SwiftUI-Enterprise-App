@@ -10,6 +10,7 @@ public struct BoardColumnView: View {
     private let activityRepository: TaskActivityRepositoryProtocol
     private let hierarchyRepository: HierarchyRepositoryProtocol
     private let workflowRepository: WorkflowRepositoryProtocol
+    private let attachmentRepository: AttachmentRepositoryProtocol
     @State private var isColumnDropTargeted = false
     
     public init(
@@ -18,7 +19,8 @@ public struct BoardColumnView: View {
         taskRepository: TaskRepositoryProtocol,
         activityRepository: TaskActivityRepositoryProtocol,
         hierarchyRepository: HierarchyRepositoryProtocol,
-        workflowRepository: WorkflowRepositoryProtocol
+        workflowRepository: WorkflowRepositoryProtocol,
+        attachmentRepository: AttachmentRepositoryProtocol
     ) {
         self.column = column
         self.viewModel = viewModel
@@ -26,6 +28,7 @@ public struct BoardColumnView: View {
         self.activityRepository = activityRepository
         self.hierarchyRepository = hierarchyRepository
         self.workflowRepository = workflowRepository
+        self.attachmentRepository = attachmentRepository
     }
     
     public var body: some View {
@@ -61,7 +64,8 @@ public struct BoardColumnView: View {
                                     taskRepository: taskRepository,
                                     activityRepository: activityRepository,
                                     hierarchyRepository: hierarchyRepository,
-                                    workflowRepository: workflowRepository
+                                    workflowRepository: workflowRepository,
+                                    attachmentRepository: attachmentRepository
                                 )
                             )
                         ) {

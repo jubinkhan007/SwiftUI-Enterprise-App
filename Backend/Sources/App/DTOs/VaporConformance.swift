@@ -62,3 +62,9 @@ extension UpdateWorkflowStatusRequest: @retroactive Content {}
 extension AutomationRuleDTO: @retroactive Content {}
 extension CreateAutomationRuleRequest: @retroactive Content {}
 extension UpdateAutomationRuleRequest: @retroactive Content {}
+
+// Phase 11: Collaboration
+extension CommentDTO: @retroactive Content {}
+extension AttachmentDTO: @retroactive Content {}
+extension NotificationDTO: @retroactive Content {}
+extension CreateCommentRequest: @retroactive Content {}
