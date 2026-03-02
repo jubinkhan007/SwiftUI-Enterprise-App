@@ -43,17 +43,22 @@ enum RealtimeController {
                     initialChannels: ["org:\(orgId.uuidString)"]
                 )
 
-                ws.onClose.whenComplete { _ in
-                    app.realtimeHub.removeConnection(id: connId)
-                }
+                // WebSocketKit requires callbacks to be installed from the socket's event loop.
+                ws.eventLoop.execute {
+                    ws.onClose.whenComplete { _ in
+                        app.realtimeHub.removeConnection(id: connId)
+                    }
 
-                ws.onText { ws, text in
-                    Task {
-                        await handleClientText(app: app, req: req, ws: ws, connId: connId, orgId: orgId, text: text)
+                    ws.onText { ws, text in
+                        Task {
+                            await handleClientText(app: app, req: req, ws: ws, connId: connId, orgId: orgId, text: text)
+                        }
                     }
                 }
             } catch {
-                ws.close(promise: nil)
+                ws.eventLoop.execute {
+                    ws.close(promise: nil)
+                }
             }
         }
     }

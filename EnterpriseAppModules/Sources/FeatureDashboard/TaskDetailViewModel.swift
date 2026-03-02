@@ -11,6 +11,7 @@ public final class TaskDetailViewModel: ObservableObject {
     @Published public private(set) var workflowStatuses: [WorkflowStatusDTO] = []
     @Published public private(set) var workflowProjectId: UUID? = nil
     @Published public private(set) var attachments: [AttachmentDTO] = []
+    @Published public private(set) var attachmentsLoadError: Error?
     
     @Published public var isLoadingTask = false
     @Published public var isLoadingActivities = false
@@ -33,9 +34,14 @@ public final class TaskDetailViewModel: ObservableObject {
     @Published public var newCommentText = ""
     @Published public var isSubmittingComment = false
     @Published public var isUploadingAttachment = false
+    @Published public private(set) var downloadingAttachmentId: UUID? = nil
     @Published public private(set) var orgMembers: [OrganizationMemberDTO] = []
     @Published public private(set) var isLoadingOrgMembers = false
     @Published public private(set) var orgMembersLoadError: Error?
+
+    /// Mention IDs accumulated as the user inserts @-suggestions. Sent with the comment
+    /// so the body can contain plain `@Full Name` without embedded UUIDs.
+    private var pendingMentionIds: [UUID] = []
     
     private let taskRepository: TaskRepositoryProtocol
     private let activityRepository: TaskActivityRepositoryProtocol
@@ -96,6 +102,7 @@ public final class TaskDetailViewModel: ObservableObject {
         }
         isLoadingAttachments = true
         pendingAttachmentsRefresh = false
+        attachmentsLoadError = nil
         defer {
             isLoadingAttachments = false
             if pendingAttachmentsRefresh {
@@ -107,20 +114,83 @@ public final class TaskDetailViewModel: ObservableObject {
         do {
             self.attachments = try await attachmentRepository.list(taskId: task.id)
         } catch {
+            attachmentsLoadError = error
             self.error = error
         }
     }
 
+    public func addPendingMention(userId: UUID) {
+        if !pendingMentionIds.contains(userId) {
+            pendingMentionIds.append(userId)
+        }
+    }
+
     public func uploadJPEG(_ data: Data, filename: String = "image.jpg") async {
+        await uploadRaw(data: data, filename: filename, mimeType: "image/jpeg")
+    }
+
+    /// Upload any supported file type selected via the document picker.
+    public func uploadFile(url: URL) async {
+        guard !isUploadingAttachment else { return }
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            let maxBytes = 24 * 1024 * 1024
+            guard data.count <= maxBytes else {
+                self.error = NSError(
+                    domain: "TaskDetailViewModel",
+                    code: 413,
+                    userInfo: [NSLocalizedDescriptionKey: "File is too large to upload (max 25 MB)."]
+                )
+                return
+            }
+            let filename = url.lastPathComponent
+            let mimeType = Self.mimeType(for: url)
+            await uploadRaw(data: data, filename: filename, mimeType: mimeType)
+        } catch {
+            self.error = error
+        }
+    }
+
+    private func uploadRaw(data: Data, filename: String, mimeType: String) async {
         guard !isUploadingAttachment else { return }
         isUploadingAttachment = true
         defer { isUploadingAttachment = false }
-
         do {
-            _ = try await attachmentRepository.upload(taskId: task.id, filename: filename, data: data, mimeType: "image/jpeg")
+            _ = try await attachmentRepository.upload(taskId: task.id, filename: filename, data: data, mimeType: mimeType)
             await fetchAttachments()
         } catch {
             self.error = error
+        }
+    }
+
+    /// Download an attachment to a temp file and return its local URL for preview.
+    public func downloadAttachment(_ attachment: AttachmentDTO) async -> URL? {
+        guard downloadingAttachmentId == nil else { return nil }
+        downloadingAttachmentId = attachment.id
+        defer { downloadingAttachmentId = nil }
+        do {
+            let data = try await attachmentRepository.download(attachmentId: attachment.id)
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(attachment.filename)
+            try data.write(to: tmp, options: [.atomic])
+            return tmp
+        } catch {
+            self.error = error
+            return nil
+        }
+    }
+
+    private static func mimeType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "png":        return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "pdf":        return "application/pdf"
+        case "txt":        return "text/plain"
+        case "csv":        return "text/csv"
+        case "json":       return "application/json"
+        case "zip":        return "application/zip"
+        default:           return "application/octet-stream"
         }
     }
 
@@ -143,6 +213,22 @@ public final class TaskDetailViewModel: ObservableObject {
     public func reloadOrgMembers() async {
         orgMembers = []
         await loadOrgMembersIfNeeded()
+    }
+
+    public func presentErrorDeferred(_ error: Error) {
+        DispatchQueue.main.async { [weak self] in
+            self?.error = error
+        }
+    }
+
+    public func presentErrorDeferred(message: String) {
+        presentErrorDeferred(
+            NSError(
+                domain: "TaskDetailViewModel",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+        )
     }
     
     public func saveChanges() async {
@@ -230,19 +316,24 @@ public final class TaskDetailViewModel: ObservableObject {
     }
     
     public func submitComment() async {
-        guard !newCommentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isSubmittingComment else { return }
-        
+        let trimmed = newCommentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isSubmittingComment else { return }
+
         isSubmittingComment = true
-        let payload = CreateCommentRequest(content: newCommentText)
-        
+        let payload = CreateCommentRequest(
+            content: trimmed,
+            mentionedUserIds: pendingMentionIds.isEmpty ? nil : pendingMentionIds
+        )
+
         do {
             let newActivity = try await activityRepository.createComment(taskId: task.id, payload: payload)
-            self.activities.insert(newActivity, at: 0) // Prepend new comment optimistically
+            self.activities.insert(newActivity, at: 0)
             self.newCommentText = ""
+            self.pendingMentionIds = []
         } catch {
             self.error = error
         }
-        
+
         isSubmittingComment = false
     }
     

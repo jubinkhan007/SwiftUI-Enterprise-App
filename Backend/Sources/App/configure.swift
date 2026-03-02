@@ -5,6 +5,9 @@ import Vapor
 
 /// Configures the application: database, migrations, middleware, and routes.
 func configure(_ app: Application) throws {
+    // Allow larger bodies for multipart uploads (attachments). We still enforce per-file limits in controllers.
+    app.routes.defaultMaxBodySize = "64mb"
+
     // MARK: - CORS Middleware
     let corsConfiguration = CORSMiddleware.Configuration(
         allowedOrigin: .all,
@@ -50,6 +53,10 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateAttachments())
     app.migrations.add(CreateNotifications())
 
+    // Phase 12: Analytics & Reporting
+    app.migrations.add(AddCompletedAtToTaskItem())
+    app.migrations.add(CreateSprintsAndStats())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 
@@ -68,6 +75,9 @@ func configure(_ app: Application) throws {
     decoder.keyDecodingStrategy = .convertFromSnakeCase
     decoder.dateDecodingStrategy = .iso8601
     ContentConfiguration.global.use(decoder: decoder, for: .json)
+
+    // MARK: - Commands
+    app.asyncCommands.use(AggregateStatsCommand(), as: "aggregate-stats")
 
     // MARK: - Routes
     try routes(app)

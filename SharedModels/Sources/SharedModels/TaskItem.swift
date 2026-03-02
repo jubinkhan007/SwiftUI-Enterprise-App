@@ -25,6 +25,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let listId: UUID?
     public let position: Double
     public let archivedAt: Date?
+    public let completedAt: Date?
     public let createdAt: Date?
     public let updatedAt: Date?
 
@@ -48,6 +49,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         listId: UUID? = nil,
         position: Double = 0.0,
         archivedAt: Date? = nil,
+        completedAt: Date? = nil,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
@@ -70,6 +72,7 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         self.listId = listId
         self.position = position
         self.archivedAt = archivedAt
+        self.completedAt = completedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

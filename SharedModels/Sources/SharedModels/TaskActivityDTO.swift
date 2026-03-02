@@ -42,11 +42,15 @@ public struct TaskActivityDTO: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
-/// Request payload for adding a comment
+/// Request payload for adding a comment.
+/// `mentionedUserIds` carries explicitly-tracked mention IDs so the client can
+/// display plain `@Full Name` text without embedding UUIDs in the comment body.
 public struct CreateCommentRequest: Codable, Sendable {
     public let content: String
-    
-    public init(content: String) {
+    public let mentionedUserIds: [UUID]?
+
+    public init(content: String, mentionedUserIds: [UUID]? = nil) {
         self.content = content
+        self.mentionedUserIds = mentionedUserIds
     }
 }

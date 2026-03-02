@@ -7,6 +7,7 @@ public enum DashboardViewType: String, CaseIterable, Identifiable {
     case board = "Board"
     case calendar = "Calendar"
     case timeline = "Timeline"
+    case analytics = "Analytics"
     public var id: String { self.rawValue }
 }
 
@@ -25,9 +26,17 @@ public struct DashboardView: View {
                 AppColors.backgroundPrimary.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    searchAndFilterArea
+                    if viewType != .analytics {
+                        searchAndFilterArea
+                    }
                     
-                    if viewModel.isLoading && viewModel.tasks.isEmpty {
+                    if viewType == .analytics {
+                        if let projectId = viewModel.query.projectId, let analyticsRepo = viewModel.analyticsRepository {
+                            AnalyticsDashboardView(projectId: projectId, repository: analyticsRepo)
+                        } else {
+                            EmptyStateView(title: "Analytics Not Available", message: "Select a specific project from the sidebar to view analytics.")
+                        }
+                    } else if viewModel.isLoading && viewModel.tasks.isEmpty {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if viewModel.error != nil && viewModel.tasks.isEmpty {
@@ -62,16 +71,20 @@ public struct DashboardView: View {
             .navigationTitle("Tasks")
             // The toolbar items have been lifted to the parent AuthenticatedRootView in EnterpriseApp.swift
             .task {
-                if viewModel.tasks.isEmpty {
+                if viewModel.tasks.isEmpty && viewType != .analytics {
                     await viewModel.fetchTasks(for: viewType)
                 }
             }
             .refreshable {
-                await viewModel.refresh(viewType: viewType)
+                if viewType != .analytics {
+                    await viewModel.refresh(viewType: viewType)
+                }
             }
             .onChange(of: viewType) { oldValue, newValue in
-                Task {
-                    await viewModel.fetchTasks(for: newValue)
+                if newValue != .analytics {
+                    Task {
+                        await viewModel.fetchTasks(for: newValue)
+                    }
                 }
             }
             .sheet(isPresented: $showingCreateTask) {

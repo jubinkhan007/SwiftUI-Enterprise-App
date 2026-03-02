@@ -47,6 +47,7 @@ public final class DashboardViewModel: ObservableObject {
     public let hierarchyRepository: HierarchyRepositoryProtocol
     public let workflowRepository: WorkflowRepositoryProtocol
     public let attachmentRepository: AttachmentRepositoryProtocol
+    public let analyticsRepository: AnalyticsRepositoryProtocol? // Optional to avoid breaking tests initially
     private var cancellables = Set<AnyCancellable>()
     private var hasMorePages = true
     private var nextCursor: String? = nil
@@ -62,13 +63,15 @@ public final class DashboardViewModel: ObservableObject {
         activityRepository: TaskActivityRepositoryProtocol,
         hierarchyRepository: HierarchyRepositoryProtocol,
         workflowRepository: WorkflowRepositoryProtocol,
-        attachmentRepository: AttachmentRepositoryProtocol
+        attachmentRepository: AttachmentRepositoryProtocol,
+        analyticsRepository: AnalyticsRepositoryProtocol? = nil
     ) {
         self.taskRepository = taskRepository
         self.activityRepository = activityRepository
         self.hierarchyRepository = hierarchyRepository
         self.workflowRepository = workflowRepository
         self.attachmentRepository = attachmentRepository
+        self.analyticsRepository = analyticsRepository
         setupSearchDebounce()
     }
     
@@ -94,6 +97,8 @@ public final class DashboardViewModel: ObservableObject {
             await fetchCalendarTasks()
         case .timeline:
             await fetchTimeline()
+        case .analytics:
+            break // Analytics is handled by its own ViewModel
         }
     }
     

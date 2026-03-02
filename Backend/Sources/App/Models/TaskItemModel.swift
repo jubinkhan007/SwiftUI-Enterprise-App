@@ -56,6 +56,9 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
     @OptionalField(key: "due_date")
     var dueDate: Date?
 
+    @OptionalField(key: "completed_at")
+    var completedAt: Date?
+
     @OptionalParent(key: "assignee_id")
     var assignee: UserModel?
 

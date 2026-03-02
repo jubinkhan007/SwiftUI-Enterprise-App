@@ -15,7 +15,8 @@ struct AttachmentController: RouteCollection {
         // Do NOT add it again here — double middleware means double DB membership queries.
         let task = routes.grouped("tasks", ":taskID")
         task.get("attachments", use: listForTask)
-        task.post("attachments", use: uploadToTask)
+        // Increase max body size for multipart uploads on this endpoint.
+        task.on(.POST, "attachments", body: .collect(maxSize: "40mb"), use: uploadToTask)
 
         routes.grouped("attachments", ":attachmentID").get("download", use: download)
     }

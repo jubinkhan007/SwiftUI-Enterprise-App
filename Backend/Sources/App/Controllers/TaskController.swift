@@ -319,6 +319,10 @@ struct TaskController: RouteCollection {
             assigneeId: payload.assigneeId
         )
 
+        if resolvedStatus.category == .completed {
+            task.completedAt = Date()
+        }
+
         try await req.db.transaction { db in
             try await task.save(on: db)
             let taskId = try task.requireID()
@@ -422,6 +426,14 @@ struct TaskController: RouteCollection {
                 activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .statusChanged, metadata: metadata))
                 task.status = resolvedStatus.legacyEnum
                 task.$customStatus.id = resolvedStatus.statusId
+                
+                if resolvedStatus.category == .completed {
+                    if task.completedAt == nil {
+                        task.completedAt = Date()
+                    }
+                } else {
+                    task.completedAt = nil
+                }
             }
         }
         if let priority = payload.priority, task.priority != priority {
@@ -571,6 +583,14 @@ struct TaskController: RouteCollection {
                 activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .statusChanged, metadata: metadata))
                 task.status = resolvedStatus.legacyEnum
                 task.$customStatus.id = resolvedStatus.statusId
+                
+                if resolvedStatus.category == .completed {
+                    if task.completedAt == nil {
+                        task.completedAt = Date()
+                    }
+                } else {
+                    task.completedAt = nil
+                }
             }
         }
         if let priority = payload.priority, task.priority != priority {
@@ -810,6 +830,15 @@ struct TaskController: RouteCollection {
                             try await TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .statusChanged, metadata: md).save(on: db)
                             task.$customStatus.id = targetStatusId
                             task.status = legacyEnum
+                            
+                            if status.category == .completed {
+                                if task.completedAt == nil {
+                                    task.completedAt = Date()
+                                }
+                            } else {
+                                task.completedAt = nil
+                            }
+                            
                             changedStatus = true
                         }
                     } else if let targetStatus = payload.targetStatus {
@@ -825,6 +854,18 @@ struct TaskController: RouteCollection {
                                 try await TaskActivityModel(taskId: moveAction.taskId, userId: ctx.userId, type: .statusChanged, metadata: md).save(on: db)
                                 task.status = targetStatus
                                 task.$customStatus.id = resolvedId
+                                
+                                // Resolve category for completedAt update
+                                if let status = statusByIdSnapshot[resolvedId] {
+                                    if status.category == .completed {
+                                        if task.completedAt == nil {
+                                            task.completedAt = Date()
+                                        }
+                                    } else {
+                                        task.completedAt = nil
+                                    }
+                                }
+                                
                                 changedStatus = true
                             }
                         }
@@ -977,12 +1018,13 @@ struct TaskController: RouteCollection {
 
         let taskId = try task.requireID()
 
-        // Resolve mentions BEFORE the write transaction to avoid holding the SQLite write
-        // lock while executing reads (filterToOrgMembers queries OrganizationMemberModel).
-        let mentionedUserIds = MentionService.extractUserIds(from: trimmed)
-        let allowedMentions: [UUID] = mentionedUserIds.isEmpty
+        // Prefer explicit mention IDs from the client (plain-text @Name display);
+        // fall back to regex extraction for older clients that embed @[Name](user:UUID).
+        // Either way, resolve BEFORE the write transaction to keep the write lock short.
+        let rawMentionIds = payload.mentionedUserIds ?? MentionService.extractUserIds(from: trimmed)
+        let allowedMentions: [UUID] = rawMentionIds.isEmpty
             ? []
-            : (try? await MentionService.filterToOrgMembers(userIds: mentionedUserIds, orgId: ctx.orgId, db: req.db)) ?? []
+            : (try? await MentionService.filterToOrgMembers(userIds: rawMentionIds, orgId: ctx.orgId, db: req.db)) ?? []
 
         // Transaction only contains writes — keeps the SQLite write lock duration minimal.
         let (activity, commentId) = try await req.db.transaction { db in
@@ -1418,6 +1460,7 @@ struct TaskController: RouteCollection {
     private struct ResolvedWorkflowStatus: Sendable {
         let statusId: UUID
         let legacyEnum: TaskStatus
+        let category: WorkflowStatusCategory
     }
 
     private func resolveStatusForProject(
@@ -1462,7 +1505,7 @@ struct TaskController: RouteCollection {
             else {
                 throw Abort(.badRequest, reason: "Invalid statusId for this project.")
             }
-            return .init(statusId: requestedStatusId, legacyEnum: legacyEnum(for: status))
+            return .init(statusId: requestedStatusId, legacyEnum: legacyEnum(for: status), category: status.category)
         }
 
         if let requestedLegacyStatus {
@@ -1472,7 +1515,7 @@ struct TaskController: RouteCollection {
                 .first(),
                let id = status.id
             {
-                return .init(statusId: id, legacyEnum: legacyEnum(for: status))
+                return .init(statusId: id, legacyEnum: legacyEnum(for: status), category: status.category)
             }
         }
 
@@ -1483,7 +1526,7 @@ struct TaskController: RouteCollection {
             .first(),
            let id = status.id
         {
-            return .init(statusId: id, legacyEnum: legacyEnum(for: status))
+            return .init(statusId: id, legacyEnum: legacyEnum(for: status), category: status.category)
         }
 
         // Last resort: pick the lowest position status.
@@ -1493,7 +1536,7 @@ struct TaskController: RouteCollection {
             .first(),
            let id = status.id
         {
-            return .init(statusId: id, legacyEnum: legacyEnum(for: status))
+            return .init(statusId: id, legacyEnum: legacyEnum(for: status), category: status.category)
         }
 
         throw Abort(.internalServerError, reason: "Workflow is not initialized for this project.")

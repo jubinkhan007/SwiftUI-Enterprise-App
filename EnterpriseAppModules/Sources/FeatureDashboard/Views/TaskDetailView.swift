@@ -3,8 +3,13 @@ import Domain
 import SharedModels
 import DesignSystem
 import PhotosUI
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
+import QuickLook
+#endif
+#if os(macOS)
+import AppKit
 #endif
 
 public struct TaskDetailView: View {
@@ -12,6 +17,8 @@ public struct TaskDetailView: View {
     @State private var isPreviewingComment = false
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showErrorAlert = false
+    @State private var showFilePicker = false
+    @State private var previewItem: AttachmentPreviewItem? = nil
     
     public init(viewModel: TaskDetailViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -66,10 +73,14 @@ public struct TaskDetailView: View {
             }
         }
         .task {
-            await viewModel.fetchActivities()
-            await viewModel.loadWorkflowIfNeeded()
-            await viewModel.fetchAttachments()
-            await viewModel.loadOrgMembersIfNeeded()
+            // Run independent fetches in parallel so one slow/failing call
+            // does not delay the others (e.g. attachment timeout blocking orgMembers load).
+            async let _activities: Void = viewModel.fetchActivities()
+            async let _workflow: Void = viewModel.loadWorkflowIfNeeded()
+            async let _attachments: Void = viewModel.fetchAttachments()
+            async let _members: Void = viewModel.loadOrgMembersIfNeeded()
+            _ = await (_activities, _workflow, _attachments, _members)
+            // startRealtime uses workflowProjectId set by loadWorkflowIfNeeded, so run after.
             await viewModel.startRealtime()
         }
         .onDisappear {
@@ -83,6 +94,31 @@ public struct TaskDetailView: View {
         } message: {
             Text(viewModel.error?.localizedDescription ?? "Something went wrong.")
         }
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .json, .zip],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            Task { await viewModel.uploadFile(url: url) }
+        }
+        .background(previewPresenter)
+    }
+
+    // Presents the downloaded file — QuickLook sheet on iOS, default app on macOS.
+    @ViewBuilder private var previewPresenter: some View {
+        #if canImport(UIKit)
+        Color.clear.sheet(item: $previewItem) { item in
+            QuickLookSheet(url: item.url).ignoresSafeArea()
+        }
+        #else
+        Color.clear.onChange(of: previewItem) { _, item in
+            if let url = item?.url {
+                NSWorkspace.shared.open(url)
+                previewItem = nil
+            }
+        }
+        #endif
     }
     
     // MARK: - Components
@@ -187,11 +223,22 @@ public struct TaskDetailView: View {
                 Spacer()
 
                 if viewModel.isUploadingAttachment {
-                    ProgressView()
-                        .scaleEffect(0.9)
+                    ProgressView().scaleEffect(0.9)
                 }
+
+                // File picker (PDFs, Docs, etc.)
+                Button {
+                    showFilePicker = true
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                        .foregroundColor(AppColors.brandPrimary)
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.isUploadingAttachment)
+
+                // Photo picker (images)
                 PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    Image(systemName: "paperclip")
+                    Image(systemName: "photo.badge.plus")
                         .foregroundColor(AppColors.brandPrimary)
                 }
                 .disabled(viewModel.isUploadingAttachment)
@@ -199,6 +246,22 @@ public struct TaskDetailView: View {
 
             if viewModel.isLoadingAttachments {
                 ProgressView()
+            } else if let error = viewModel.attachmentsLoadError, viewModel.attachments.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Couldn’t load attachments.")
+                        .appFont(AppTypography.body)
+                        .foregroundColor(AppColors.textSecondary)
+                    Text(error.localizedDescription)
+                        .appFont(AppTypography.caption2)
+                        .foregroundColor(AppColors.textTertiary)
+                        .lineLimit(2)
+
+                    Button("Retry") {
+                        Task { await viewModel.fetchAttachments() }
+                    }
+                    .appFont(AppTypography.caption1)
+                    .foregroundColor(AppColors.brandPrimary)
+                }
             } else if viewModel.attachments.isEmpty {
                 Text("No attachments yet.")
                     .appFont(AppTypography.body)
@@ -207,21 +270,20 @@ public struct TaskDetailView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: AppSpacing.sm) {
                         ForEach(viewModel.attachments) { a in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(a.filename)
-                                    .appFont(AppTypography.caption1)
-                                    .lineLimit(1)
-                                Text("\(a.fileType.uppercased()) • \(ByteCountFormatter.string(fromByteCount: a.size, countStyle: .file))")
-                                    .appFont(AppTypography.caption2)
-                                    .foregroundColor(AppColors.textSecondary)
+                            AttachmentCard(
+                                attachment: a,
+                                isDownloading: viewModel.downloadingAttachmentId == a.id
+                            ) {
+                                Task {
+                                    if let url = await viewModel.downloadAttachment(a) {
+                                        #if canImport(UIKit)
+                                        previewItem = AttachmentPreviewItem(url: url)
+                                        #else
+                                        NSWorkspace.shared.open(url)
+                                        #endif
+                                    }
+                                }
                             }
-                            .padding(8)
-                            .background(AppColors.surfacePrimary)
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(AppColors.borderDefault, lineWidth: 1)
-                            )
                         }
                     }
                     .padding(.vertical, 2)
@@ -233,7 +295,7 @@ public struct TaskDetailView: View {
             Task {
                 do {
                     guard let raw = try await newValue.loadTransferable(type: Data.self) else {
-                        await MainActor.run {
+                        DispatchQueue.main.async {
                             viewModel.error = NSError(
                                 domain: "TaskDetailView",
                                 code: 1,
@@ -242,23 +304,88 @@ public struct TaskDetailView: View {
                         }
                         return
                     }
-
                     #if canImport(UIKit)
-                    if let image = UIImage(data: raw), let jpeg = image.jpegData(compressionQuality: 0.85) {
-                        await viewModel.uploadJPEG(jpeg, filename: "photo.jpg")
+                    let maxBytes = 24 * 1024 * 1024
+                    if let jpeg = compressForUpload(raw, maxBytes: maxBytes) {
+                        if jpeg.count > maxBytes {
+                            DispatchQueue.main.async {
+                                viewModel.error = NSError(
+                                    domain: "TaskDetailView",
+                                    code: 2,
+                                    userInfo: [NSLocalizedDescriptionKey: "Image is too large to upload (max 25MB)."]
+                                )
+                            }
+                        } else {
+                            await viewModel.uploadJPEG(jpeg, filename: "photo.jpg")
+                        }
                     } else {
-                        await viewModel.uploadJPEG(raw, filename: "photo.jpg")
+                        DispatchQueue.main.async {
+                            viewModel.error = NSError(
+                                domain: "TaskDetailView",
+                                code: 3,
+                                userInfo: [NSLocalizedDescriptionKey: "Couldn’t process the selected photo."]
+                            )
+                        }
                     }
                     #else
                     await viewModel.uploadJPEG(raw, filename: "photo.jpg")
                     #endif
                 } catch {
-                    await MainActor.run { viewModel.error = error }
+                    DispatchQueue.main.async { viewModel.error = error }
                 }
                 selectedPhotoItem = nil
             }
         }
     }
+
+    #if canImport(UIKit)
+    private func compressForUpload(_ data: Data, maxBytes: Int) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+
+        func resize(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+            let w = image.size.width
+            let h = image.size.height
+            let longest = max(w, h)
+            guard longest > maxDimension else { return image }
+            let scale = maxDimension / longest
+            let newSize = CGSize(width: max(1, w * scale), height: max(1, h * scale))
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            return renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+        }
+
+        var current = resize(image, maxDimension: 2560)
+        var quality: CGFloat = 0.85
+        var best = current.jpegData(compressionQuality: quality)
+
+        // Reduce quality first.
+        while let d = best, d.count > maxBytes, quality > 0.35 {
+            quality -= 0.1
+            best = current.jpegData(compressionQuality: quality)
+        }
+
+        // If still too large, progressively downscale.
+        while let d = best, d.count > maxBytes {
+            let newSize = CGSize(width: current.size.width * 0.8, height: current.size.height * 0.8)
+            if newSize.width < 600 || newSize.height < 600 { break }
+
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            current = renderer.image { _ in
+                current.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+
+            quality = min(quality, 0.75)
+            best = current.jpegData(compressionQuality: quality)
+            while let d2 = best, d2.count > maxBytes, quality > 0.35 {
+                quality -= 0.1
+                best = current.jpegData(compressionQuality: quality)
+            }
+        }
+
+        return best
+    }
+    #endif
     
     private var commentInputArea: some View {
         VStack(spacing: AppSpacing.sm) {
@@ -291,7 +418,6 @@ public struct TaskDetailView: View {
 
             if !isPreviewingComment, let token = currentMentionToken(in: viewModel.newCommentText) {
                 mentionSuggestions(token: token)
-                    .task { await viewModel.loadOrgMembersIfNeeded() }
             }
 
             HStack {
@@ -427,9 +553,10 @@ public struct TaskDetailView: View {
     private func insertMention(member: OrganizationMemberDTO, token: MentionToken) {
         guard let freshToken = currentMentionToken(in: viewModel.newCommentText) else { return }
         var text = viewModel.newCommentText
-        let mention = "@[\(member.displayName)](user:\(member.userId.uuidString)) "
-        text.replaceSubrange(freshToken.range, with: mention)
+        // Plain-text display: "@Full Name " — UUID is tracked separately.
+        text.replaceSubrange(freshToken.range, with: "@\(member.displayName) ")
         viewModel.newCommentText = text
+        viewModel.addPendingMention(userId: member.userId)
     }
 }
 
@@ -474,7 +601,7 @@ struct ActivityRow: View {
 // TextEdit wrapper for multiline TextField
 struct TextEdit: View {
     @Binding var text: String
-    
+
     var body: some View {
         if #available(iOS 16.0, macOS 13.0, *) {
             TextField("Task description...", text: $text, axis: .vertical)
@@ -484,3 +611,106 @@ struct TextEdit: View {
         }
     }
 }
+
+// MARK: - Attachment Preview Item
+
+/// Identifiable wrapper so `sheet(item:)` can present a downloaded file URL.
+struct AttachmentPreviewItem: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+}
+
+// MARK: - Attachment Card
+
+struct AttachmentCard: View {
+    let attachment: AttachmentDTO
+    let isDownloading: Bool
+    let onDownload: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                Image(systemName: fileIcon)
+                    .font(.title2)
+                    .foregroundColor(iconColor)
+                Spacer()
+                Button(action: onDownload) {
+                    if isDownloading {
+                        ProgressView().scaleEffect(0.75).frame(width: 22, height: 22)
+                    } else {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.title3)
+                            .foregroundColor(AppColors.brandPrimary)
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(isDownloading)
+            }
+
+            Text(attachment.filename)
+                .appFont(AppTypography.caption1)
+                .foregroundColor(AppColors.textPrimary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("\(attachment.fileType.uppercased()) • \(formattedSize)")
+                .appFont(AppTypography.caption2)
+                .foregroundColor(AppColors.textSecondary)
+        }
+        .padding(10)
+        .frame(width: 130, alignment: .leading)
+        .background(AppColors.surfacePrimary)
+        .cornerRadius(10)
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.borderDefault, lineWidth: 1))
+    }
+
+    private var fileIcon: String {
+        switch attachment.fileType.lowercased() {
+        case "image":    return "photo.fill"
+        case "document": return attachment.mimeType.contains("pdf") ? "doc.richtext.fill" : "doc.text.fill"
+        case "archive":  return "archivebox.fill"
+        default:         return "doc.fill"
+        }
+    }
+
+    private var iconColor: Color {
+        switch attachment.fileType.lowercased() {
+        case "image":    return .green
+        case "document": return attachment.mimeType.contains("pdf") ? .red : .blue
+        case "archive":  return .orange
+        default:         return .gray
+        }
+    }
+
+    private var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: attachment.size, countStyle: .file)
+    }
+}
+
+// MARK: - QuickLook Sheet (iOS only)
+
+#if canImport(UIKit)
+private struct QuickLookSheet: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let vc = QLPreviewController()
+        vc.dataSource = context.coordinator
+        return vc
+    }
+
+    func updateUIViewController(_ vc: QLPreviewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        let url: URL
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            url as QLPreviewItem
+        }
+    }
+}
+#endif

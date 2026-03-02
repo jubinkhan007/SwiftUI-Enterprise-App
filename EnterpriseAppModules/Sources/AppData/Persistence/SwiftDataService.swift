@@ -11,7 +11,7 @@ public protocol PersistenceServiceProtocol {
 
 /// A SwiftData implementation of the Persistence Service.
 @MainActor
-public final class SwiftDataService: PersistenceServiceProtocol {
+public final class SwiftDataService: @preconcurrency PersistenceServiceProtocol {
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
 

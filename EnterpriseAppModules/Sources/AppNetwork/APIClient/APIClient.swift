@@ -50,22 +50,34 @@ public protocol APIClientProtocol: Sendable {
     func request<T: Decodable>(_ endpoint: APIEndpoint, responseType: T.Type) async throws -> T
 }
 
-public struct APIClient: APIClientProtocol {
-    private let session: URLSession
+    public struct APIClient: APIClientProtocol {
+        private let session: URLSession
 
-    public init(session: URLSession = .shared) {
-        self.session = session
-    }
-
-    public func request<T: Decodable>(_ endpoint: APIEndpoint, responseType: T.Type) async throws -> T {
-        guard let url = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
-            throw NetworkError.invalidURL
+        public init(session: URLSession = .shared) {
+            self.session = session
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = endpoint.method.rawValue
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 30
+        private func requestTimeout(for endpoint: APIEndpoint) -> TimeInterval {
+            // Multipart uploads (attachments) can legitimately take longer on slow simulators/devices.
+            if let contentType = endpoint.headers?["Content-Type"],
+               contentType.lowercased().contains("multipart/form-data") {
+                return 120
+            }
+            if endpoint.path.contains("/attachments") {
+                return 60
+            }
+            return 30
+        }
+
+        public func request<T: Decodable>(_ endpoint: APIEndpoint, responseType: T.Type) async throws -> T {
+            guard let url = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
+                throw NetworkError.invalidURL
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = endpoint.method.rawValue
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.timeoutInterval = requestTimeout(for: endpoint)
 
         // Header precedence: endpoint overrides defaults.
         var headers = endpoint.headers ?? [:]
@@ -125,6 +137,14 @@ public struct APIClient: APIClientProtocol {
             }
         } catch let error as NetworkError {
             throw error
+        } catch let urlError as URLError where urlError.code == .timedOut {
+            throw NetworkError.underlying("The request timed out. Is the backend running at \(endpoint.baseURL.absoluteString)?")
+        } catch let urlError as URLError
+            where urlError.code == .cannotConnectToHost
+                || urlError.code == .cannotFindHost
+                || urlError.code == .dnsLookupFailed
+        {
+            throw NetworkError.underlying("Could not connect to the server at \(endpoint.baseURL.absoluteString). Make sure the backend is running and listening on that host/port.")
         } catch let urlError as URLError where urlError.code == .notConnectedToInternet {
             throw NetworkError.offline
         } catch {
@@ -133,15 +153,15 @@ public struct APIClient: APIClientProtocol {
     }
 
     /// Issues a request and returns the raw response bytes (used for downloads / non-JSON responses).
-    public func requestData(_ endpoint: APIEndpoint) async throws -> Data {
-        guard let url = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
-            throw NetworkError.invalidURL
-        }
+        public func requestData(_ endpoint: APIEndpoint) async throws -> Data {
+            guard let url = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
+                throw NetworkError.invalidURL
+            }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = endpoint.method.rawValue
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 60
+            var request = URLRequest(url: url)
+            request.httpMethod = endpoint.method.rawValue
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.timeoutInterval = max(60, requestTimeout(for: endpoint))
 
         var headers = endpoint.headers ?? [:]
         if headers["Accept"] == nil {
@@ -178,6 +198,14 @@ public struct APIClient: APIClientProtocol {
             }
         } catch let error as NetworkError {
             throw error
+        } catch let urlError as URLError where urlError.code == .timedOut {
+            throw NetworkError.underlying("The request timed out. Is the backend running at \(endpoint.baseURL.absoluteString)?")
+        } catch let urlError as URLError
+            where urlError.code == .cannotConnectToHost
+                || urlError.code == .cannotFindHost
+                || urlError.code == .dnsLookupFailed
+        {
+            throw NetworkError.underlying("Could not connect to the server at \(endpoint.baseURL.absoluteString). Make sure the backend is running and listening on that host/port.")
         } catch let urlError as URLError where urlError.code == .notConnectedToInternet {
             throw NetworkError.offline
         } catch {

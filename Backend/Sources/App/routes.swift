@@ -4,7 +4,10 @@ import Vapor
 func routes(_ app: Application) throws {
     // Health check
     app.get("health") { req async -> [String: String] in
-        ["status": "ok"]
+        [
+            "status": "ok",
+            "maxBodySize": "\(app.routes.defaultMaxBodySize.value)"
+        ]
     }
 
     // API v1 group
@@ -38,6 +41,9 @@ func routes(_ app: Application) throws {
 
     let notificationController = NotificationController()
     try orgScopedAPI.register(collection: notificationController)
+
+    let analyticsController = AnalyticsController()
+    try authenticatedAPI.register(collection: analyticsController)
 
     // Phase 11: Real-time collaboration
     RealtimeController.register(on: app)

@@ -80,12 +80,15 @@ struct AuthenticatedRootView: View {
         let hierarchyRepo = HierarchyRepository(apiClient: apiClient)
         let workflowRepo = WorkflowRepository(apiClient: apiClient)
         let attachmentRepo = AttachmentRepository(apiClient: apiClient)
+        let analyticsRepo = AnalyticsRepository(apiClient: apiClient)
+        
         self.viewModel = DashboardViewModel(
             taskRepository: taskRepository,
             activityRepository: activityRepository,
             hierarchyRepository: hierarchyRepo,
             workflowRepository: workflowRepo,
-            attachmentRepository: attachmentRepo
+            attachmentRepository: attachmentRepo,
+            analyticsRepository: analyticsRepo
         )
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
