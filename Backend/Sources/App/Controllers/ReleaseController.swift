@@ -13,6 +13,7 @@ struct ReleaseController: RouteCollection {
         let releases = routes.grouped("releases").grouped(OrgTenantMiddleware())
         let release = releases.grouped(":releaseID")
         release.get("progress", use: progress)
+        release.get("issues", use: listIssues)
         release.post("release", use: finalize)
     }
 
@@ -123,6 +124,26 @@ struct ReleaseController: RouteCollection {
 
         try await release.save(on: req.db)
         return .success(release.toDTO())
+    }
+
+    // MARK: - GET /api/releases/:releaseID/issues
+
+    @Sendable
+    func listIssues(req: Request) async throws -> APIResponse<[TaskItemDTO]> {
+        let ctx = try req.orgContext
+        try req.requirePermission(.projectsRead)
+        let release = try await requireReleaseInOrg(req: req, orgId: ctx.orgId)
+        let releaseId = try release.requireID()
+
+        let rows = try await TaskItemModel.query(on: req.db)
+            .filter(\.$organization.$id == ctx.orgId)
+            .filter(\.$affectedVersion.$id == releaseId)
+            .filter(\.$archivedAt == nil)
+            .sort(\.$completedAt, .descending)
+            .sort(\.$updatedAt, .descending)
+            .all()
+
+        return .success(rows.map { $0.toDTO() })
     }
 
     // MARK: - Helpers

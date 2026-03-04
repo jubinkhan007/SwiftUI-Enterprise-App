@@ -79,6 +79,7 @@ public final class ProjectSettingsViewModel: ObservableObject {
 public struct ProjectSettingsView: View {
     @StateObject private var viewModel: ProjectSettingsViewModel
     @Environment(\.dismiss) private var dismiss
+    private let projectId: UUID
 
     @State private var showingCreateStatus = false
     @State private var showingCreateRule = false
@@ -86,6 +87,7 @@ public struct ProjectSettingsView: View {
 
     public init(projectId: UUID, workflowRepository: WorkflowRepositoryProtocol) {
         _viewModel = StateObject(wrappedValue: ProjectSettingsViewModel(projectId: projectId, workflowRepository: workflowRepository))
+        self.projectId = projectId
     }
 
     public var body: some View {
@@ -119,6 +121,13 @@ public struct ProjectSettingsView: View {
                     .padding()
                 } else {
                     List {
+                        Section {
+                            NavigationLink {
+                                ReleaseManagementView(projectId: projectId)
+                            } label: {
+                                Label("Release Management", systemImage: "shippingbox")
+                            }
+                        }
                         statusesSection
                         rulesSection
                     }

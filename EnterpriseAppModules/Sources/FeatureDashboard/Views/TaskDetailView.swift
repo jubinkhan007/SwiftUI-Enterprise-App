@@ -18,6 +18,7 @@ public struct TaskDetailView: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showErrorAlert = false
     @State private var toast: ToastMessage? = nil
+    @State private var showAssigneePicker = false
     @State private var showFilePicker = false
     @State private var previewItem: AttachmentPreviewItem? = nil
     
@@ -112,6 +113,14 @@ public struct TaskDetailView: View {
         }
         .background(previewPresenter)
         .toast($toast)
+        .sheet(isPresented: $showAssigneePicker) {
+            MemberPickerSheet(
+                title: "Assign to",
+                members: viewModel.orgMembers,
+                selectedUserId: $viewModel.editAssigneeUserId,
+                allowUnassign: viewModel.task.assigneeId == nil
+            )
+        }
     }
 
     // Presents the downloaded file — QuickLook sheet on iOS, default app on macOS.
@@ -181,6 +190,78 @@ public struct TaskDetailView: View {
                     }
                     .pickerStyle(.menu)
                 }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Assignee")
+                    .appFont(AppTypography.caption1)
+                    .foregroundColor(AppColors.textSecondary)
+
+                Button {
+                    showAssigneePicker = true
+                } label: {
+                    HStack(spacing: AppSpacing.sm) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let selected = viewModel.orgMembers.first(where: { $0.userId == viewModel.editAssigneeUserId }) {
+                                Text(selected.displayName)
+                                    .appFont(AppTypography.subheadline)
+                                    .foregroundColor(AppColors.textPrimary)
+                                Text(selected.email)
+                                    .appFont(AppTypography.caption1)
+                                    .foregroundColor(AppColors.textSecondary)
+                            } else {
+                                Text("Unassigned")
+                                    .appFont(AppTypography.subheadline)
+                                    .foregroundColor(AppColors.textSecondary)
+                                Text("Search by name or email")
+                                    .appFont(AppTypography.caption1)
+                                    .foregroundColor(AppColors.textTertiary)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .foregroundColor(AppColors.textTertiary)
+                    }
+                    .padding(AppSpacing.sm)
+                    .background(AppColors.surfacePrimary)
+                    .cornerRadius(AppRadius.small)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppRadius.small)
+                            .stroke(AppColors.borderDefault, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            if viewModel.task.taskType == .epic {
+                NavigationLink {
+                    EpicDetailDashboardView(
+                        epic: viewModel.task,
+                        taskRepository: viewModel.taskRepository,
+                        activityRepository: viewModel.activityRepository,
+                        hierarchyRepository: viewModel.hierarchyRepository,
+                        workflowRepository: viewModel.workflowRepository,
+                        attachmentRepository: viewModel.attachmentRepository
+                    )
+                } label: {
+                    HStack {
+                        Image(systemName: "chart.bar.fill")
+                        Text("Epic Dashboard")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(AppColors.textTertiary)
+                    }
+                    .appFont(AppTypography.subheadline)
+                    .foregroundColor(AppColors.brandPrimary)
+                    .padding(AppSpacing.sm)
+                    .background(AppColors.surfacePrimary)
+                    .cornerRadius(AppRadius.small)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppRadius.small)
+                            .stroke(AppColors.borderDefault, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }

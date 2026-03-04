@@ -26,6 +26,7 @@ public final class TaskDetailViewModel: ObservableObject {
     @Published public var editStatus: TaskStatus
     @Published public var editStatusId: UUID?
     @Published public var editPriority: TaskPriority
+    @Published public var editAssigneeUserId: UUID?
     
     // Conflict State
     @Published public var hasConflict = false
@@ -43,14 +44,14 @@ public final class TaskDetailViewModel: ObservableObject {
     /// so the body can contain plain `@Full Name` without embedded UUIDs.
     private var pendingMentionIds: [UUID] = []
     
-    private let taskRepository: TaskRepositoryProtocol
-    private let activityRepository: TaskActivityRepositoryProtocol
-    private let hierarchyRepository: HierarchyRepositoryProtocol
-    private let workflowRepository: WorkflowRepositoryProtocol
-    private let attachmentRepository: AttachmentRepositoryProtocol
+    let taskRepository: TaskRepositoryProtocol
+    let activityRepository: TaskActivityRepositoryProtocol
+    let hierarchyRepository: HierarchyRepositoryProtocol
+    let workflowRepository: WorkflowRepositoryProtocol
+    let attachmentRepository: AttachmentRepositoryProtocol
     private var realtimeProvider: RealTimeProvider? = nil
-    private let apiClient: APIClientProtocol
-    private let apiConfiguration: APIConfiguration
+    let apiClient: APIClientProtocol
+    let apiConfiguration: APIConfiguration
     private var pendingAttachmentsRefresh = false
     
     public init(
@@ -77,6 +78,7 @@ public final class TaskDetailViewModel: ObservableObject {
         self.editStatus = task.status
         self.editStatusId = task.statusId
         self.editPriority = task.priority
+        self.editAssigneeUserId = task.assigneeId
     }
     
     public func fetchActivities() async {
@@ -272,6 +274,11 @@ public final class TaskDetailViewModel: ObservableObject {
             return selected != task.statusId ? selected : nil
         }()
 
+        let assigneeIdDelta: UUID? = {
+            guard editAssigneeUserId != task.assigneeId else { return nil }
+            return editAssigneeUserId
+        }()
+
         let payload = UpdateTaskRequest(
             title: editTitle != task.title ? editTitle : nil,
             description: editDescription != (task.description ?? "") ? editDescription : nil,
@@ -279,7 +286,7 @@ public final class TaskDetailViewModel: ObservableObject {
             status: (statusIdDelta == nil && editStatus != task.status) ? editStatus : nil,
             priority: editPriority != task.priority ? editPriority : nil,
             dueDate: nil,
-            assigneeId: nil,
+            assigneeId: assigneeIdDelta,
             expectedVersion: task.version
         )
         
@@ -292,6 +299,7 @@ public final class TaskDetailViewModel: ObservableObject {
             self.editStatus = updatedTask.status
             self.editStatusId = updatedTask.statusId
             self.editPriority = updatedTask.priority
+            self.editAssigneeUserId = updatedTask.assigneeId
 
             NotificationCenter.default.post(name: .taskDidUpdate, object: updatedTask)
             

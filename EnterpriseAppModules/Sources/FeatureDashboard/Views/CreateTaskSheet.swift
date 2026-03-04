@@ -1,11 +1,19 @@
 import SwiftUI
 import DesignSystem
 import SharedModels
+import AppNetwork
 
 public struct CreateTaskSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: CreateTaskViewModel
     private let hierarchy: [HierarchyTreeDTO.SpaceNode]
+    private let apiClient: APIClientProtocol = APIClient()
+    private let apiConfiguration: APIConfiguration = .localVapor
+
+    @State private var orgMembers: [OrganizationMemberDTO] = []
+    @State private var isLoadingOrgMembers = false
+    @State private var orgMembersLoadError: Error?
+    @State private var showAssigneePicker = false
 
     let onTaskCreated: () -> Void
 
@@ -60,6 +68,17 @@ public struct CreateTaskSheet: View {
             if viewModel.listId == nil, let first = listOptions.first {
                 viewModel.listId = first.id
             }
+        }
+        .task {
+            await loadOrgMembersIfNeeded()
+        }
+        .sheet(isPresented: $showAssigneePicker) {
+            MemberPickerSheet(
+                title: "Assign to",
+                members: orgMembers,
+                selectedUserId: $viewModel.assigneeUserId,
+                allowUnassign: true
+            )
         }
     }
 
@@ -132,8 +151,40 @@ public struct CreateTaskSheet: View {
                       isExpanded: $viewModel.showStartDatePicker, icon: "calendar.badge.clock")
             dateField(title: "Due Date", date: $viewModel.dueDate,
                       isExpanded: $viewModel.showDueDatePicker, icon: "calendar.badge.exclamationmark")
-            AppTextField("Assignee ID (Optional UUID)", text: $viewModel.assigneeIdText,
-                         validationState: assigneeValidation)
+            pickerCard(title: "Assignee (Optional)") {
+                Button {
+                    showAssigneePicker = true
+                } label: {
+                    HStack(spacing: AppSpacing.sm) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let selected = selectedAssignee {
+                                Text(selected.displayName)
+                                    .appFont(AppTypography.subheadline)
+                                    .foregroundColor(AppColors.textPrimary)
+                                Text(selected.email)
+                                    .appFont(AppTypography.caption1)
+                                    .foregroundColor(AppColors.textSecondary)
+                            } else {
+                                Text("Unassigned")
+                                    .appFont(AppTypography.subheadline)
+                                    .foregroundColor(AppColors.textSecondary)
+                                Text("Search by name or email")
+                                    .appFont(AppTypography.caption1)
+                                    .foregroundColor(AppColors.textTertiary)
+                            }
+                        }
+                        Spacer()
+                        if isLoadingOrgMembers {
+                            ProgressView().scaleEffect(0.85)
+                        } else {
+                            Image(systemName: "chevron.up.chevron.down")
+                                .foregroundColor(AppColors.textTertiary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoadingOrgMembers)
+            }
             AppTextField("Labels (comma-separated)", text: $viewModel.labelsText, validationState: .normal)
             if let error = viewModel.error {
                 Text(error.localizedDescription)
@@ -144,6 +195,13 @@ public struct CreateTaskSheet: View {
 
             if viewModel.listId == nil {
                 Text("Task must belong to a list. Select a list first.")
+                    .appFont(AppTypography.caption1)
+                    .foregroundColor(AppColors.statusError)
+                    .multilineTextAlignment(.center)
+            }
+
+            if let error = orgMembersLoadError, orgMembers.isEmpty {
+                Text(error.localizedDescription)
                     .appFont(AppTypography.caption1)
                     .foregroundColor(AppColors.statusError)
                     .multilineTextAlignment(.center)
@@ -316,17 +374,33 @@ public struct CreateTaskSheet: View {
         return .error("Must be a number between 0 and 1000")
     }
 
-    private var assigneeValidation: TextFieldValidationState {
-        let text = viewModel.assigneeIdText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return .normal }
-        return UUID(uuidString: text) != nil ? .success : .error("Must be a valid UUID")
-    }
-
     private var listIdBinding: Binding<UUID?> {
         Binding(
             get: { viewModel.listId },
             set: { viewModel.listId = $0 }
         )
+    }
+
+    private var selectedAssignee: OrganizationMemberDTO? {
+        guard let userId = viewModel.assigneeUserId else { return nil }
+        return orgMembers.first(where: { $0.userId == userId })
+    }
+
+    private func loadOrgMembersIfNeeded() async {
+        guard orgMembers.isEmpty else { return }
+        guard !isLoadingOrgMembers else { return }
+        guard let orgId = OrganizationContext.shared.orgId else { return }
+        isLoadingOrgMembers = true
+        orgMembersLoadError = nil
+        defer { isLoadingOrgMembers = false }
+
+        do {
+            let endpoint = OrganizationEndpoint.listMembers(orgId: orgId, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<[OrganizationMemberDTO]>.self)
+            orgMembers = response.data ?? []
+        } catch {
+            orgMembersLoadError = error
+        }
     }
 
     private func pickerCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {

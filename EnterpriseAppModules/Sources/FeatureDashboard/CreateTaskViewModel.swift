@@ -24,7 +24,6 @@ public final class CreateTaskViewModel: ObservableObject {
 
     @Published public var startDate: Date? = nil
     @Published public var dueDate: Date? = nil
-    @Published public var assigneeIdText: String = ""
     @Published public var listId: UUID? = nil
 
     @Published public var showStartDatePicker = false
@@ -33,6 +32,7 @@ public final class CreateTaskViewModel: ObservableObject {
     @Published public var isSaving = false
     @Published public var error: Error?
     @Published public var isSuccess = false
+    @Published public var assigneeUserId: UUID? = nil
 
     public var isValid: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && listId != nil
@@ -67,8 +67,6 @@ public final class CreateTaskViewModel: ObservableObject {
         isSaving = true
         error = nil
 
-        let assigneeId = UUID(uuidString: assigneeIdText.trimmingCharacters(in: .whitespacesAndNewlines))
-
         let shouldSendBugFields = taskType == .bug && includeBugFields
 
         let payload = CreateTaskRequest(
@@ -82,7 +80,7 @@ public final class CreateTaskViewModel: ObservableObject {
             labels: parsedLabels,
             startDate: startDate,
             dueDate: dueDate,
-            assigneeId: assigneeId,
+            assigneeId: assigneeUserId,
             listId: listId,
             bugSeverity: shouldSendBugFields ? bugSeverity : nil,
             bugEnvironment: shouldSendBugFields ? bugEnvironment : nil,
