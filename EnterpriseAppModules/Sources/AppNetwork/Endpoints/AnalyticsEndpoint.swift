@@ -7,6 +7,10 @@ public enum AnalyticsEndpoint {
     case getVelocity(projectId: UUID, startDate: Date?, endDate: Date?, configuration: APIConfiguration)
     case getThroughput(projectId: UUID, startDate: Date?, endDate: Date?, configuration: APIConfiguration)
     case getBurndown(projectId: UUID, startDate: Date?, endDate: Date?, configuration: APIConfiguration)
+    case getWeeklyThroughput(projectId: UUID, startDate: Date?, endDate: Date?, configuration: APIConfiguration)
+    case getSprintVelocity(projectId: UUID, startDate: Date?, endDate: Date?, configuration: APIConfiguration)
+    case getReportPayload(projectId: UUID, startDate: Date?, endDate: Date?, configuration: APIConfiguration)
+    case exportBurndownCSV(projectId: UUID, startDate: Date?, endDate: Date?, configuration: APIConfiguration)
 }
 
 extension AnalyticsEndpoint: APIEndpoint {
@@ -20,7 +24,11 @@ extension AnalyticsEndpoint: APIEndpoint {
              .getCycleTime(_, _, _, let c),
              .getVelocity(_, _, _, let c),
              .getThroughput(_, _, _, let c),
-             .getBurndown(_, _, _, let c):
+             .getBurndown(_, _, _, let c),
+             .getWeeklyThroughput(_, _, _, let c),
+             .getSprintVelocity(_, _, _, let c),
+             .getReportPayload(_, _, _, let c),
+             .exportBurndownCSV(_, _, _, let c):
             return c
         }
     }
@@ -32,6 +40,10 @@ extension AnalyticsEndpoint: APIEndpoint {
         case .getVelocity(let projectId, _, _, _): return "/api/projects/\(projectId.uuidString)/analytics/velocity"
         case .getThroughput(let projectId, _, _, _): return "/api/projects/\(projectId.uuidString)/analytics/throughput"
         case .getBurndown(let projectId, _, _, _): return "/api/projects/\(projectId.uuidString)/analytics/burndown"
+        case .getWeeklyThroughput(let projectId, _, _, _): return "/api/projects/\(projectId.uuidString)/analytics/weekly-throughput"
+        case .getSprintVelocity(let projectId, _, _, _): return "/api/projects/\(projectId.uuidString)/analytics/sprint-velocity"
+        case .getReportPayload(let projectId, _, _, _): return "/api/projects/\(projectId.uuidString)/analytics/report"
+        case .exportBurndownCSV(let projectId, _, _, _): return "/api/projects/\(projectId.uuidString)/analytics/export/burndown"
         }
     }
     
@@ -40,7 +52,17 @@ extension AnalyticsEndpoint: APIEndpoint {
     }
     
     public var headers: [String : String]? {
-        return nil
+        var h: [String: String] = [:]
+        if let token = TokenStore.shared.token { h["Authorization"] = "Bearer \(token)" }
+        if let orgId = OrganizationContext.shared.orgId { h["X-Org-Id"] = orgId.uuidString }
+
+        switch self {
+        case .exportBurndownCSV:
+            h["Accept"] = "text/csv"
+        default:
+            h["Accept"] = "application/json"
+        }
+        return h
     }
     
     public var body: Data? {
@@ -57,7 +79,11 @@ extension AnalyticsEndpoint: APIEndpoint {
              .getCycleTime(_, let s, let e, _),
              .getVelocity(_, let s, let e, _),
              .getThroughput(_, let s, let e, _),
-             .getBurndown(_, let s, let e, _):
+             .getBurndown(_, let s, let e, _),
+             .getWeeklyThroughput(_, let s, let e, _),
+             .getSprintVelocity(_, let s, let e, _),
+             .getReportPayload(_, let s, let e, _),
+             .exportBurndownCSV(_, let s, let e, _):
             dates = (s, e)
         }
         
@@ -65,9 +91,5 @@ extension AnalyticsEndpoint: APIEndpoint {
         if let e = dates.1 { items.append(URLQueryItem(name: "end_date", value: formatter.string(from: e))) }
         
         return items.isEmpty ? nil : items
-    }
-    
-    public var requiresAuth: Bool {
-        return true
     }
 }

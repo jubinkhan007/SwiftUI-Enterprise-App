@@ -6,13 +6,13 @@ import Vapor
 /// All routes are protected by Auth & OrgTenantMiddleware.
 struct WorkflowController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
-        routes.get("projects", ":project_id", "workflow", use: getWorkflow)
+        routes.get("projects", ":projectID", "workflow", use: getWorkflow)
 
-        routes.post("projects", ":project_id", "statuses", use: createStatus)
+        routes.post("projects", ":projectID", "statuses", use: createStatus)
         routes.patch("statuses", ":status_id", use: updateStatus)
         routes.delete("statuses", ":status_id", use: deleteStatus)
 
-        routes.post("projects", ":project_id", "automation-rules", use: createRule)
+        routes.post("projects", ":projectID", "automation-rules", use: createRule)
         routes.patch("automation-rules", ":rule_id", use: updateRule)
         routes.delete("automation-rules", ":rule_id", use: deleteRule)
     }

@@ -138,6 +138,7 @@ final class TaskItemModel: Model, Content, @unchecked Sendable {
             listId: $list.id,
             position: position,
             archivedAt: archivedAt,
+            completedAt: completedAt,
             createdAt: createdAt,
             updatedAt: updatedAt
         )

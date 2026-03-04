@@ -6,11 +6,18 @@ import SharedModels
 public struct ExportService {
     
     /// Generates a CSV string for a project's burndown stats.
-    public static func generateBurndownCSV(projectId: UUID, db: Database) async throws -> String {
-        let stats = try await ProjectDailyStatsModel.query(on: db)
+    public static func generateBurndownCSV(projectId: UUID, startDate: Date? = nil, endExclusive: Date? = nil, db: Database) async throws -> String {
+        var query = ProjectDailyStatsModel.query(on: db)
             .filter(\.$project.$id == projectId)
-            .sort(\.$date, .ascending)
-            .all()
+
+        if let startDate {
+            query = query.filter(\.$date >= startDate)
+        }
+        if let endExclusive {
+            query = query.filter(\.$date < endExclusive)
+        }
+
+        let stats = try await query.sort(\.$date, .ascending).all()
             
         var csv = "Date,Remaining Points,Completed Points,Completed Tasks,Created Tasks\n"
         

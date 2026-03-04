@@ -45,6 +45,9 @@ func routes(_ app: Application) throws {
     let analyticsController = AnalyticsController()
     try authenticatedAPI.register(collection: analyticsController)
 
+    let sprintController = SprintController()
+    try authenticatedAPI.register(collection: sprintController)
+
     // Phase 11: Real-time collaboration
     RealtimeController.register(on: app)
 }

@@ -14,8 +14,8 @@ struct HierarchyController: RouteCollection {
         // POST /api/spaces/:space_id/projects
         routes.post("spaces", ":space_id", "projects", use: createProject)
         
-        // POST /api/projects/:project_id/lists
-        routes.post("projects", ":project_id", "lists", use: createList)
+        // POST /api/projects/:projectID/lists
+        routes.post("projects", ":projectID", "lists", use: createList)
         
         // GET /api/hierarchy
         routes.get("hierarchy", use: getHierarchy)
@@ -136,7 +136,7 @@ struct HierarchyController: RouteCollection {
         let payload = try req.content.decode(CreateListPayload.self)
         let orgId = try req.orgContext.orgId
         
-        guard let projectIdString = req.parameters.get("project_id"),
+        guard let projectIdString = req.parameters.get("projectID"),
               let projectId = UUID(uuidString: projectIdString) else {
             throw Abort(.badRequest, reason: "Invalid project ID.")
         }

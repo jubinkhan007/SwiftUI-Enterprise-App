@@ -175,6 +175,7 @@ public enum Permission: String, Codable, Sendable, CaseIterable {
     // Analytics
     case analyticsView   = "analytics.view"
     case analyticsExport = "analytics.export"
+    case reportsExport   = "reports.export"
 
     // Admin
     case orgSettings     = "org.settings"
@@ -240,7 +241,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .viewsCreate, .viewsUpdate, .viewsDelete, .viewsShare, .viewsSetDefault,
                 .membersView, .membersInvite,
                 .projectsCreate, .projectsEdit,
-                .analyticsView, .analyticsExport,
+                .analyticsView, .analyticsExport, .reportsExport,
                 .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])
         case .admin:
@@ -250,7 +251,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .viewsCreate, .viewsUpdate, .viewsDelete, .viewsShare, .viewsSetDefault,
                 .membersView, .membersInvite, .membersManage, .membersRemove,
                 .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
-                .analyticsView, .analyticsExport,
+                .analyticsView, .analyticsExport, .reportsExport,
                 .orgSettings, .auditLogView,
                 .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])

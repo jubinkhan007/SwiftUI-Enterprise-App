@@ -6,7 +6,7 @@ import Vapor
 /// Secure attachment upload/list/download. No public URLs; downloads are streamed through auth.
 struct AttachmentController: RouteCollection {
     private enum Constants {
-        static let maxUploadBytes = 25 * 1024 * 1024
+        static let maxUploadBytes = 50 * 1024 * 1024
         static let storageFolder = "PrivateStorage"
     }
 
@@ -16,7 +16,7 @@ struct AttachmentController: RouteCollection {
         let task = routes.grouped("tasks", ":taskID")
         task.get("attachments", use: listForTask)
         // Increase max body size for multipart uploads on this endpoint.
-        task.on(.POST, "attachments", body: .collect(maxSize: "40mb"), use: uploadToTask)
+        task.on(.POST, "attachments", body: .collect(maxSize: "80mb"), use: uploadToTask)
 
         routes.grouped("attachments", ":attachmentID").get("download", use: download)
     }
@@ -71,7 +71,7 @@ struct AttachmentController: RouteCollection {
             throw Abort(.badRequest, reason: "Empty file.")
         }
         guard size <= Int64(Constants.maxUploadBytes) else {
-            throw Abort(.payloadTooLarge, reason: "File too large. Max is 25MB.")
+            throw Abort(.payloadTooLarge, reason: "File too large. Max is 50MB.")
         }
 
         let (fileType, mimeType) = try inferTypeAndMime(from: filename)

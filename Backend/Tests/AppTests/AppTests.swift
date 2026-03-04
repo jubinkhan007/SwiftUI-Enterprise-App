@@ -394,4 +394,254 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(res.status, .forbidden)
         }
     }
+
+    func testBurndownAggregationRespectsUTCDateBoundaries() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let user = UserModel(email: "utc+\(UUID().uuidString)@example.com", displayName: "UTC", passwordHash: "x", role: .admin)
+        try await user.save(on: app.db)
+        let userId = try user.requireID()
+
+        let org = OrganizationModel(name: "Org-\(UUID().uuidString)", slug: "org-\(UUID().uuidString)", ownerId: userId)
+        try await org.save(on: app.db)
+        let orgId = try org.requireID()
+        try await OrganizationMemberModel(orgId: orgId, userId: userId, role: .admin).save(on: app.db)
+
+        let space = SpaceModel(orgId: orgId, name: "Space", description: nil)
+        try await space.save(on: app.db)
+        let spaceId = try space.requireID()
+
+        let project = ProjectModel(spaceId: spaceId, name: "Project", description: nil, workflowVersion: 1)
+        try await project.save(on: app.db)
+        let projectId = try project.requireID()
+
+        let backlog = CustomStatusModel(
+            projectId: projectId,
+            name: "Backlog",
+            color: "#94A3B8",
+            position: 0,
+            category: .backlog,
+            isDefault: true,
+            isFinal: false,
+            isLocked: true,
+            legacyStatus: TaskStatus.todo.rawValue
+        )
+        try await backlog.save(on: app.db)
+        let backlogId = try backlog.requireID()
+
+        let list = TaskListModel(projectId: projectId, name: "List", color: "#4F46E5")
+        try await list.save(on: app.db)
+        let listId = try list.requireID()
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let created1 = try XCTUnwrap(iso.date(from: "2026-03-01T23:59:50Z"))
+        let created2 = try XCTUnwrap(iso.date(from: "2026-03-02T00:00:10Z"))
+
+        let task1 = TaskItemModel(orgId: orgId, listId: listId, title: "T1", status: .todo, statusId: backlogId, storyPoints: 3)
+        let task2 = TaskItemModel(orgId: orgId, listId: listId, title: "T2", status: .todo, statusId: backlogId, storyPoints: 5)
+        try await task1.save(on: app.db)
+        try await task2.save(on: app.db)
+
+        task1.createdAt = created1
+        task2.createdAt = created2
+        try await task1.save(on: app.db)
+        try await task2.save(on: app.db)
+
+        let token = try signToken(app: app, userId: userId, role: .admin)
+        let start = "2026-03-01T12:00:00Z"
+        let end = "2026-03-02T12:00:00Z"
+
+        try await app.test(.GET, "api/projects/\(projectId.uuidString)/analytics/burndown?start_date=\(start)&end_date=\(end)") { req async in
+            req.headers.bearerAuthorization = .init(token: token)
+            req.headers.add(name: "X-Org-Id", value: orgId.uuidString)
+        } afterResponse: { res async in
+            XCTAssertEqual(res.status, .ok)
+            do {
+                let decoded = try res.content.decode(APIResponse<[ProjectDailyStatsDTO]>.self)
+                let stats = decoded.data ?? []
+
+                // Expect entries for Mar 1 and Mar 2 (UTC).
+                XCTAssertEqual(stats.count, 2)
+                XCTAssertEqual(stats[0].remainingPoints, 3, accuracy: 0.0001)
+                XCTAssertEqual(stats[1].remainingPoints, 8, accuracy: 0.0001)
+            } catch {
+                XCTFail("Failed to decode burndown response: \(error)")
+            }
+        }
+    }
+
+    func testAnalyticsExportRBACIsEnforced() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let user = UserModel(email: "viewer+\(UUID().uuidString)@example.com", displayName: "Viewer", passwordHash: "x", role: .viewer)
+        try await user.save(on: app.db)
+        let userId = try user.requireID()
+
+        let org = OrganizationModel(name: "Org-\(UUID().uuidString)", slug: "org-\(UUID().uuidString)", ownerId: userId)
+        try await org.save(on: app.db)
+        let orgId = try org.requireID()
+        try await OrganizationMemberModel(orgId: orgId, userId: userId, role: .viewer).save(on: app.db)
+
+        let space = SpaceModel(orgId: orgId, name: "Space", description: nil)
+        try await space.save(on: app.db)
+        let spaceId = try space.requireID()
+
+        let project = ProjectModel(spaceId: spaceId, name: "Project", description: nil, workflowVersion: 1)
+        try await project.save(on: app.db)
+        let projectId = try project.requireID()
+
+        let token = try signToken(app: app, userId: userId, role: .viewer)
+        try await app.test(.GET, "api/projects/\(projectId.uuidString)/analytics/export/burndown") { req async in
+            req.headers.bearerAuthorization = .init(token: token)
+            req.headers.add(name: "X-Org-Id", value: orgId.uuidString)
+        } afterResponse: { res async in
+            XCTAssertEqual(res.status, .forbidden)
+        }
+    }
+
+    func testAnalyticsViewRBACIsEnforced() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let user = UserModel(email: "guest+\(UUID().uuidString)@example.com", displayName: "Guest", passwordHash: "x", role: .guest)
+        try await user.save(on: app.db)
+        let userId = try user.requireID()
+
+        let org = OrganizationModel(name: "Org-\(UUID().uuidString)", slug: "org-\(UUID().uuidString)", ownerId: userId)
+        try await org.save(on: app.db)
+        let orgId = try org.requireID()
+        try await OrganizationMemberModel(orgId: orgId, userId: userId, role: .guest).save(on: app.db)
+
+        let space = SpaceModel(orgId: orgId, name: "Space", description: nil)
+        try await space.save(on: app.db)
+        let spaceId = try space.requireID()
+
+        let project = ProjectModel(spaceId: spaceId, name: "Project", description: nil, workflowVersion: 1)
+        try await project.save(on: app.db)
+        let projectId = try project.requireID()
+
+        let token = try signToken(app: app, userId: userId, role: .guest)
+        try await app.test(.GET, "api/projects/\(projectId.uuidString)/analytics/lead-time") { req async in
+            req.headers.bearerAuthorization = .init(token: token)
+            req.headers.add(name: "X-Org-Id", value: orgId.uuidString)
+        } afterResponse: { res async in
+            XCTAssertEqual(res.status, .forbidden)
+        }
+    }
+
+    func testCycleTimeUsesWorkflowCategoryNotStatusName() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let user = UserModel(email: "cycle+\(UUID().uuidString)@example.com", displayName: "Cycle", passwordHash: "x", role: .admin)
+        try await user.save(on: app.db)
+        let userId = try user.requireID()
+
+        let org = OrganizationModel(name: "Org-\(UUID().uuidString)", slug: "org-\(UUID().uuidString)", ownerId: userId)
+        try await org.save(on: app.db)
+        let orgId = try org.requireID()
+        try await OrganizationMemberModel(orgId: orgId, userId: userId, role: .admin).save(on: app.db)
+
+        let space = SpaceModel(orgId: orgId, name: "Space", description: nil)
+        try await space.save(on: app.db)
+        let spaceId = try space.requireID()
+
+        let project = ProjectModel(spaceId: spaceId, name: "Project", description: nil, workflowVersion: 1)
+        try await project.save(on: app.db)
+        let projectId = try project.requireID()
+
+        let backlog = CustomStatusModel(
+            projectId: projectId,
+            name: "Backlog",
+            color: "#94A3B8",
+            position: 0,
+            category: .backlog,
+            isDefault: true,
+            isFinal: false,
+            isLocked: true,
+            legacyStatus: TaskStatus.todo.rawValue
+        )
+        let active = CustomStatusModel(
+            projectId: projectId,
+            name: "In Progress",
+            color: "#3B82F6",
+            position: 100,
+            category: .active,
+            isDefault: false,
+            isFinal: false,
+            isLocked: false,
+            legacyStatus: TaskStatus.inProgress.rawValue
+        )
+        let done = CustomStatusModel(
+            projectId: projectId,
+            name: "Done",
+            color: "#22C55E",
+            position: 1000,
+            category: .completed,
+            isDefault: false,
+            isFinal: true,
+            isLocked: true,
+            legacyStatus: TaskStatus.done.rawValue
+        )
+        try await backlog.save(on: app.db)
+        try await active.save(on: app.db)
+        try await done.save(on: app.db)
+
+        let list = TaskListModel(projectId: projectId, name: "List", color: "#4F46E5")
+        try await list.save(on: app.db)
+        let listId = try list.requireID()
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let createdAt = try XCTUnwrap(iso.date(from: "2026-03-01T10:00:00Z"))
+        let startedAt = try XCTUnwrap(iso.date(from: "2026-03-01T12:00:00Z"))
+        let completedAt = try XCTUnwrap(iso.date(from: "2026-03-02T10:00:00Z"))
+
+        let task = TaskItemModel(orgId: orgId, listId: listId, title: "T", status: .done, statusId: try done.requireID(), storyPoints: 1)
+        try await task.save(on: app.db)
+        let taskId = try task.requireID()
+
+        task.createdAt = createdAt
+        task.completedAt = completedAt
+        try await task.save(on: app.db)
+
+        let activity = TaskActivityModel(
+            taskId: taskId,
+            userId: userId,
+            type: .statusChanged,
+            metadata: [
+                "to_status_id": try active.requireID().uuidString
+            ]
+        )
+        try await activity.save(on: app.db)
+        activity.createdAt = startedAt
+        try await activity.save(on: app.db)
+
+        // Rename the active status — analytics should remain stable because it keys off category/id, not name.
+        active.name = "Working"
+        try await active.save(on: app.db)
+
+        let token = try signToken(app: app, userId: userId, role: .admin)
+        try await app.test(.GET, "api/projects/\(projectId.uuidString)/analytics/cycle-time?start_date=2026-03-01T00:00:00Z&end_date=2026-03-02T00:00:00Z") { req async in
+            req.headers.bearerAuthorization = .init(token: token)
+            req.headers.add(name: "X-Org-Id", value: orgId.uuidString)
+        } afterResponse: { res async in
+            XCTAssertEqual(res.status, .ok)
+            do {
+                let decoded = try res.content.decode(APIResponse<AnalyticsResponseDTO<Double>>.self)
+                let dto = try XCTUnwrap(decoded.data)
+                XCTAssertEqual(dto.sampleSize, 1)
+                XCTAssertEqual(dto.value, completedAt.timeIntervalSince(startedAt), accuracy: 0.01)
+            } catch {
+                XCTFail("Failed to decode cycle-time response: \(error)")
+            }
+        }
+    }
 }

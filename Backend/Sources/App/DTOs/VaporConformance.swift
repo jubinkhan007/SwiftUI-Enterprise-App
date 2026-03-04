@@ -71,7 +71,11 @@ extension CreateCommentRequest: @retroactive Content {}
 
 // Phase 12: Analytics
 extension SprintDTO: @retroactive Content {}
+extension CreateSprintRequest: @retroactive Content {}
 extension ProjectDailyStatsDTO: @retroactive Content {}
+extension WeeklyThroughputPointDTO: @retroactive Content {}
+extension SprintVelocityPointDTO: @retroactive Content {}
+extension AnalyticsReportPayloadDTO: @retroactive Content {}
 extension AnalyticsResponseDTO: @retroactive AsyncRequestDecodable where T: Content {}
 extension AnalyticsResponseDTO: @retroactive AsyncResponseEncodable where T: Content {}
 extension AnalyticsResponseDTO: @retroactive RequestDecodable where T: Content {}
