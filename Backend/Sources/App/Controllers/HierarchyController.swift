@@ -77,7 +77,12 @@ struct HierarchyController: RouteCollection {
             throw Abort(.notFound, reason: "Space not found in this organization.")
         }
 
-        let project = ProjectModel(spaceId: spaceId, name: payload.name, description: payload.description)
+        let project = ProjectModel(
+            spaceId: spaceId,
+            name: payload.name,
+            description: payload.description,
+            issueKeyPrefix: IssueKeyService.computePrefix(from: payload.name)
+        )
         try await req.db.transaction { db in
             try await project.save(on: db)
 

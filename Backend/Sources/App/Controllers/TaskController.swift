@@ -248,6 +248,17 @@ struct TaskController: RouteCollection {
         let ctx = try req.orgContext
         let payload = try req.content.decode(CreateTaskRequest.self)
 
+        let bugFieldsProvided =
+            payload.bugSeverity != nil ||
+            payload.bugEnvironment != nil ||
+            payload.affectedVersionId != nil ||
+            payload.expectedResult != nil ||
+            payload.actualResult != nil ||
+            payload.reproductionSteps != nil
+        if bugFieldsProvided {
+            try req.requirePermission(.issuesEditBugFields)
+        }
+
         guard !payload.title.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw Abort(.badRequest, reason: "Task title is required.")
         }
@@ -267,6 +278,10 @@ struct TaskController: RouteCollection {
 
         let taskType = payload.taskType ?? .task
         let projectId = list.$project.id
+
+        if bugFieldsProvided, taskType != .bug {
+            throw Abort(.badRequest, reason: "Bug fields can only be set on tasks of type 'bug'.")
+        }
 
         // Validate parentId constraints
         if let parentId = payload.parentId {
@@ -302,9 +317,56 @@ struct TaskController: RouteCollection {
             db: req.db
         )
 
+        if payload.sprintPosition != nil, payload.sprintId == nil {
+            throw Abort(.badRequest, reason: "sprintPosition requires sprintId.")
+        }
+
+        var sprint: SprintModel? = nil
+        if let sprintId = payload.sprintId {
+            let sprints = try await SprintModel.query(on: req.db)
+                .filter(\.$id == sprintId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let s = sprints.first else {
+                throw Abort(.notFound, reason: "Sprint not found.")
+            }
+            guard s.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Sprint not found.")
+            }
+            guard s.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Sprint does not belong to the selected task's project.")
+            }
+            guard !s.status.isClosedLike else {
+                throw Abort(.badRequest, reason: "Cannot assign tasks to a closed sprint.")
+            }
+            sprint = s
+        }
+
+        if let affectedVersionId = payload.affectedVersionId {
+            let releases = try await ReleaseModel.query(on: req.db)
+                .filter(\.$id == affectedVersionId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let release = releases.first else {
+                throw Abort(.notFound, reason: "Release not found.")
+            }
+            guard release.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Release not found.")
+            }
+            guard release.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Release does not belong to the selected task's project.")
+            }
+            guard !release.isLocked else {
+                throw Abort(.badRequest, reason: "This release is locked.")
+            }
+        }
+
         let task = TaskItemModel(
             orgId: ctx.orgId,
             listId: listId,
+            projectId: projectId,
             title: payload.title,
             description: payload.description,
             status: resolvedStatus.legacyEnum,
@@ -313,17 +375,66 @@ struct TaskController: RouteCollection {
             taskType: taskType,
             parentId: payload.parentId,
             storyPoints: payload.storyPoints,
+            sprintId: payload.sprintId,
             labels: payload.labels,
             startDate: payload.startDate,
             dueDate: payload.dueDate,
-            assigneeId: payload.assigneeId
+            assigneeId: payload.assigneeId,
+            bugSeverity: payload.bugSeverity,
+            bugEnvironment: payload.bugEnvironment,
+            affectedVersionId: payload.affectedVersionId,
+            expectedResult: payload.expectedResult,
+            actualResult: payload.actualResult,
+            reproductionSteps: payload.reproductionSteps
         )
 
         if resolvedStatus.category == .completed {
             task.completedAt = Date()
         }
 
+        let sprintSnapshot = sprint
+        let sprintIdSnapshot = payload.sprintId
+        let desiredBacklogPosition = payload.backlogPosition
+        let desiredSprintPosition = payload.sprintPosition
+
         try await req.db.transaction { db in
+            // Ensure issue key + counter are assigned atomically
+            task.issueKey = try await IssueKeyService.nextIssueKey(project: list.project, db: db)
+
+            // Default positions if not provided
+            if sprintSnapshot == nil {
+                // Backlog entry
+                task.sprintPosition = nil
+                if desiredBacklogPosition != nil {
+                    task.backlogPosition = desiredBacklogPosition
+                } else {
+                    let maxPos = try await TaskItemModel.query(on: db)
+                        .filter(\.$project.$id == projectId)
+                        .filter(\.$sprint.$id == nil)
+                        .sort(\.$backlogPosition, .descending)
+                        .first()
+                        .flatMap { $0.backlogPosition }
+                    task.backlogPosition = (maxPos ?? 0) + 1000
+                }
+            } else {
+                // Sprint entry
+                task.backlogPosition = nil
+                if desiredSprintPosition != nil {
+                    task.sprintPosition = desiredSprintPosition
+                } else {
+                    guard let sprintId = sprintIdSnapshot else {
+                        throw Abort(.badRequest, reason: "Missing sprintId.")
+                    }
+                    let maxPos = try await TaskItemModel.query(on: db)
+                        .filter(\.$project.$id == projectId)
+                        .filter(\.$sprint.$id == sprintId)
+                        .sort(\.$sprintPosition, .descending)
+                        .first()
+                        .flatMap { $0.sprintPosition }
+                    task.sprintPosition = (maxPos ?? 0) + 1000
+                }
+            }
+
             try await task.save(on: db)
             let taskId = try task.requireID()
             let activity = TaskActivityModel(
@@ -353,6 +464,11 @@ struct TaskController: RouteCollection {
                 typeChange: nil
             )
             await AutomationService.applyAutomations(event: event, task: task, db: db, logger: req.logger)
+
+            // Phase 13: epic rollups
+            if let parentId = task.$parent.id {
+                try? await EpicRollupService.recomputeEpic(epicId: parentId, db: db)
+            }
         }
 
         return .success(task.toDTO())
@@ -395,9 +511,26 @@ struct TaskController: RouteCollection {
             throw Abort(.badRequest, reason: "A task can have at most 20 labels.")
         }
 
+        let bugFieldsProvided =
+            payload.bugSeverity != nil ||
+            payload.bugEnvironment != nil ||
+            payload.affectedVersionId != nil ||
+            payload.expectedResult != nil ||
+            payload.actualResult != nil ||
+            payload.reproductionSteps != nil
+        if bugFieldsProvided {
+            try req.requirePermission(.issuesEditBugFields)
+        }
+        let effectiveTaskType = payload.taskType ?? task.taskType
+        if bugFieldsProvided, effectiveTaskType != .bug {
+            throw Abort(.badRequest, reason: "Bug fields can only be set on tasks of type 'bug'.")
+        }
+
         var activities: [TaskActivityModel] = []
         let taskId = try task.requireID()
         let projectId = list.$project.id
+        let parentIdSnapshot = task.$parent.id
+        let shouldRecomputeEpic = parentIdSnapshot != nil && (payload.storyPoints != nil || payload.statusId != nil || payload.status != nil)
 
         let oldStatusId = task.$customStatus.id
         let oldPriority = task.priority
@@ -464,9 +597,108 @@ struct TaskController: RouteCollection {
             task.$assignee.id = assigneeId
         }
         if let listId = payload.listId, task.$list.id != listId {
+            let targets = try await TaskListModel.query(on: req.db)
+                .filter(\.$id == listId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let target = targets.first, target.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Target list not found in this organization.")
+            }
+            guard target.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Moving tasks across projects is not supported.")
+            }
             activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .moved, metadata: ["to_list": listId.uuidString]))
             task.$list.id = listId
         }
+
+        // Phase 13: bug fields + affected version
+        if bugFieldsProvided, let affectedVersionId = payload.affectedVersionId {
+            let releases = try await ReleaseModel.query(on: req.db)
+                .filter(\.$id == affectedVersionId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let release = releases.first else {
+                throw Abort(.notFound, reason: "Release not found.")
+            }
+            guard release.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Release not found.")
+            }
+            guard release.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Release does not belong to this task's project.")
+            }
+            guard !release.isLocked else {
+                throw Abort(.badRequest, reason: "This release is locked.")
+            }
+            task.$affectedVersion.id = affectedVersionId
+        }
+        if bugFieldsProvided, let sev = payload.bugSeverity {
+            task.bugSeverityRaw = sev.rawValue
+        }
+        if bugFieldsProvided, let env = payload.bugEnvironment {
+            task.bugEnvironmentRaw = env.rawValue
+        }
+        if bugFieldsProvided, let expected = payload.expectedResult {
+            task.expectedResult = expected
+        }
+        if bugFieldsProvided, let actual = payload.actualResult {
+            task.actualResult = actual
+        }
+        if bugFieldsProvided, let repro = payload.reproductionSteps {
+            task.reproductionSteps = repro
+        }
+
+        // Phase 13: backlog/sprint assignment (atomic move contract)
+        if payload.backlogPosition != nil, (payload.sprintId != nil || payload.sprintPosition != nil) {
+            throw Abort(.badRequest, reason: "Cannot set backlogPosition together with sprintId/sprintPosition.")
+        }
+        if payload.sprintPosition != nil, payload.sprintId == nil, task.$sprint.id == nil {
+            throw Abort(.badRequest, reason: "sprintPosition requires an existing sprint assignment or sprintId.")
+        }
+
+        if payload.sprintId != nil || payload.sprintPosition != nil {
+            let targetSprintId = payload.sprintId ?? task.$sprint.id
+            guard let targetSprintId else {
+                throw Abort(.badRequest, reason: "Invalid sprint assignment.")
+            }
+            let sprints = try await SprintModel.query(on: req.db)
+                .filter(\.$id == targetSprintId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let sprint = sprints.first else {
+                throw Abort(.notFound, reason: "Sprint not found.")
+            }
+            guard sprint.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Sprint not found.")
+            }
+            guard sprint.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Sprint does not belong to this task's project.")
+            }
+            // Block assigning/reordering into closed sprints.
+            if sprint.status.isClosedLike {
+                throw Abort(.badRequest, reason: "Cannot move or reorder tasks within a closed sprint.")
+            }
+        }
+
+        if let backlogPos = payload.backlogPosition {
+            task.$sprint.id = nil
+            task.sprintPosition = nil
+            task.backlogPosition = backlogPos
+        } else if let sprintId = payload.sprintId {
+            task.$sprint.id = sprintId
+            task.backlogPosition = nil
+            if let sprintPos = payload.sprintPosition {
+                task.sprintPosition = sprintPos
+            } else {
+                // Compute in transaction
+                task.sprintPosition = nil
+            }
+        } else if let sprintPos = payload.sprintPosition {
+            task.sprintPosition = sprintPos
+        }
+
         if let position = payload.position {
             task.position = position
         }
@@ -493,6 +725,25 @@ struct TaskController: RouteCollection {
         }()
 
         try await req.db.transaction { db in
+            // Phase 13: ensure denormalized project + issue key exist
+            if task.$project.id == nil {
+                task.$project.id = projectId
+            }
+            if task.issueKey == nil || task.issueKey?.isEmpty == true {
+                task.issueKey = try await IssueKeyService.nextIssueKey(project: list.project, db: db)
+            }
+
+            // Phase 13: compute sprint position if moving without explicit position
+            if payload.sprintId != nil, payload.sprintPosition == nil, let sprintId = task.$sprint.id {
+                let maxPos = try await TaskItemModel.query(on: db)
+                    .filter(\.$project.$id == projectId)
+                    .filter(\.$sprint.$id == sprintId)
+                    .sort(\.$sprintPosition, .descending)
+                    .first()
+                    .flatMap { $0.sprintPosition }
+                task.sprintPosition = (maxPos ?? 0) + 1000
+            }
+
             try await task.save(on: db)
             for activity in finalActivities {
                 try await activity.save(on: db)
@@ -511,6 +762,10 @@ struct TaskController: RouteCollection {
                 typeChange: typeChange
             )
             await AutomationService.applyAutomations(event: event, task: task, db: db, logger: req.logger)
+
+            if shouldRecomputeEpic, let parentId = parentIdSnapshot {
+                try? await EpicRollupService.recomputeEpic(epicId: parentId, db: db)
+            }
         }
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
@@ -553,12 +808,29 @@ struct TaskController: RouteCollection {
             throw Abort(.badRequest, reason: "A task can have at most 20 labels.")
         }
 
+        let bugFieldsProvided =
+            payload.bugSeverity != nil ||
+            payload.bugEnvironment != nil ||
+            payload.affectedVersionId != nil ||
+            payload.expectedResult != nil ||
+            payload.actualResult != nil ||
+            payload.reproductionSteps != nil
+        if bugFieldsProvided {
+            try req.requirePermission(.issuesEditBugFields)
+        }
+        let effectiveTaskType = payload.taskType ?? task.taskType
+        if bugFieldsProvided, effectiveTaskType != .bug {
+            throw Abort(.badRequest, reason: "Bug fields can only be set on tasks of type 'bug'.")
+        }
+
         var activities: [TaskActivityModel] = []
         let taskId = try task.requireID()
 
         let oldStatusId = task.$customStatus.id
         let oldPriority = task.priority
         let oldType = task.taskType
+        let parentIdSnapshot = task.$parent.id
+        let shouldRecomputeEpic = parentIdSnapshot != nil && (payload.storyPoints != nil || payload.statusId != nil || payload.status != nil)
 
         if let title = payload.title, task.title != title {
             task.title = title
@@ -621,9 +893,106 @@ struct TaskController: RouteCollection {
             task.$assignee.id = assigneeId
         }
         if let listId = payload.listId, task.$list.id != listId {
+            let targets = try await TaskListModel.query(on: req.db)
+                .filter(\.$id == listId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let target = targets.first, target.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Target list not found in this organization.")
+            }
+            guard target.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Moving tasks across projects is not supported.")
+            }
             activities.append(TaskActivityModel(taskId: taskId, userId: ctx.userId, type: .moved, metadata: ["to_list": listId.uuidString]))
             task.$list.id = listId
         }
+
+        // Phase 13: bug fields + affected version
+        if bugFieldsProvided, let affectedVersionId = payload.affectedVersionId {
+            let releases = try await ReleaseModel.query(on: req.db)
+                .filter(\.$id == affectedVersionId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let release = releases.first else {
+                throw Abort(.notFound, reason: "Release not found.")
+            }
+            guard release.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Release not found.")
+            }
+            guard release.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Release does not belong to this task's project.")
+            }
+            guard !release.isLocked else {
+                throw Abort(.badRequest, reason: "This release is locked.")
+            }
+            task.$affectedVersion.id = affectedVersionId
+        }
+        if bugFieldsProvided, let sev = payload.bugSeverity {
+            task.bugSeverityRaw = sev.rawValue
+        }
+        if bugFieldsProvided, let env = payload.bugEnvironment {
+            task.bugEnvironmentRaw = env.rawValue
+        }
+        if bugFieldsProvided, let expected = payload.expectedResult {
+            task.expectedResult = expected
+        }
+        if bugFieldsProvided, let actual = payload.actualResult {
+            task.actualResult = actual
+        }
+        if bugFieldsProvided, let repro = payload.reproductionSteps {
+            task.reproductionSteps = repro
+        }
+
+        // Phase 13: backlog/sprint assignment (atomic move contract)
+        if payload.backlogPosition != nil, (payload.sprintId != nil || payload.sprintPosition != nil) {
+            throw Abort(.badRequest, reason: "Cannot set backlogPosition together with sprintId/sprintPosition.")
+        }
+        if payload.sprintPosition != nil, payload.sprintId == nil, task.$sprint.id == nil {
+            throw Abort(.badRequest, reason: "sprintPosition requires an existing sprint assignment or sprintId.")
+        }
+
+        if payload.sprintId != nil || payload.sprintPosition != nil {
+            let targetSprintId = payload.sprintId ?? task.$sprint.id
+            guard let targetSprintId else {
+                throw Abort(.badRequest, reason: "Invalid sprint assignment.")
+            }
+            let sprints = try await SprintModel.query(on: req.db)
+                .filter(\.$id == targetSprintId)
+                .with(\.$project) { project in project.with(\.$space) }
+                .limit(1)
+                .all()
+            guard let sprint = sprints.first else {
+                throw Abort(.notFound, reason: "Sprint not found.")
+            }
+            guard sprint.project.space.$organization.id == ctx.orgId else {
+                throw Abort(.notFound, reason: "Sprint not found.")
+            }
+            guard sprint.$project.id == projectId else {
+                throw Abort(.badRequest, reason: "Sprint does not belong to this task's project.")
+            }
+            if sprint.status.isClosedLike {
+                throw Abort(.badRequest, reason: "Cannot move or reorder tasks within a closed sprint.")
+            }
+        }
+
+        if let backlogPos = payload.backlogPosition {
+            task.$sprint.id = nil
+            task.sprintPosition = nil
+            task.backlogPosition = backlogPos
+        } else if let sprintId = payload.sprintId {
+            task.$sprint.id = sprintId
+            task.backlogPosition = nil
+            if let sprintPos = payload.sprintPosition {
+                task.sprintPosition = sprintPos
+            } else {
+                task.sprintPosition = nil
+            }
+        } else if let sprintPos = payload.sprintPosition {
+            task.sprintPosition = sprintPos
+        }
+
         if let position = payload.position {
             task.position = position
         }
@@ -651,6 +1020,24 @@ struct TaskController: RouteCollection {
         }()
 
         try await req.db.transaction { db in
+            // Phase 13: ensure denormalized project + issue key exist
+            if task.$project.id == nil {
+                task.$project.id = projectId
+            }
+            if task.issueKey == nil || task.issueKey?.isEmpty == true {
+                task.issueKey = try await IssueKeyService.nextIssueKey(project: list.project, db: db)
+            }
+
+            if payload.sprintId != nil, payload.sprintPosition == nil, let sprintId = task.$sprint.id {
+                let maxPos = try await TaskItemModel.query(on: db)
+                    .filter(\.$project.$id == projectId)
+                    .filter(\.$sprint.$id == sprintId)
+                    .sort(\.$sprintPosition, .descending)
+                    .first()
+                    .flatMap { $0.sprintPosition }
+                task.sprintPosition = (maxPos ?? 0) + 1000
+            }
+
             try await task.save(on: db)
             for activity in finalActivities {
                 try await activity.save(on: db)
@@ -669,6 +1056,10 @@ struct TaskController: RouteCollection {
                 typeChange: typeChange
             )
             await AutomationService.applyAutomations(event: event, task: task, db: db, logger: req.logger)
+
+            if shouldRecomputeEpic, let parentId = parentIdSnapshot {
+                try? await EpicRollupService.recomputeEpic(epicId: parentId, db: db)
+            }
         }
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
@@ -922,6 +1313,7 @@ struct TaskController: RouteCollection {
             .first() else {
             throw Abort(.notFound, reason: "Task not found in this organization.")
         }
+        let parentIdSnapshot = task.$parent.id
         try await req.db.transaction { db in
             try await AuditLogModel.log(
                 on: db, orgId: ctx.orgId, userId: ctx.userId,
@@ -930,6 +1322,10 @@ struct TaskController: RouteCollection {
                 details: "Deleted task: \(task.title)"
             )
             try await task.delete(on: db)
+
+            if let parentId = parentIdSnapshot {
+                try? await EpicRollupService.recomputeEpic(epicId: parentId, db: db)
+            }
         }
         return .noContent
     }

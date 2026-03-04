@@ -48,6 +48,12 @@ func routes(_ app: Application) throws {
     let sprintController = SprintController()
     try authenticatedAPI.register(collection: sprintController)
 
+    let agileController = AgileController()
+    try authenticatedAPI.register(collection: agileController)
+
+    let releaseController = ReleaseController()
+    try authenticatedAPI.register(collection: releaseController)
+
     // Phase 11: Real-time collaboration
     RealtimeController.register(on: app)
 }

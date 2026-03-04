@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 import Domain
 import SharedModels
+import AppNetwork
 
 /// Represents a single column in the Kanban board
 public struct BoardColumn: Identifiable, Equatable {
@@ -29,10 +30,12 @@ public final class BoardViewModel: ObservableObject {
     private let taskRepository: TaskRepositoryProtocol
     private var allTasks: [TaskItemDTO] = []
     private var workflowStatuses: [WorkflowStatusDTO] = []
+    private var cancellables = Set<AnyCancellable>()
     
     public init(taskRepository: TaskRepositoryProtocol, initialConfig: BoardColumnConfigDTO = BoardColumnConfigDTO()) {
         self.taskRepository = taskRepository
         self.config = initialConfig
+        setupTaskUpdateListener()
     }
 
     public func updateWorkflowStatuses(_ statuses: [WorkflowStatusDTO]) {
@@ -82,6 +85,19 @@ public final class BoardViewModel: ObservableObject {
         }
         
         self.columns = newColumns
+    }
+
+    private func setupTaskUpdateListener() {
+        NotificationCenter.default.publisher(for: .taskDidUpdate)
+            .compactMap { $0.object as? TaskItemDTO }
+            .sink { [weak self] updated in
+                guard let self else { return }
+                if let idx = self.allTasks.firstIndex(where: { $0.id == updated.id }) {
+                    self.allTasks[idx] = updated
+                    self.rebuildColumns()
+                }
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Drag and Drop Handling

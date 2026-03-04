@@ -14,6 +14,14 @@ public final class CreateTaskViewModel: ObservableObject {
     @Published public var storyPointsText: String = ""
     @Published public var labelsText: String = ""   // comma-separated
 
+    // Phase 13: Bug fields (optional; gated by toggle)
+    @Published public var includeBugFields: Bool = false
+    @Published public var bugSeverity: BugSeverity = .medium
+    @Published public var bugEnvironment: BugEnvironment = .production
+    @Published public var expectedResultText: String = ""
+    @Published public var actualResultText: String = ""
+    @Published public var reproductionStepsText: String = ""
+
     @Published public var startDate: Date? = nil
     @Published public var dueDate: Date? = nil
     @Published public var assigneeIdText: String = ""
@@ -61,6 +69,8 @@ public final class CreateTaskViewModel: ObservableObject {
 
         let assigneeId = UUID(uuidString: assigneeIdText.trimmingCharacters(in: .whitespacesAndNewlines))
 
+        let shouldSendBugFields = taskType == .bug && includeBugFields
+
         let payload = CreateTaskRequest(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             description: descriptionText.isEmpty ? nil : descriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -73,7 +83,12 @@ public final class CreateTaskViewModel: ObservableObject {
             startDate: startDate,
             dueDate: dueDate,
             assigneeId: assigneeId,
-            listId: listId
+            listId: listId,
+            bugSeverity: shouldSendBugFields ? bugSeverity : nil,
+            bugEnvironment: shouldSendBugFields ? bugEnvironment : nil,
+            expectedResult: shouldSendBugFields ? expectedResultText.nilIfEmptyTrimmed : nil,
+            actualResult: shouldSendBugFields ? actualResultText.nilIfEmptyTrimmed : nil,
+            reproductionSteps: shouldSendBugFields ? reproductionStepsText.nilIfEmptyTrimmed : nil
         )
 
         do {
@@ -84,5 +99,12 @@ public final class CreateTaskViewModel: ObservableObject {
         }
 
         isSaving = false
+    }
+}
+
+private extension String {
+    var nilIfEmptyTrimmed: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
     }
 }

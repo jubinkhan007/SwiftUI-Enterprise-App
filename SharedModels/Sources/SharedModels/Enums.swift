@@ -111,6 +111,22 @@ public enum TaskType: String, Codable, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Bug Fields (Phase 13)
+
+public enum BugSeverity: String, Codable, CaseIterable, Sendable {
+    case critical
+    case high
+    case medium
+    case low
+}
+
+public enum BugEnvironment: String, Codable, CaseIterable, Sendable {
+    case production
+    case staging
+    case qa
+    case local
+}
+
 // MARK: - User Role (RBAC)
 
 /// Defines the access level of a user within an organization.
@@ -177,6 +193,11 @@ public enum Permission: String, Codable, Sendable, CaseIterable {
     case analyticsExport = "analytics.export"
     case reportsExport   = "reports.export"
 
+    // Phase 13: Agile / Jira Features
+    case sprintsManage       = "sprints.manage"
+    case releasesManage      = "releases.manage"
+    case issuesEditBugFields = "issues.edit_bug_fields"
+
     // Admin
     case orgSettings     = "org.settings"
     case orgDelete       = "org.delete"
@@ -242,6 +263,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .membersView, .membersInvite,
                 .projectsCreate, .projectsEdit,
                 .analyticsView, .analyticsExport, .reportsExport,
+                .sprintsManage, .releasesManage, .issuesEditBugFields,
                 .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])
         case .admin:
@@ -252,6 +274,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .membersView, .membersInvite, .membersManage, .membersRemove,
                 .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
                 .analyticsView, .analyticsExport, .reportsExport,
+                .sprintsManage, .releasesManage, .issuesEditBugFields,
                 .orgSettings, .auditLogView,
                 .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])

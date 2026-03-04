@@ -6,6 +6,10 @@ import Foundation
 /// Used for API communication between the client and server.
 public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let id: UUID
+    /// Denormalized project id for agile queries (may be nil for legacy tasks).
+    public let projectId: UUID?
+    /// Project-scoped issue key (e.g. "APP-42").
+    public let issueKey: String?
     public let title: String
     public let description: String?
     /// Canonical workflow status (project-scoped). May be nil for legacy tasks.
@@ -17,6 +21,10 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let subtaskCount: Int
     public let completedSubtaskCount: Int
     public let storyPoints: Int?
+    // Sprint / backlog assignment (Phase 13)
+    public let sprintId: UUID?
+    public let backlogPosition: Double?
+    public let sprintPosition: Double?
     public let labels: [String]?
     public let startDate: Date?
     public let dueDate: Date?
@@ -24,6 +32,18 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
     public let version: Int
     public let listId: UUID?
     public let position: Double
+    // Epics: denormalized progress counters (Phase 13)
+    public let epicTotalPoints: Int?
+    public let epicCompletedPoints: Int?
+    public let epicChildrenCount: Int?
+    public let epicChildrenDoneCount: Int?
+    // Bug fields (Phase 13)
+    public let bugSeverity: BugSeverity?
+    public let bugEnvironment: BugEnvironment?
+    public let affectedVersionId: UUID?
+    public let expectedResult: String?
+    public let actualResult: String?
+    public let reproductionSteps: String?
     public let archivedAt: Date?
     public let completedAt: Date?
     public let createdAt: Date?
@@ -31,6 +51,8 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
 
     public init(
         id: UUID = UUID(),
+        projectId: UUID? = nil,
+        issueKey: String? = nil,
         title: String,
         description: String? = nil,
         statusId: UUID? = nil,
@@ -41,6 +63,9 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         subtaskCount: Int = 0,
         completedSubtaskCount: Int = 0,
         storyPoints: Int? = nil,
+        sprintId: UUID? = nil,
+        backlogPosition: Double? = nil,
+        sprintPosition: Double? = nil,
         labels: [String]? = nil,
         startDate: Date? = nil,
         dueDate: Date? = nil,
@@ -48,12 +73,24 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         version: Int = 1,
         listId: UUID? = nil,
         position: Double = 0.0,
+        epicTotalPoints: Int? = nil,
+        epicCompletedPoints: Int? = nil,
+        epicChildrenCount: Int? = nil,
+        epicChildrenDoneCount: Int? = nil,
+        bugSeverity: BugSeverity? = nil,
+        bugEnvironment: BugEnvironment? = nil,
+        affectedVersionId: UUID? = nil,
+        expectedResult: String? = nil,
+        actualResult: String? = nil,
+        reproductionSteps: String? = nil,
         archivedAt: Date? = nil,
         completedAt: Date? = nil,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
         self.id = id
+        self.projectId = projectId
+        self.issueKey = issueKey
         self.title = title
         self.description = description
         self.statusId = statusId
@@ -64,6 +101,9 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         self.subtaskCount = subtaskCount
         self.completedSubtaskCount = completedSubtaskCount
         self.storyPoints = storyPoints
+        self.sprintId = sprintId
+        self.backlogPosition = backlogPosition
+        self.sprintPosition = sprintPosition
         self.labels = labels
         self.startDate = startDate
         self.dueDate = dueDate
@@ -71,6 +111,16 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
         self.version = version
         self.listId = listId
         self.position = position
+        self.epicTotalPoints = epicTotalPoints
+        self.epicCompletedPoints = epicCompletedPoints
+        self.epicChildrenCount = epicChildrenCount
+        self.epicChildrenDoneCount = epicChildrenDoneCount
+        self.bugSeverity = bugSeverity
+        self.bugEnvironment = bugEnvironment
+        self.affectedVersionId = affectedVersionId
+        self.expectedResult = expectedResult
+        self.actualResult = actualResult
+        self.reproductionSteps = reproductionSteps
         self.archivedAt = archivedAt
         self.completedAt = completedAt
         self.createdAt = createdAt
@@ -95,6 +145,17 @@ public struct CreateTaskRequest: Codable, Sendable {
     public let dueDate: Date?
     public let assigneeId: UUID?
     public let listId: UUID?
+    // Phase 13: backlog / sprint assignment
+    public let sprintId: UUID?
+    public let backlogPosition: Double?
+    public let sprintPosition: Double?
+    // Phase 13: bug fields
+    public let bugSeverity: BugSeverity?
+    public let bugEnvironment: BugEnvironment?
+    public let affectedVersionId: UUID?
+    public let expectedResult: String?
+    public let actualResult: String?
+    public let reproductionSteps: String?
 
     public init(
         title: String,
@@ -109,7 +170,16 @@ public struct CreateTaskRequest: Codable, Sendable {
         startDate: Date? = nil,
         dueDate: Date? = nil,
         assigneeId: UUID? = nil,
-        listId: UUID? = nil
+        listId: UUID? = nil,
+        sprintId: UUID? = nil,
+        backlogPosition: Double? = nil,
+        sprintPosition: Double? = nil,
+        bugSeverity: BugSeverity? = nil,
+        bugEnvironment: BugEnvironment? = nil,
+        affectedVersionId: UUID? = nil,
+        expectedResult: String? = nil,
+        actualResult: String? = nil,
+        reproductionSteps: String? = nil
     ) {
         self.title = title
         self.description = description
@@ -124,6 +194,15 @@ public struct CreateTaskRequest: Codable, Sendable {
         self.dueDate = dueDate
         self.assigneeId = assigneeId
         self.listId = listId
+        self.sprintId = sprintId
+        self.backlogPosition = backlogPosition
+        self.sprintPosition = sprintPosition
+        self.bugSeverity = bugSeverity
+        self.bugEnvironment = bugEnvironment
+        self.affectedVersionId = affectedVersionId
+        self.expectedResult = expectedResult
+        self.actualResult = actualResult
+        self.reproductionSteps = reproductionSteps
     }
 }
 
@@ -143,6 +222,17 @@ public struct UpdateTaskRequest: Codable, Sendable {
     public var listId: UUID?
     public var position: Double?
     public var archivedAt: Date?
+    // Phase 13: backlog / sprint assignment
+    public var sprintId: UUID?
+    public var backlogPosition: Double?
+    public var sprintPosition: Double?
+    // Phase 13: bug fields
+    public var bugSeverity: BugSeverity?
+    public var bugEnvironment: BugEnvironment?
+    public var affectedVersionId: UUID?
+    public var expectedResult: String?
+    public var actualResult: String?
+    public var reproductionSteps: String?
     public var expectedVersion: Int?
 
     public init(
@@ -160,6 +250,15 @@ public struct UpdateTaskRequest: Codable, Sendable {
         listId: UUID? = nil,
         position: Double? = nil,
         archivedAt: Date? = nil,
+        sprintId: UUID? = nil,
+        backlogPosition: Double? = nil,
+        sprintPosition: Double? = nil,
+        bugSeverity: BugSeverity? = nil,
+        bugEnvironment: BugEnvironment? = nil,
+        affectedVersionId: UUID? = nil,
+        expectedResult: String? = nil,
+        actualResult: String? = nil,
+        reproductionSteps: String? = nil,
         expectedVersion: Int? = nil
     ) {
         self.title = title
@@ -176,6 +275,15 @@ public struct UpdateTaskRequest: Codable, Sendable {
         self.listId = listId
         self.position = position
         self.archivedAt = archivedAt
+        self.sprintId = sprintId
+        self.backlogPosition = backlogPosition
+        self.sprintPosition = sprintPosition
+        self.bugSeverity = bugSeverity
+        self.bugEnvironment = bugEnvironment
+        self.affectedVersionId = affectedVersionId
+        self.expectedResult = expectedResult
+        self.actualResult = actualResult
+        self.reproductionSteps = reproductionSteps
         self.expectedVersion = expectedVersion
     }
 }

@@ -10,6 +10,9 @@ struct SprintController: RouteCollection {
 
         sprints.get(use: list)
         sprints.post(use: create)
+
+        let sprint = routes.grouped("sprints").grouped(OrgTenantMiddleware()).grouped(":sprintID")
+        sprint.patch(use: update)
     }
 
     // MARK: - GET /api/projects/:projectID/sprints
@@ -17,7 +20,7 @@ struct SprintController: RouteCollection {
     @Sendable
     func list(req: Request) async throws -> APIResponse<[SprintDTO]> {
         let ctx = try req.orgContext
-        try req.requirePermission(.analyticsView)
+        try req.requirePermission(.projectsRead)
         let projectId = try requireProjectId(req)
         _ = try await requireProjectInOrg(req: req, projectId: projectId, orgId: ctx.orgId)
 
@@ -34,7 +37,7 @@ struct SprintController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> APIResponse<SprintDTO> {
         let ctx = try req.orgContext
-        try req.requirePermission(.projectsEdit)
+        try req.requirePermission(.sprintsManage)
         let projectId = try requireProjectId(req)
         _ = try await requireProjectInOrg(req: req, projectId: projectId, orgId: ctx.orgId)
 
@@ -52,8 +55,49 @@ struct SprintController: RouteCollection {
             name: name,
             startDate: payload.startDate,
             endDate: payload.endDate,
-            status: payload.status ?? .planned
+            status: payload.status ?? .planned,
+            capacity: payload.capacity
         )
+        try await sprint.save(on: req.db)
+        return .success(sprint.toDTO())
+    }
+
+    // MARK: - PATCH /api/sprints/:sprintID
+
+    struct UpdateSprintRequest: Content {
+        let status: SprintStatus?
+        let capacity: Double?
+    }
+
+    @Sendable
+    func update(req: Request) async throws -> APIResponse<SprintDTO> {
+        let ctx = try req.orgContext
+        try req.requirePermission(.sprintsManage)
+        guard let sprintId = req.parameters.get("sprintID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid sprint ID.")
+        }
+
+        let sprints = try await SprintModel.query(on: req.db)
+            .filter(\.$id == sprintId)
+            .with(\.$project) { project in project.with(\.$space) }
+            .limit(1)
+            .all()
+        guard let sprint = sprints.first else {
+            throw Abort(.notFound, reason: "Sprint not found.")
+        }
+
+        guard sprint.project.space.$organization.id == ctx.orgId else {
+            throw Abort(.notFound, reason: "Sprint not found.")
+        }
+
+        let payload = try req.content.decode(UpdateSprintRequest.self)
+        if let status = payload.status {
+            sprint.status = status
+        }
+        if payload.capacity != nil {
+            sprint.capacity = payload.capacity
+        }
+
         try await sprint.save(on: req.db)
         return .success(sprint.toDTO())
     }
@@ -78,4 +122,3 @@ struct SprintController: RouteCollection {
         return project
     }
 }
-

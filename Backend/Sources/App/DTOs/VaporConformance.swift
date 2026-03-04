@@ -81,3 +81,9 @@ extension AnalyticsResponseDTO: @retroactive AsyncResponseEncodable where T: Con
 extension AnalyticsResponseDTO: @retroactive RequestDecodable where T: Content {}
 extension AnalyticsResponseDTO: @retroactive ResponseEncodable where T: Content {}
 extension AnalyticsResponseDTO: @retroactive Content where T: Content {}
+
+// Phase 13: Releases
+extension ReleaseDTO: @retroactive Content {}
+extension CreateReleaseRequest: @retroactive Content {}
+extension ReleaseProgressDTO: @retroactive Content {}
+extension FinalizeReleaseRequest: @retroactive Content {}

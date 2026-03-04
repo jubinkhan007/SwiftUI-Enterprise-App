@@ -17,6 +17,7 @@ public struct TaskDetailView: View {
     @State private var isPreviewingComment = false
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showErrorAlert = false
+    @State private var toast: ToastMessage? = nil
     @State private var showFilePicker = false
     @State private var previewItem: AttachmentPreviewItem? = nil
     
@@ -63,7 +64,12 @@ public struct TaskDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: {
-                    Task { await viewModel.saveChanges() }
+                    Task {
+                        let didSave = await viewModel.saveChanges()
+                        if didSave {
+                            toast = ToastMessage(type: .success, title: "Saved", message: "Task updated.")
+                        }
+                    }
                 }) {
                     Text("Save")
                         .appFont(AppTypography.headline)
@@ -73,6 +79,8 @@ public struct TaskDetailView: View {
             }
         }
         .task {
+            // Refresh task first so listId/version are current before dependent calls (workflow + save).
+            await viewModel.fetchTask()
             // Run independent fetches in parallel so one slow/failing call
             // does not delay the others (e.g. attachment timeout blocking orgMembers load).
             async let _activities: Void = viewModel.fetchActivities()
@@ -103,6 +111,7 @@ public struct TaskDetailView: View {
             Task { await viewModel.uploadFile(url: url) }
         }
         .background(previewPresenter)
+        .toast($toast)
     }
 
     // Presents the downloaded file — QuickLook sheet on iOS, default app on macOS.

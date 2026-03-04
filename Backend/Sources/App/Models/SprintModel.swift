@@ -24,18 +24,22 @@ final class SprintModel: Model, Content, @unchecked Sendable {
     @Enum(key: "status")
     var status: SprintStatus
 
+    @OptionalField(key: "capacity")
+    var capacity: Double?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
     init() {}
 
-    init(id: UUID? = nil, projectId: UUID, name: String, startDate: Date, endDate: Date, status: SprintStatus = .planned) {
+    init(id: UUID? = nil, projectId: UUID, name: String, startDate: Date, endDate: Date, status: SprintStatus = .planned, capacity: Double? = nil) {
         self.id = id
         self.$project.id = projectId
         self.name = name
         self.startDate = startDate
         self.endDate = endDate
         self.status = status
+        self.capacity = capacity
     }
 
     func toDTO() -> SprintDTO {
@@ -46,6 +50,7 @@ final class SprintModel: Model, Content, @unchecked Sendable {
             startDate: startDate,
             endDate: endDate,
             status: status,
+            capacity: capacity,
             createdAt: createdAt
         )
     }

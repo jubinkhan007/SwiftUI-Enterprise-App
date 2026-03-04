@@ -13,6 +13,75 @@ final class AppTests: XCTestCase {
         return try app.jwt.signers.sign(payload)
     }
 
+    private struct Seed {
+        let userId: UUID
+        let orgId: UUID
+        let projectId: UUID
+        let listId: UUID
+        let todoStatusId: UUID
+        let doneStatusId: UUID
+        let token: String
+    }
+
+    private func seedBasicProject(app: Application, userRole: UserRole = .admin, membershipRole: UserRole = .admin) async throws -> Seed {
+        let user = UserModel(email: "seed+\(UUID().uuidString)@example.com", displayName: "Seed", passwordHash: "x", role: userRole)
+        try await user.save(on: app.db)
+        let userId = try user.requireID()
+
+        let org = OrganizationModel(name: "Org-\(UUID().uuidString)", slug: "org-\(UUID().uuidString)", ownerId: userId)
+        try await org.save(on: app.db)
+        let orgId = try org.requireID()
+        try await OrganizationMemberModel(orgId: orgId, userId: userId, role: membershipRole).save(on: app.db)
+
+        let space = SpaceModel(orgId: orgId, name: "Space", description: nil)
+        try await space.save(on: app.db)
+        let spaceId = try space.requireID()
+
+        let project = ProjectModel(spaceId: spaceId, name: "Project", description: nil, workflowVersion: 1)
+        try await project.save(on: app.db)
+        let projectId = try project.requireID()
+
+        let todo = CustomStatusModel(
+            projectId: projectId,
+            name: "To Do",
+            color: "#94A3B8",
+            position: 0,
+            category: .backlog,
+            isDefault: true,
+            isFinal: false,
+            isLocked: true,
+            legacyStatus: TaskStatus.todo.rawValue
+        )
+        let done = CustomStatusModel(
+            projectId: projectId,
+            name: "Done",
+            color: "#22C55E",
+            position: 1000,
+            category: .completed,
+            isDefault: false,
+            isFinal: true,
+            isLocked: true,
+            legacyStatus: TaskStatus.done.rawValue
+        )
+        try await todo.save(on: app.db)
+        try await done.save(on: app.db)
+
+        let list = TaskListModel(projectId: projectId, name: "List", color: "#4F46E5")
+        try await list.save(on: app.db)
+        let listId = try list.requireID()
+
+        let token = try signToken(app: app, userId: userId, role: membershipRole)
+        return Seed(
+            userId: userId,
+            orgId: orgId,
+            projectId: projectId,
+            listId: listId,
+            todoStatusId: try todo.requireID(),
+            doneStatusId: try done.requireID(),
+            token: token
+        )
+    }
+
     func testHealthCheck() async throws {
         let app = try await Application.make(.testing)
         defer { Task { try? await app.asyncShutdown() } }
@@ -21,6 +90,26 @@ final class AppTests: XCTestCase {
 
         try await app.test(.GET, "health") { res async throws in
             XCTAssertEqual(res.status, .ok)
+        }
+    }
+
+    func testGetWorkflowReturnsOK() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app)
+        try await app.test(.GET, "api/projects/\(seed.projectId.uuidString)/workflow") { req async in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        } afterResponse: { res async in
+            XCTAssertEqual(res.status, .ok)
+            do {
+                let decoded = try res.content.decode(APIResponse<WorkflowBundleDTO>.self)
+                XCTAssertEqual(decoded.data?.projectId, seed.projectId)
+            } catch {
+                XCTFail("Failed to decode workflow response: \(error)")
+            }
         }
     }
 
@@ -643,5 +732,153 @@ final class AppTests: XCTestCase {
                 XCTFail("Failed to decode cycle-time response: \(error)")
             }
         }
+    }
+
+    func testSprintRulesMovingIntoClosedSprintReturns400() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app, membershipRole: .admin)
+
+        let sprint = SprintModel(
+            projectId: seed.projectId,
+            name: "Sprint 1",
+            startDate: Date(),
+            endDate: Date().addingTimeInterval(86400),
+            status: .closed,
+            capacity: 10
+        )
+        try await sprint.save(on: app.db)
+        let sprintId = try sprint.requireID()
+
+        let task = TaskItemModel(
+            orgId: seed.orgId,
+            listId: seed.listId,
+            title: "T",
+            description: nil,
+            status: .todo,
+            statusId: seed.todoStatusId,
+            priority: .medium,
+            taskType: .task,
+            storyPoints: 1
+        )
+        try await task.save(on: app.db)
+        let taskId = try task.requireID()
+
+        try await app.test(.PATCH, "api/tasks/\(taskId.uuidString)", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(UpdateTaskRequest(sprintId: sprintId, sprintPosition: 1000))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .badRequest)
+        })
+    }
+
+    func testEpicRollupsUpdateOnChildCreateStatusAndDelete() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app, membershipRole: .admin)
+
+        let epic = TaskItemModel(
+            orgId: seed.orgId,
+            listId: seed.listId,
+            title: "Epic",
+            description: nil,
+            status: .todo,
+            statusId: seed.todoStatusId,
+            priority: .medium,
+            taskType: .epic
+        )
+        try await epic.save(on: app.db)
+        let epicId = try epic.requireID()
+
+        // Create child (storyPoints=5)
+        var childId: UUID? = nil
+        try await app.test(.POST, "api/tasks", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(
+                CreateTaskRequest(
+                    title: "Child",
+                    statusId: seed.todoStatusId,
+                    taskType: .story,
+                    parentId: epicId,
+                    storyPoints: 5,
+                    listId: seed.listId
+                )
+            )
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<TaskItemDTO>.self)
+            let dto = try XCTUnwrap(decoded.data)
+            childId = dto.id
+        })
+
+        let childTaskId = try XCTUnwrap(childId)
+        let epicAfterCreate = try await TaskItemModel.find(epicId, on: app.db)
+        XCTAssertEqual(epicAfterCreate?.epicChildrenCount, 1)
+        XCTAssertEqual(epicAfterCreate?.epicChildrenDoneCount, 0)
+        XCTAssertEqual(epicAfterCreate?.epicTotalPoints, 5)
+        XCTAssertEqual(epicAfterCreate?.epicCompletedPoints, 0)
+
+        // Mark child done
+        try await app.test(.PATCH, "api/tasks/\(childTaskId.uuidString)", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(UpdateTaskRequest(statusId: seed.doneStatusId))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        let epicAfterDone = try await TaskItemModel.find(epicId, on: app.db)
+        XCTAssertEqual(epicAfterDone?.epicChildrenCount, 1)
+        XCTAssertEqual(epicAfterDone?.epicChildrenDoneCount, 1)
+        XCTAssertEqual(epicAfterDone?.epicTotalPoints, 5)
+        XCTAssertEqual(epicAfterDone?.epicCompletedPoints, 5)
+
+        // Delete child
+        try await app.test(.DELETE, "api/tasks/\(childTaskId.uuidString)", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .noContent)
+        })
+
+        let epicAfterDelete = try await TaskItemModel.find(epicId, on: app.db)
+        XCTAssertEqual(epicAfterDelete?.epicChildrenCount ?? 0, 0)
+        XCTAssertEqual(epicAfterDelete?.epicChildrenDoneCount ?? 0, 0)
+        XCTAssertEqual(epicAfterDelete?.epicTotalPoints ?? 0, 0)
+        XCTAssertEqual(epicAfterDelete?.epicCompletedPoints ?? 0, 0)
+    }
+
+    func testIssueKeyIsSequentialPerProject() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app, membershipRole: .admin)
+
+        func createTask(title: String) async throws -> TaskItemDTO {
+            var created: TaskItemDTO? = nil
+            try await app.test(.POST, "api/tasks", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: seed.token)
+                req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+                try req.content.encode(CreateTaskRequest(title: title, statusId: seed.todoStatusId, listId: seed.listId))
+            }, afterResponse: { res async throws in
+                XCTAssertEqual(res.status, .ok)
+                let decoded = try res.content.decode(APIResponse<TaskItemDTO>.self)
+                created = decoded.data
+            })
+            return try XCTUnwrap(created)
+        }
+
+        let t1 = try await createTask(title: "A")
+        let t2 = try await createTask(title: "B")
+
+        XCTAssertEqual(t1.issueKey, "PROJE-1")
+        XCTAssertEqual(t2.issueKey, "PROJE-2")
     }
 }

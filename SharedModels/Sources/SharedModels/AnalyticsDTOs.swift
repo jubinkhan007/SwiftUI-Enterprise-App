@@ -71,7 +71,12 @@ public struct ProjectDailyStatsDTO: Codable, Identifiable, Sendable, Equatable {
 public enum SprintStatus: String, Codable, CaseIterable, Sendable {
     case planned
     case active
+    case closed
     case completed
+
+    public var isClosedLike: Bool {
+        self == .closed || self == .completed
+    }
 }
 
 public struct SprintDTO: Codable, Identifiable, Sendable, Equatable {
@@ -81,6 +86,7 @@ public struct SprintDTO: Codable, Identifiable, Sendable, Equatable {
     public let startDate: Date
     public let endDate: Date
     public let status: SprintStatus
+    public let capacity: Double?
     public let createdAt: Date?
 
     public init(
@@ -90,6 +96,7 @@ public struct SprintDTO: Codable, Identifiable, Sendable, Equatable {
         startDate: Date,
         endDate: Date,
         status: SprintStatus,
+        capacity: Double? = nil,
         createdAt: Date? = nil
     ) {
         self.id = id
@@ -98,6 +105,7 @@ public struct SprintDTO: Codable, Identifiable, Sendable, Equatable {
         self.startDate = startDate
         self.endDate = endDate
         self.status = status
+        self.capacity = capacity
         self.createdAt = createdAt
     }
 }
@@ -107,12 +115,14 @@ public struct CreateSprintRequest: Codable, Sendable {
     public let startDate: Date
     public let endDate: Date
     public let status: SprintStatus?
+    public let capacity: Double?
 
-    public init(name: String, startDate: Date, endDate: Date, status: SprintStatus? = nil) {
+    public init(name: String, startDate: Date, endDate: Date, status: SprintStatus? = nil, capacity: Double? = nil) {
         self.name = name
         self.startDate = startDate
         self.endDate = endDate
         self.status = status
+        self.capacity = capacity
     }
 }
 

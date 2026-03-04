@@ -304,6 +304,20 @@ public final class TaskRepository: TaskRepositoryProtocol {
             throw error
         }
     }
+
+    // MARK: - Phase 13: Agile / Jira
+
+    public func getBacklog(projectId: UUID) async throws -> [TaskItemDTO] {
+        let endpoint = AgileEndpoint.getBacklog(projectId: projectId, configuration: apiConfiguration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<[TaskItemDTO]>.self)
+        return response.data ?? []
+    }
+
+    public func getSprintIssues(sprintId: UUID) async throws -> [TaskItemDTO] {
+        let endpoint = AgileEndpoint.getSprintIssues(sprintId: sprintId, configuration: apiConfiguration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<[TaskItemDTO]>.self)
+        return response.data ?? []
+    }
     
     // MARK: - Helpers
     

@@ -459,7 +459,10 @@ struct WorkflowController: RouteCollection {
     // MARK: - Helpers
 
     private func requireProject(req: Request, ctx: OrgContext) async throws -> ProjectModel {
-        guard let projectId = req.parameters.get("project_id", as: UUID.self) else {
+        // Routes use `:projectID` (camel-case). Keep `project_id` as a fallback to avoid breaking
+        // any older clients that might still call the underscore variant.
+        let projectId = req.parameters.get("projectID", as: UUID.self) ?? req.parameters.get("project_id", as: UUID.self)
+        guard let projectId else {
             throw Abort(.badRequest, reason: "Invalid project ID.")
         }
         guard let project = try await ProjectModel.query(on: req.db)

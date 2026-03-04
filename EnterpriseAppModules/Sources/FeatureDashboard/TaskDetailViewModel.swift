@@ -95,6 +95,34 @@ public final class TaskDetailViewModel: ObservableObject {
         isLoadingActivities = false
     }
 
+    /// Refreshes the task from the server (useful to avoid version conflicts when saving).
+    public func fetchTask() async {
+        guard !isLoadingTask else { return }
+        isLoadingTask = true
+        defer { isLoadingTask = false }
+
+        let previousTask = task
+        do {
+            let endpoint = TaskEndpoint.getTask(id: task.id, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<TaskItemDTO>.self)
+            guard let updated = response.data else { return }
+
+            self.task = updated
+
+            // Only overwrite form state if the user hasn't diverged from the original values yet.
+            if editTitle == previousTask.title { editTitle = updated.title }
+            if editDescription == (previousTask.description ?? "") { editDescription = updated.description ?? "" }
+            if editPriority == previousTask.priority { editPriority = updated.priority }
+            if workflowStatuses.isEmpty {
+                if editStatus == previousTask.status { editStatus = updated.status }
+            } else {
+                if editStatusId == previousTask.statusId { editStatusId = updated.statusId }
+            }
+        } catch {
+            self.error = error
+        }
+    }
+
     public func fetchAttachments() async {
         if isLoadingAttachments {
             pendingAttachmentsRefresh = true
@@ -231,9 +259,11 @@ public final class TaskDetailViewModel: ObservableObject {
         )
     }
     
-    public func saveChanges() async {
-        guard !isSaving else { return }
+    @discardableResult
+    public func saveChanges() async -> Bool {
+        guard !isSaving else { return false }
         isSaving = true
+        defer { isSaving = false }
         error = nil
         hasConflict = false
 
@@ -262,17 +292,20 @@ public final class TaskDetailViewModel: ObservableObject {
             self.editStatus = updatedTask.status
             self.editStatusId = updatedTask.statusId
             self.editPriority = updatedTask.priority
+
+            NotificationCenter.default.post(name: .taskDidUpdate, object: updatedTask)
             
             await fetchActivities() // Refresh activity log
-            
+
+            return true
         } catch NetworkError.serverError(let statusCode, _) where statusCode == 409 {
             self.hasConflict = true
             self.error = NetworkError.underlying("This task was modified by someone else. Please refresh and try again.")
+            return false
         } catch {
             self.error = error
+            return false
         }
-        
-        isSaving = false
     }
 
     public func loadWorkflowIfNeeded() async {

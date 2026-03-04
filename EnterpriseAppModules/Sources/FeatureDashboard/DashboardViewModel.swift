@@ -73,6 +73,7 @@ public final class DashboardViewModel: ObservableObject {
         self.attachmentRepository = attachmentRepository
         self.analyticsRepository = analyticsRepository
         setupSearchDebounce()
+        setupTaskUpdateListener()
     }
     
     private func setupSearchDebounce() {
@@ -88,11 +89,22 @@ public final class DashboardViewModel: ObservableObject {
             }
             .store(in: &cancellables)
     }
+
+    private func setupTaskUpdateListener() {
+        NotificationCenter.default.publisher(for: .taskDidUpdate)
+            .compactMap { $0.object as? TaskItemDTO }
+            .sink { [weak self] updated in
+                self?.updateTaskLocally(updated)
+            }
+            .store(in: &cancellables)
+    }
     
     public func fetchTasks(for viewType: DashboardViewType = .list) async {
         switch viewType {
         case .list, .board:
             await fetchStandardTasks()
+        case .backlog:
+            break
         case .calendar:
             await fetchCalendarTasks()
         case .timeline:
@@ -208,11 +220,32 @@ public final class DashboardViewModel: ObservableObject {
     /// Called after a successful inline partial-update.
     public func updateTaskLocally(_ updated: TaskItemDTO) {
         if let idx = tasks.firstIndex(where: { $0.id == updated.id }) {
-            tasks[idx] = updated
+            if taskMatchesCurrentQuery(updated) {
+                tasks[idx] = updated
+            } else {
+                tasks.remove(at: idx)
+            }
         }
     }
 
     // MARK: - Private helpers
+
+    private func taskMatchesCurrentQuery(_ task: TaskItemDTO) -> Bool {
+        if let status = query.status, task.status != status { return false }
+        if let priority = query.priority, task.priority != priority { return false }
+        if let type = query.taskType, task.taskType != type { return false }
+        if let parentId = query.parentId, task.parentId != parentId { return false }
+        if !query.includeSubtasks, task.parentId != nil { return false }
+        if let assigneeId = query.assigneeId, task.assigneeId != assigneeId { return false }
+        if let projectId = query.projectId, task.projectId != projectId { return false }
+        if let listId = query.listId, task.listId != listId { return false }
+        if let search = query.search?.trimmingCharacters(in: .whitespacesAndNewlines), !search.isEmpty {
+            let needle = search.lowercased()
+            let hay = (task.title + " " + (task.description ?? "")).lowercased()
+            if !hay.contains(needle) { return false }
+        }
+        return true
+    }
 
     /// Resets page/cursor state before a fresh fetch triggered by a filter or search change.
     /// Callers are responsible for triggering the fetch afterwards.

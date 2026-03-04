@@ -29,6 +29,10 @@ final class ProjectModel: Model, @unchecked Sendable {
     /// Used to provide stable automation evaluation context and debugging.
     @Field(key: "workflow_version")
     var workflowVersion: Int
+    
+    /// Phase 13: Project-scoped issue key prefix (e.g. "APP").
+    @OptionalField(key: "issue_key_prefix")
+    var issueKeyPrefix: String?
 
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
@@ -49,7 +53,8 @@ final class ProjectModel: Model, @unchecked Sendable {
         description: String? = nil,
         position: Double = 0.0,
         archivedAt: Date? = nil,
-        workflowVersion: Int = 1
+        workflowVersion: Int = 1,
+        issueKeyPrefix: String? = nil
     ) {
         self.id = id
         self.$space.id = spaceId
@@ -58,5 +63,6 @@ final class ProjectModel: Model, @unchecked Sendable {
         self.position = position
         self.archivedAt = archivedAt
         self.workflowVersion = workflowVersion
+        self.issueKeyPrefix = issueKeyPrefix
     }
 }

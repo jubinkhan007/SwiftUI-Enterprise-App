@@ -26,4 +26,8 @@ public protocol TaskRepositoryProtocol: Sendable {
     
     /// Atomically move multiple tasks (used for board drag & drop).
     func moveMultiple(payload: BulkMoveTaskRequest) async throws -> [TaskItemDTO]
+
+    // Phase 13: Agile / Jira
+    func getBacklog(projectId: UUID) async throws -> [TaskItemDTO]
+    func getSprintIssues(sprintId: UUID) async throws -> [TaskItemDTO]
 }

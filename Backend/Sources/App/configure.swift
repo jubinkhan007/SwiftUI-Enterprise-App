@@ -57,6 +57,9 @@ func configure(_ app: Application) throws {
     app.migrations.add(AddCompletedAtToTaskItem())
     app.migrations.add(CreateSprintsAndStats())
 
+    // Phase 13: Agile / Jira Features
+    app.migrations.add(AddAgileJiraPhase13())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

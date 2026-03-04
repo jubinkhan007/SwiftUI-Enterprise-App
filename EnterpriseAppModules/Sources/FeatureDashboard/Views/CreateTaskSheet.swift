@@ -48,6 +48,14 @@ public struct CreateTaskSheet: View {
                 dismiss()
             }
         }
+        .onChange(of: viewModel.taskType) { _, newValue in
+            if newValue == .bug {
+                let trimmed = viewModel.descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    viewModel.descriptionText = bugTemplate
+                }
+            }
+        }
         .task(id: listOptions.first?.id) {
             if viewModel.listId == nil, let first = listOptions.first {
                 viewModel.listId = first.id
@@ -110,6 +118,9 @@ public struct CreateTaskSheet: View {
             descriptionSection
             taskTypePicker
             statusPriorityRow
+            if viewModel.taskType == .bug {
+                bugFieldsSection
+            }
             if viewModel.taskType == .story || viewModel.taskType == .epic {
                 AppTextField(
                     "Story Points (0–1000)",
@@ -173,6 +184,84 @@ public struct CreateTaskSheet: View {
                 }.pickerStyle(.menu)
             }
         }
+    }
+
+    // MARK: - Bug Fields (Phase 13)
+
+    private var bugFieldsSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Toggle("Include structured bug fields", isOn: $viewModel.includeBugFields)
+                .tint(AppColors.brandPrimary)
+                .padding(AppSpacing.sm)
+                .background(AppColors.surfacePrimary)
+                .cornerRadius(AppRadius.small)
+
+            if viewModel.includeBugFields {
+                pickerCard(title: "Severity") {
+                    Picker("Severity", selection: $viewModel.bugSeverity) {
+                        ForEach(BugSeverity.allCases, id: \.self) { s in
+                            Text(s.rawValue.capitalized).tag(s)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                pickerCard(title: "Environment") {
+                    Picker("Environment", selection: $viewModel.bugEnvironment) {
+                        ForEach(BugEnvironment.allCases, id: \.self) { e in
+                            Text(e.rawValue.uppercased()).tag(e)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                multilineField(title: "Expected Result", text: $viewModel.expectedResultText)
+                multilineField(title: "Actual Result", text: $viewModel.actualResultText)
+                multilineField(title: "Reproduction Steps", text: $viewModel.reproductionStepsText, minHeight: 120)
+            } else {
+                Text("Tip: Use the description template to capture repro steps if you don’t have permission to edit bug fields.")
+                    .appFont(AppTypography.caption1)
+                    .foregroundColor(AppColors.textTertiary)
+                    .padding(.horizontal, AppSpacing.sm)
+            }
+        }
+    }
+
+    private func multilineField(title: String, text: Binding<String>, minHeight: CGFloat = 80) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text(title)
+                .appFont(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+                .padding(.horizontal, AppSpacing.sm)
+            TextEdit(text: text)
+                .frame(minHeight: minHeight)
+                .padding()
+                .background(AppColors.surfacePrimary)
+                .cornerRadius(AppRadius.medium)
+                .overlay(RoundedRectangle(cornerRadius: AppRadius.medium)
+                    .stroke(AppColors.borderDefault, lineWidth: 1))
+        }
+    }
+
+    private var bugTemplate: String {
+        """
+        ## Summary
+        -
+
+        ## Steps to Reproduce
+        1.
+
+        ## Expected Result
+        -
+
+        ## Actual Result
+        -
+
+        ## Environment
+        - App version:
+        - Device:
+        - OS:
+        """
     }
 
     // MARK: - Task Type Picker

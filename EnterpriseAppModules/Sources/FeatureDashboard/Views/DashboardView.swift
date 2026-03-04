@@ -5,6 +5,7 @@ import DesignSystem
 public enum DashboardViewType: String, CaseIterable, Identifiable {
     case list = "List"
     case board = "Board"
+    case backlog = "Backlog"
     case calendar = "Calendar"
     case timeline = "Timeline"
     case analytics = "Analytics"
@@ -14,6 +15,8 @@ public enum DashboardViewType: String, CaseIterable, Identifiable {
 public struct DashboardView: View {
     @StateObject private var viewModel: DashboardViewModel
     @State private var showingCreateTask = false
+    @State private var toast: ToastMessage? = nil
+    @State private var pendingCreatedToast = false
     @Binding var viewType: DashboardViewType
     
     public init(viewModel: DashboardViewModel, viewType: Binding<DashboardViewType>) {
@@ -26,7 +29,7 @@ public struct DashboardView: View {
                 AppColors.backgroundPrimary.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    if viewType != .analytics {
+                    if viewType != .analytics && viewType != .backlog {
                         searchAndFilterArea
                     }
                     
@@ -35,6 +38,12 @@ public struct DashboardView: View {
                             AnalyticsDashboardView(projectId: projectId, repository: analyticsRepo)
                         } else {
                             EmptyStateView(title: "Analytics Not Available", message: "Select a specific project from the sidebar to view analytics.")
+                        }
+                    } else if viewType == .backlog {
+                        if let projectId = viewModel.query.projectId, let analyticsRepo = viewModel.analyticsRepository {
+                            BacklogView(projectId: projectId, taskRepository: viewModel.taskRepository, analyticsRepository: analyticsRepo)
+                        } else {
+                            EmptyStateView(title: "Backlog Not Available", message: "Select a specific project from the sidebar to view the backlog.")
                         }
                     } else if viewModel.isLoading && viewModel.tasks.isEmpty {
                         ProgressView()
@@ -71,28 +80,35 @@ public struct DashboardView: View {
             .navigationTitle("Tasks")
             // The toolbar items have been lifted to the parent AuthenticatedRootView in EnterpriseApp.swift
             .task {
-                if viewModel.tasks.isEmpty && viewType != .analytics {
+                if viewModel.tasks.isEmpty && viewType != .analytics && viewType != .backlog {
                     await viewModel.fetchTasks(for: viewType)
                 }
             }
             .refreshable {
-                if viewType != .analytics {
+                if viewType != .analytics && viewType != .backlog {
                     await viewModel.refresh(viewType: viewType)
                 }
             }
             .onChange(of: viewType) { oldValue, newValue in
-                if newValue != .analytics {
+                if newValue != .analytics && newValue != .backlog {
                     Task {
                         await viewModel.fetchTasks(for: newValue)
                     }
                 }
             }
-            .sheet(isPresented: $showingCreateTask) {
+            .sheet(isPresented: $showingCreateTask, onDismiss: {
+                if pendingCreatedToast {
+                    pendingCreatedToast = false
+                    toast = ToastMessage(type: .success, title: "Created", message: "Task created.")
+                }
+            }) {
                 CreateTaskSheet(viewModel: CreateTaskViewModel(taskRepository: viewModel.taskRepository, listId: viewModel.query.listId)) {
+                    pendingCreatedToast = true
                     Task { await viewModel.refresh() }
                 }
                 .presentationDetents([.medium, .large])
         }
+        .toast($toast)
     }
     
     private var searchAndFilterArea: some View {
