@@ -132,6 +132,8 @@ public struct TaskItemDTO: Codable, Identifiable, Sendable, Equatable {
 
 /// Payload for creating a new task.
 public struct CreateTaskRequest: Codable, Sendable {
+    /// Optional client-provided ID for offline-first creation and idempotency.
+    public let id: UUID?
     public let title: String
     public let description: String?
     public let statusId: UUID?
@@ -158,6 +160,7 @@ public struct CreateTaskRequest: Codable, Sendable {
     public let reproductionSteps: String?
 
     public init(
+        id: UUID? = nil,
         title: String,
         description: String? = nil,
         statusId: UUID? = nil,
@@ -181,6 +184,7 @@ public struct CreateTaskRequest: Codable, Sendable {
         actualResult: String? = nil,
         reproductionSteps: String? = nil
     ) {
+        self.id = id
         self.title = title
         self.description = description
         self.statusId = statusId

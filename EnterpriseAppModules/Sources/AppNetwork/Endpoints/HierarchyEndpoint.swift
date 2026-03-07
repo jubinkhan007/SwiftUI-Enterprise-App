@@ -2,7 +2,7 @@ import Foundation
 import SharedModels
 
 public enum HierarchyEndpoint {
-    case getHierarchy(configuration: APIConfiguration)
+    case getHierarchy(since: String?, configuration: APIConfiguration)
     case createSpace(name: String, description: String?, configuration: APIConfiguration)
     case createProject(spaceId: UUID, name: String, description: String?, configuration: APIConfiguration)
     case createList(projectId: UUID, name: String, color: String?, configuration: APIConfiguration)
@@ -11,7 +11,7 @@ public enum HierarchyEndpoint {
 extension HierarchyEndpoint: APIEndpoint {
     public var baseURL: URL {
         switch self {
-        case .getHierarchy(let config),
+        case .getHierarchy(_, let config),
              .createSpace(_, _, let config),
              .createProject(_, _, _, let config),
              .createList(_, _, _, let config):
@@ -36,7 +36,15 @@ extension HierarchyEndpoint: APIEndpoint {
     }
 
     public var queryParameters: [String: String]? {
-        return nil
+        switch self {
+        case .getHierarchy(let since, _):
+            if let since, !since.isEmpty {
+                return ["since": since]
+            }
+            return nil
+        default:
+            return nil
+        }
     }
 
     public var headers: [String: String]? {

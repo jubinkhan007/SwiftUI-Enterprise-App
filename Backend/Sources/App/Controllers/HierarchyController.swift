@@ -5,6 +5,14 @@ import SharedModels
 /// Handles CRUD operations for the task hierarchy (Spaces -> Projects -> TaskLists).
 /// All routes are protected by Auth & OrgTenantMiddleware.
 struct HierarchyController: RouteCollection {
+    private static func makeCursor(from date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    private static func parseCursor(_ raw: String) -> Date? {
+        ISO8601DateFormatter().date(from: raw)
+    }
+
     func boot(routes: any RoutesBuilder) throws {
         // Routes are already scoped to /api by routes.swift
         
@@ -174,51 +182,108 @@ struct HierarchyController: RouteCollection {
     // MARK: - Hierarchy (Sidebar Fetch)
 
     @Sendable
-    func getHierarchy(req: Request) async throws -> APIResponse<HierarchyTreeDTO> {
+    func getHierarchy(req: Request) async throws -> Response {
         let orgId = try req.orgContext.orgId
+        let sinceCursor = try? req.query.get(String.self, at: "since")
+        let sinceDate = sinceCursor.flatMap { Self.parseCursor($0) }
         
-        // Fetch all spaces for org (filtering out soft deleted)
+        // Fetch all spaces for org.
+        // We keep the DB query simple and apply "since" filtering in-memory to avoid complex multi-joins.
         let spaces = try await SpaceModel.query(on: req.db)
             .filter(\.$organization.$id == orgId)
-            .filter(\.$archivedAt == nil) // Exclude archived
             .with(\.$projects) { project in
                 project.with(\.$taskLists)
             }
             .all()
+
+        // Compute a global cursor (max updated/archived timestamp across the hierarchy).
+        let allDates: [Date] = spaces.flatMap { space in
+            var dates: [Date] = []
+            if let updated = space.updatedAt { dates.append(updated) }
+            if let archived = space.archivedAt { dates.append(archived) }
+            for project in space.projects {
+                if let updated = project.updatedAt { dates.append(updated) }
+                if let archived = project.archivedAt { dates.append(archived) }
+                for list in project.taskLists {
+                    if let updated = list.updatedAt { dates.append(updated) }
+                    if let archived = list.archivedAt { dates.append(archived) }
+                }
+            }
+            return dates
+        }
+        let cursor = (allDates.max()).map(Self.makeCursor(from:)) ?? Self.makeCursor(from: Date())
         
-        // Build the nested DTO tree
-        let spaceNodes = spaces.map { space -> HierarchyTreeDTO.SpaceNode in
+        // Build nested DTO tree.
+        // - Full fetch (no since): only active (non-archived) entities.
+        // - Delta fetch (since): only entities whose updatedAt/archivedAt changed since; include archived items as tombstones.
+        let spaceNodes: [HierarchyTreeDTO.SpaceNode] = spaces.compactMap { space in
             let spaceDTO = SpaceDTO(
                 id: space.id!, orgId: space.$organization.id, name: space.name,
                 description: space.description, position: space.position,
                 archivedAt: space.archivedAt, createdAt: space.createdAt, updatedAt: space.updatedAt
             )
             
-            // Filter unarchived projects
-            let activeProjects = space.projects.filter { $0.archivedAt == nil }
-            let projectNodes = activeProjects.map { project -> HierarchyTreeDTO.ProjectNode in
+            let spaceChanged: Bool = {
+                guard let sinceDate else { return space.archivedAt == nil }
+                let t = (space.updatedAt ?? space.createdAt ?? .distantPast)
+                let a = space.archivedAt ?? .distantPast
+                return t > sinceDate || a > sinceDate
+            }()
+
+            let projectNodes: [HierarchyTreeDTO.ProjectNode] = space.projects.compactMap { project in
                 let projectDTO = ProjectDTO(
                     id: project.id!, spaceId: project.$space.id, name: project.name,
                     description: project.description, position: project.position,
                     archivedAt: project.archivedAt, createdAt: project.createdAt, updatedAt: project.updatedAt
                 )
                 
-                // Filter unarchived lists
-                let activeLists = project.taskLists.filter { $0.archivedAt == nil }
-                let listDTOs = activeLists.map { list -> TaskListDTO in
+                let projectChanged: Bool = {
+                    guard let sinceDate else { return project.archivedAt == nil }
+                    let t = (project.updatedAt ?? project.createdAt ?? .distantPast)
+                    let a = project.archivedAt ?? .distantPast
+                    return t > sinceDate || a > sinceDate
+                }()
+
+                let listDTOs: [TaskListDTO] = project.taskLists.compactMap { list in
                     TaskListDTO(
                         id: list.id!, projectId: list.$project.id, name: list.name,
                         color: list.color, position: list.position, archivedAt: list.archivedAt,
                         createdAt: list.createdAt, updatedAt: list.updatedAt
                     )
                 }
-                
-                return HierarchyTreeDTO.ProjectNode(project: projectDTO, lists: listDTOs)
+
+                if let sinceDate {
+                    let changedLists = listDTOs.filter { dto in
+                        let t = (dto.updatedAt ?? dto.createdAt ?? .distantPast)
+                        let a = dto.archivedAt ?? .distantPast
+                        return t > sinceDate || a > sinceDate
+                    }
+                    if projectChanged || !changedLists.isEmpty {
+                        return HierarchyTreeDTO.ProjectNode(project: projectDTO, lists: changedLists)
+                    }
+                    return nil
+                } else {
+                    guard projectDTO.archivedAt == nil else { return nil }
+                    let activeLists = listDTOs.filter { $0.archivedAt == nil }
+                    return HierarchyTreeDTO.ProjectNode(project: projectDTO, lists: activeLists)
+                }
             }
-            
-            return HierarchyTreeDTO.SpaceNode(space: spaceDTO, projects: projectNodes)
+
+            if let _ = sinceDate {
+                if spaceChanged || !projectNodes.isEmpty {
+                    return HierarchyTreeDTO.SpaceNode(space: spaceDTO, projects: projectNodes)
+                }
+                return nil
+            } else {
+                guard spaceDTO.archivedAt == nil else { return nil }
+                return HierarchyTreeDTO.SpaceNode(space: spaceDTO, projects: projectNodes)
+            }
         }
         
-        return .success(HierarchyTreeDTO(spaces: spaceNodes))
+        let apiResponse = APIResponse.success(HierarchyTreeDTO(spaces: spaceNodes), cursor: cursor)
+        let response = Response(status: .ok)
+        response.headers.replaceOrAdd(name: .eTag, value: "\"h:\(cursor)\"")
+        try response.content.encode(apiResponse)
+        return response
     }
 }

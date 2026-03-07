@@ -6,23 +6,46 @@ import Domain
 public final class WorkflowRepository: WorkflowRepositoryProtocol {
     private let apiClient: APIClient
     private let apiConfiguration: APIConfiguration
+    private let localStore: ProjectSettingsLocalStoreProtocol
 
-    public init(apiClient: APIClient, configuration: APIConfiguration = .localVapor) {
+    public init(
+        apiClient: APIClient,
+        localStore: ProjectSettingsLocalStoreProtocol = ProjectSettingsLocalStore(),
+        configuration: APIConfiguration = .localVapor
+    ) {
         self.apiClient = apiClient
+        self.localStore = localStore
         self.apiConfiguration = configuration
     }
 
     public func getWorkflow(projectId: UUID) async throws -> WorkflowBundleDTO {
-        let endpoint = WorkflowEndpoint.getWorkflow(projectId: projectId, configuration: apiConfiguration)
-        let response = try await apiClient.request(endpoint, responseType: APIResponse<WorkflowBundleDTO>.self)
-        guard let data = response.data else { throw NetworkError.underlying("No workflow data returned from server") }
-        return data
+        guard let orgId = OrganizationContext.shared.orgId else {
+            throw NetworkError.underlying("Missing organization context")
+        }
+
+        do {
+            let endpoint = WorkflowEndpoint.getWorkflow(projectId: projectId, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<WorkflowBundleDTO>.self)
+            guard let data = response.data else { throw NetworkError.underlying("No workflow data returned from server") }
+            await localStore.saveWorkflowBundle(orgId: orgId, projectId: projectId, bundle: data)
+            return data
+        } catch let error as NetworkError {
+            if error == .offline {
+                if let cached = await localStore.getWorkflowBundle(orgId: orgId, projectId: projectId) {
+                    return cached
+                }
+            }
+            throw error
+        }
     }
 
     public func createStatus(projectId: UUID, payload: CreateWorkflowStatusRequest) async throws -> WorkflowStatusDTO {
         let endpoint = WorkflowEndpoint.createStatus(projectId: projectId, payload: payload, configuration: apiConfiguration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<WorkflowStatusDTO>.self)
         guard let data = response.data else { throw NetworkError.underlying("Failed to create status") }
+        if let orgId = OrganizationContext.shared.orgId {
+            await localStore.invalidateWorkflowBundle(orgId: orgId, projectId: projectId)
+        }
         return data
     }
 
@@ -57,4 +80,3 @@ public final class WorkflowRepository: WorkflowRepositoryProtocol {
         _ = try await apiClient.request(endpoint, responseType: EmptyResponse.self)
     }
 }
-

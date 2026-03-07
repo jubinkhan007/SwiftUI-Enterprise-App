@@ -16,7 +16,15 @@ struct EnterpriseApp: App {
     
     init() {
         do {
-            modelContainer = try ModelContainer(for: LocalTaskItem.self)
+            modelContainer = try ModelContainer(
+                for: LocalTaskItem.self,
+                LocalSyncOperation.self,
+                LocalOrganization.self,
+                LocalSpace.self,
+                LocalProject.self,
+                LocalTaskList.self,
+                HierarchySyncCursor.self
+            )
         } catch {
             fatalError("Failed to create SwiftData ModelContainer: \(error)")
         }
@@ -54,6 +62,7 @@ struct AuthenticatedRootView: View {
     let viewModel: DashboardViewModel
     @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
+    @StateObject private var syncManager: SyncEngineManager
     @State private var showTeamManagement = false
     @State private var showingCreateTask = false
     @State private var viewType: DashboardViewType = .list
@@ -70,14 +79,16 @@ struct AuthenticatedRootView: View {
         
         let apiClient = APIClient()
         let localStore = TaskLocalStore(container: modelContainer)
-        let syncQueue = TaskSyncQueue(localStore: localStore, apiClient: apiClient)
+        let operationStore = LocalSyncOperationStore(container: modelContainer)
+        let syncEngine = GlobalSyncEngine(apiClient: apiClient, taskLocalStore: localStore, operationStore: operationStore)
         let taskRepository = TaskRepository(
             apiClient: apiClient,
             localStore: localStore,
-            syncQueue: syncQueue
+            operationStore: operationStore
         )
         let activityRepository = TaskActivityRepository(apiClient: apiClient)
-        let hierarchyRepo = HierarchyRepository(apiClient: apiClient)
+        let hierarchyLocalStore = HierarchyLocalStore(container: modelContainer)
+        let hierarchyRepo = HierarchyRepository(apiClient: apiClient, localStore: hierarchyLocalStore)
         let workflowRepo = WorkflowRepository(apiClient: apiClient)
         let attachmentRepo = AttachmentRepository(apiClient: apiClient)
         let analyticsRepo = AnalyticsRepository(apiClient: apiClient)
@@ -92,6 +103,7 @@ struct AuthenticatedRootView: View {
         )
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
+        self._syncManager = StateObject(wrappedValue: SyncEngineManager(engine: syncEngine, operationStore: operationStore, taskLocalStore: localStore))
         
         let gateVM = OrganizationGateViewModel()
         gateVM.selectedOrg = selectedOrg
@@ -101,7 +113,7 @@ struct AuthenticatedRootView: View {
     
     var body: some View {
         NavigationSplitView {
-            SidebarView(viewModel: sidebarViewModel)
+            SidebarView(viewModel: sidebarViewModel, syncManager: syncManager)
         } detail: {
             NavigationStack {
                 VStack(spacing: 0) {
@@ -190,6 +202,8 @@ struct AuthenticatedRootView: View {
             if sidebarViewModel.areas.isEmpty {
                 await sidebarViewModel.fetchHierarchy()
             }
+            await syncManager.refresh()
+            syncManager.syncNow()
         }
     }
     

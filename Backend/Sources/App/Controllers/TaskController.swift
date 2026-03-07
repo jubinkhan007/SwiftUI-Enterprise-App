@@ -4,6 +4,33 @@ import Vapor
 
 /// Handles full CRUD operations for tasks. All routes require JWT authentication.
 struct TaskController: RouteCollection {
+    private static func makeETag(version: Int) -> String {
+        "\"v\(version)\""
+    }
+
+    private static func parseIfMatchVersion(_ raw: String) -> Int? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unquoted = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        if unquoted.hasPrefix("v") {
+            return Int(unquoted.dropFirst())
+        }
+        return Int(unquoted)
+    }
+
+    private func response<T: Content>(
+        req: Request,
+        status: HTTPResponseStatus,
+        etag: String?,
+        body: APIResponse<T>
+    ) throws -> Response {
+        let response = Response(status: status)
+        if let etag {
+            response.headers.replaceOrAdd(name: .eTag, value: etag)
+        }
+        try response.content.encode(body)
+        return response
+    }
+
     func boot(routes: any RoutesBuilder) throws {
         // Wrap all task routes in OrgTenantMiddleware to enforce X-Org-Id
         let tasks = routes.grouped("tasks").grouped(OrgTenantMiddleware())
@@ -221,7 +248,7 @@ struct TaskController: RouteCollection {
     // MARK: - GET /api/tasks/:taskID
 
     @Sendable
-    func show(req: Request) async throws -> APIResponse<TaskItemDTO> {
+    func show(req: Request) async throws -> Response {
         let ctx = try req.orgContext
         let includeArchived = (try? req.query.get(Bool.self, at: "include_archived")) ?? false
 
@@ -238,15 +265,28 @@ struct TaskController: RouteCollection {
         }
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
-        return .success(dtos[0])
+        let dto = dtos[0]
+        return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
     // MARK: - POST /api/tasks
 
     @Sendable
-    func create(req: Request) async throws -> APIResponse<TaskItemDTO> {
+    func create(req: Request) async throws -> Response {
         let ctx = try req.orgContext
         let payload = try req.content.decode(CreateTaskRequest.self)
+
+        if let clientId = payload.id {
+            if let existing = try await TaskItemModel.query(on: req.db)
+                .filter(\.$id == clientId)
+                .filter(\.$organization.$id == ctx.orgId)
+                .first()
+            {
+                let dtos = try await withSubtaskCounts(tasks: [existing], db: req.db)
+                let dto = dtos[0]
+                return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
+            }
+        }
 
         let bugFieldsProvided =
             payload.bugSeverity != nil ||
@@ -387,6 +427,9 @@ struct TaskController: RouteCollection {
             actualResult: payload.actualResult,
             reproductionSteps: payload.reproductionSteps
         )
+        if let clientId = payload.id {
+            task.id = clientId
+        }
 
         if resolvedStatus.category == .completed {
             task.completedAt = Date()
@@ -471,13 +514,14 @@ struct TaskController: RouteCollection {
             }
         }
 
-        return .success(task.toDTO())
+        let dto = task.toDTO()
+        return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
     // MARK: - PUT /api/tasks/:taskID
 
     @Sendable
-    func update(req: Request) async throws -> APIResponse<TaskItemDTO> {
+    func update(req: Request) async throws -> Response {
         let ctx = try req.orgContext
         let requestedTaskId = req.parameters.get("taskID", as: UUID.self) ?? UUID()
         let query = TaskItemModel.query(on: req.db)
@@ -497,8 +541,14 @@ struct TaskController: RouteCollection {
 
         let payload = try req.content.decode(UpdateTaskRequest.self)
 
-        guard task.version == payload.expectedVersion else {
-            throw Abort(.conflict, reason: "Task was modified by another user. Please refresh and try again.")
+        let ifMatchVersion = req.headers.first(name: .ifMatch).flatMap { Self.parseIfMatchVersion($0) }
+        let expectedVersion = ifMatchVersion ?? payload.expectedVersion
+        guard let expectedVersion else {
+            throw Abort(.badRequest, reason: "Missing version precondition. Provide If-Match or expectedVersion.")
+        }
+        guard task.version == expectedVersion else {
+            let dto = task.toDTO()
+            return try response(req: req, status: .conflict, etag: Self.makeETag(version: dto.version), body: .success(dto))
         }
 
         // Validate storyPoints range
@@ -769,14 +819,15 @@ struct TaskController: RouteCollection {
         }
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
-        return .success(dtos[0])
+        let dto = dtos[0]
+        return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
     // MARK: - PATCH /api/tasks/:taskID
     // Partial update bypasses expectedVersion checks to allow rapid inline editing.
 
     @Sendable
-    func partialUpdate(req: Request) async throws -> APIResponse<TaskItemDTO> {
+    func partialUpdate(req: Request) async throws -> Response {
         let ctx = try req.orgContext
         let requestedTaskId = req.parameters.get("taskID", as: UUID.self) ?? UUID()
         let query = TaskItemModel.query(on: req.db)
@@ -1063,7 +1114,8 @@ struct TaskController: RouteCollection {
         }
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
-        return .success(dtos[0])
+        let dto = dtos[0]
+        return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
     // MARK: - PATCH /api/tasks/:taskID/move

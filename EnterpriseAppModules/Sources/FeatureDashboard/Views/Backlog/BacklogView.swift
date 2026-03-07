@@ -5,7 +5,9 @@ import SharedModels
 
 public struct BacklogView: View {
     @StateObject private var viewModel: BacklogViewModel
+#if os(iOS)
     @State private var editMode: EditMode = .inactive
+#endif
 
     public init(
         projectId: UUID,
@@ -33,12 +35,14 @@ public struct BacklogView: View {
                 contentList
             }
         }
+#if os(iOS)
         .environment(\.editMode, $editMode)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 EditButton()
             }
         }
+#endif
         .task {
             await viewModel.refresh()
         }
@@ -81,7 +85,11 @@ public struct BacklogView: View {
                 }
             }
         }
+#if os(iOS)
         .listStyle(.insetGrouped)
+#else
+        .listStyle(.inset)
+#endif
     }
 
     private var backlogHeader: some View {
@@ -179,7 +187,11 @@ public struct BacklogView: View {
                 }
             }
         }
+#if os(iOS)
         .listStyle(.insetGrouped)
+#else
+        .listStyle(.inset)
+#endif
     }
 }
 
@@ -192,4 +204,3 @@ private extension SprintDTO {
         }
     }
 }
-

@@ -1,13 +1,17 @@
 import SwiftUI
 import DesignSystem
 import SharedModels
+import AppData
 
 public struct SidebarView: View {
     @ObservedObject var viewModel: SidebarViewModel
+    @ObservedObject var syncManager: SyncEngineManager
     @State private var showingCreateSheet = false
+    @State private var showingSyncCenter = false
     
-    public init(viewModel: SidebarViewModel) {
+    public init(viewModel: SidebarViewModel, syncManager: SyncEngineManager) {
         self.viewModel = viewModel
+        self.syncManager = syncManager
     }
     
     public var body: some View {
@@ -73,13 +77,35 @@ public struct SidebarView: View {
                 }
                 .accessibilityLabel("Create Team, Project, or List")
             }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingSyncCenter = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: syncIconName)
+                        if let last = syncManager.lastSyncedAt, syncManager.state != .offline {
+                            Text("Last: \(Self.relativeTime(from: last))")
+                                .appFont(AppTypography.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .accessibilityLabel("Sync Center")
+            }
         }
         .sheet(isPresented: $showingCreateSheet) {
             CreateHierarchyItemSheet(viewModel: viewModel)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showingSyncCenter) {
+            SyncCenterSheet(syncManager: syncManager)
+                .presentationDetents([.medium, .large])
+        }
         .refreshable {
             await viewModel.fetchHierarchy()
+            await syncManager.refresh()
+            syncManager.syncNow()
         }
         .onAppear {
             if viewModel.areas.isEmpty {
@@ -87,6 +113,29 @@ public struct SidebarView: View {
                     await viewModel.fetchHierarchy()
                 }
             }
+            Task {
+                await syncManager.refresh()
+                syncManager.syncNow()
+            }
         }
+    }
+
+    private var syncIconName: String {
+        switch syncManager.state {
+        case .online:
+            return "icloud"
+        case .offline:
+            return "icloud.slash"
+        case .syncing:
+            return "arrow.triangle.2.circlepath"
+        case .attentionNeeded:
+            return "exclamationmark.icloud"
+        }
+    }
+
+    private static func relativeTime(from date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }

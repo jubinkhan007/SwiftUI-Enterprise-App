@@ -6,21 +6,49 @@ import Domain
 /// Concrete implementation of HierarchyRepositoryProtocol using APIClient.
 public final class HierarchyRepository: HierarchyRepositoryProtocol {
     private let apiClient: APIClient
+    private let localStore: HierarchyLocalStoreProtocol
     private let apiConfiguration: APIConfiguration
     
-    public init(apiClient: APIClient, configuration: APIConfiguration = .localVapor) {
+    public init(
+        apiClient: APIClient,
+        localStore: HierarchyLocalStoreProtocol,
+        configuration: APIConfiguration = .localVapor
+    ) {
         self.apiClient = apiClient
+        self.localStore = localStore
         self.apiConfiguration = configuration
     }
     
     public func getHierarchy() async throws -> HierarchyTreeDTO {
-        let endpoint = HierarchyEndpoint.getHierarchy(configuration: apiConfiguration)
-        let response = try await apiClient.request(endpoint, responseType: APIResponse<HierarchyTreeDTO>.self)
-        
-        guard let data = response.data else {
-            throw NetworkError.underlying("No hierarchy data returned from server")
+        guard let orgId = OrganizationContext.shared.orgId else {
+            throw NetworkError.underlying("Missing organization context")
         }
-        return data
+
+        let cached = (try? await localStore.getHierarchy(orgId: orgId)) ?? HierarchyTreeDTO(spaces: [])
+
+        do {
+            let cursor = try await localStore.getCursor(orgId: orgId)
+            let endpoint = HierarchyEndpoint.getHierarchy(since: cursor, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<HierarchyTreeDTO>.self)
+
+            if let tree = response.data {
+                if cursor == nil {
+                    try await localStore.replaceAll(orgId: orgId, tree: tree)
+                } else {
+                    try await localStore.applyDelta(orgId: orgId, tree: tree)
+                }
+            }
+            if let newCursor = response.cursor {
+                try await localStore.setCursor(orgId: orgId, cursor: newCursor)
+            }
+
+            return try await localStore.getHierarchy(orgId: orgId)
+        } catch let error as NetworkError {
+            if error == .offline {
+                return cached
+            }
+            throw error
+        }
     }
     
     public func createSpace(name: String, description: String?) async throws -> SpaceDTO {

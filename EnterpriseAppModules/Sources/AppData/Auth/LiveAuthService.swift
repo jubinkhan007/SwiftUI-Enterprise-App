@@ -84,6 +84,9 @@ private struct MappedAuthService: AuthServiceProtocol {
             if let message, !message.isEmpty { return .server(message) }
             return .unknown
 
+        case NetworkError.conflict:
+            return .emailAlreadyInUse
+
         case NetworkError.decodingFailed:
             return .unknown
 

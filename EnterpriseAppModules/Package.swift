@@ -65,13 +65,13 @@ let package = Package(
         .target(
             name: "FeatureDashboard",
             dependencies: [
-                "Core", "Domain", "AppNetwork", "DesignSystem",
+                "Core", "Domain", "AppNetwork", "AppData", "DesignSystem",
                 .product(name: "SharedModels", package: "SharedModels"),
             ]
         ),
         .testTarget(
             name: "EnterpriseAppModulesTests",
-            dependencies: ["Core", "AppNetwork", "Domain", "AppData", "DesignSystem", "FeatureAuth", "FeatureOrganization", "FeatureDashboard"]
+            dependencies: ["Core", "AppNetwork", "Domain", "AppData", .product(name: "SharedModels", package: "SharedModels")]
         ),
     ]
 )

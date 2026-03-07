@@ -57,7 +57,9 @@ public struct EpicDetailDashboardView: View {
             }
         }
         .navigationTitle(viewModel.epic.issueKey ?? "Epic")
+#if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
         .task { await viewModel.refresh() }
         .refreshable { await viewModel.refresh() }
     }

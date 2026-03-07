@@ -3,6 +3,9 @@ import Charts
 import SharedModels
 import Domain
 import DesignSystem
+#if os(macOS)
+import AppKit
+#endif
 
 public struct AnalyticsDashboardView: View {
     @StateObject private var viewModel: AnalyticsDashboardViewModel
@@ -34,7 +37,7 @@ public struct AnalyticsDashboardView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.platformSystemGroupedBackground)
         .navigationTitle("Analytics")
         .task {
             await viewModel.fetchAllAnalytics()
@@ -171,7 +174,7 @@ public struct AnalyticsDashboardView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.platformSecondarySystemGroupedBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
@@ -208,7 +211,7 @@ public struct AnalyticsDashboardView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.platformSecondarySystemGroupedBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
@@ -245,7 +248,7 @@ public struct AnalyticsDashboardView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.platformSecondarySystemGroupedBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
@@ -272,7 +275,7 @@ struct KPICard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.platformSecondarySystemGroupedBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
@@ -307,4 +310,26 @@ private struct AnalyticsSkeletonView: View {
 private struct ShareItem: Identifiable, Equatable {
     let id = UUID()
     let url: URL
+}
+
+private extension Color {
+    static var platformSystemGroupedBackground: Color {
+#if os(iOS)
+        Color(.systemGroupedBackground)
+#elseif os(macOS)
+        Color(nsColor: .windowBackgroundColor)
+#else
+        Color.white
+#endif
+    }
+
+    static var platformSecondarySystemGroupedBackground: Color {
+#if os(iOS)
+        Color(.secondarySystemGroupedBackground)
+#elseif os(macOS)
+        Color(nsColor: .underPageBackgroundColor)
+#else
+        Color.white
+#endif
+    }
 }

@@ -5,6 +5,7 @@ public enum NetworkError: Error, LocalizedError, Sendable, Equatable {
     case invalidURL
     case decodingFailed(String)
     case serverError(statusCode: Int, message: String?)
+    case conflict(data: Data, message: String?, headers: [String: String])
     case underlying(String)
     case unauthorized(message: String?)
     case forbidden(message: String?)
@@ -18,6 +19,8 @@ public enum NetworkError: Error, LocalizedError, Sendable, Equatable {
             return "Unexpected response format. \(message)"
         case .serverError(_, let message):
             return message ?? "Server error."
+        case .conflict(_, let message, _):
+            return message ?? "Conflict. The server has newer data."
         case .underlying(let message):
             return message
         case .unauthorized(let message):
@@ -33,9 +36,14 @@ public enum NetworkError: Error, LocalizedError, Sendable, Equatable {
 public protocol APIEndpoint {
     var baseURL: URL { get }
     var path: String { get }
+    var queryParameters: [String: String]? { get }
     var method: HTTPMethod { get }
     var headers: [String: String]? { get }
     var body: Data? { get }
+}
+
+public extension APIEndpoint {
+    var queryParameters: [String: String]? { nil }
 }
 
 public enum HTTPMethod: String {
@@ -70,7 +78,18 @@ public protocol APIClientProtocol: Sendable {
         }
 
         public func request<T: Decodable>(_ endpoint: APIEndpoint, responseType: T.Type) async throws -> T {
-            guard let url = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
+            guard let base = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
+                throw NetworkError.invalidURL
+            }
+            guard var components = URLComponents(url: base, resolvingAgainstBaseURL: true) else {
+                throw NetworkError.invalidURL
+            }
+            if let params = endpoint.queryParameters, !params.isEmpty {
+                var items = components.queryItems ?? []
+                items.append(contentsOf: params.map { URLQueryItem(name: $0.key, value: $0.value) })
+                components.queryItems = items
+            }
+            guard let url = components.url else {
                 throw NetworkError.invalidURL
             }
 
@@ -129,6 +148,12 @@ public protocol APIClientProtocol: Sendable {
                 // Immediately clear org context — user lost access
                 OrganizationContext.shared.clear()
                 throw NetworkError.forbidden(message: decodeVaporErrorMessage(from: data))
+            case 409:
+                throw NetworkError.conflict(
+                    data: data,
+                    message: decodeVaporErrorMessage(from: data),
+                    headers: Self.stringHeaders(from: httpResponse)
+                )
             default:
                 throw NetworkError.serverError(
                     statusCode: httpResponse.statusCode,
@@ -154,7 +179,18 @@ public protocol APIClientProtocol: Sendable {
 
     /// Issues a request and returns the raw response bytes (used for downloads / non-JSON responses).
         public func requestData(_ endpoint: APIEndpoint) async throws -> Data {
-            guard let url = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
+            guard let base = URL(string: endpoint.path, relativeTo: endpoint.baseURL) else {
+                throw NetworkError.invalidURL
+            }
+            guard var components = URLComponents(url: base, resolvingAgainstBaseURL: true) else {
+                throw NetworkError.invalidURL
+            }
+            if let params = endpoint.queryParameters, !params.isEmpty {
+                var items = components.queryItems ?? []
+                items.append(contentsOf: params.map { URLQueryItem(name: $0.key, value: $0.value) })
+                components.queryItems = items
+            }
+            guard let url = components.url else {
                 throw NetworkError.invalidURL
             }
 
@@ -190,6 +226,12 @@ public protocol APIClientProtocol: Sendable {
             case 403:
                 OrganizationContext.shared.clear()
                 throw NetworkError.forbidden(message: decodeVaporErrorMessage(from: data))
+            case 409:
+                throw NetworkError.conflict(
+                    data: data,
+                    message: decodeVaporErrorMessage(from: data),
+                    headers: Self.stringHeaders(from: httpResponse)
+                )
             default:
                 throw NetworkError.serverError(
                     statusCode: httpResponse.statusCode,
@@ -219,6 +261,16 @@ public protocol APIClientProtocol: Sendable {
             return nil
         }
         return abort.reason
+    }
+
+    private static func stringHeaders(from response: HTTPURLResponse) -> [String: String] {
+        var out: [String: String] = [:]
+        for (k, v) in response.allHeaderFields {
+            if let key = k as? String {
+                out[key] = String(describing: v)
+            }
+        }
+        return out
     }
 }
 

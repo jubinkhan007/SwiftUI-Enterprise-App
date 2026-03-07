@@ -50,7 +50,9 @@ struct ReleaseDetailView: View {
             }
         }
         .navigationTitle(release.name)
+#if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
         .task { await refresh() }
         .refreshable { await refresh() }
         .sheet(isPresented: $showNotesPreview) {
@@ -75,7 +77,9 @@ struct ReleaseDetailView: View {
                     .padding()
                 }
                 .navigationTitle("Release Notes")
+#if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+#endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { showNotesPreview = false }

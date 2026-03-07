@@ -68,8 +68,12 @@ public struct MemberPickerSheet: View {
                 }
             }
             .navigationTitle(title)
+#if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
+#else
+            .searchable(text: $searchText)
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -89,4 +93,3 @@ public struct MemberPickerSheet: View {
         }
     }
 }
-

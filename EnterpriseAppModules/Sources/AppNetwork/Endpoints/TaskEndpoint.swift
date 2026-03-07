@@ -138,6 +138,14 @@ extension TaskEndpoint: APIEndpoint {
         if let orgId = OrganizationContext.shared.orgId {
             h["X-Org-Id"] = orgId.uuidString
         }
+        switch self {
+        case .updateTask(_, let payload, _), .partialUpdateTask(_, let payload, _):
+            if let v = payload.expectedVersion {
+                h["If-Match"] = "\"v\(v)\""
+            }
+        default:
+            break
+        }
         return h
     }
 

@@ -52,7 +52,9 @@ public struct ReleaseManagementView: View {
             }
         }
         .navigationTitle("Releases")
+#if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
         .task { await viewModel.refresh() }
         .refreshable { await viewModel.refresh() }
     }
@@ -126,4 +128,3 @@ private struct ReleaseRow: View {
         }
     }
 }
-

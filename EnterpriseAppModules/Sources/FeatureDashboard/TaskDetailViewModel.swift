@@ -306,7 +306,7 @@ public final class TaskDetailViewModel: ObservableObject {
             await fetchActivities() // Refresh activity log
 
             return true
-        } catch NetworkError.serverError(let statusCode, _) where statusCode == 409 {
+        } catch NetworkError.conflict {
             self.hasConflict = true
             self.error = NetworkError.underlying("This task was modified by someone else. Please refresh and try again.")
             return false

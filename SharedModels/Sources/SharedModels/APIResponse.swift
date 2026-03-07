@@ -8,22 +8,27 @@ public struct APIResponse<T: Codable & Sendable>: Codable, Sendable {
     public let data: T?
     public let error: APIError?
     public let pagination: PaginationMeta?
+    /// Opaque cursor value for delta-sync style APIs (e.g. hierarchy updates).
+    /// This is separate from `pagination.cursor`, which is used for list pagination.
+    public let cursor: String?
 
     public init(
         success: Bool = true,
         data: T? = nil,
         error: APIError? = nil,
-        pagination: PaginationMeta? = nil
+        pagination: PaginationMeta? = nil,
+        cursor: String? = nil
     ) {
         self.success = success
         self.data = data
         self.error = error
         self.pagination = pagination
+        self.cursor = cursor
     }
 
     /// Convenience factory for a successful response.
-    public static func success(_ data: T, pagination: PaginationMeta? = nil) -> APIResponse {
-        APIResponse(success: true, data: data, pagination: pagination)
+    public static func success(_ data: T, pagination: PaginationMeta? = nil, cursor: String? = nil) -> APIResponse {
+        APIResponse(success: true, data: data, pagination: pagination, cursor: cursor)
     }
 
     /// Convenience factory for a failed response.
