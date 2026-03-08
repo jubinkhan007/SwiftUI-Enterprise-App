@@ -39,10 +39,12 @@ WORKDIR /app
 # Copy built binary
 COPY --from=build /build/Backend/.build/release/App .
 
-# Create non-root user
-RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app vapor
+# Create non-root user and writable data directory for SQLite
+RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app vapor \
+    && mkdir -p /data && chown vapor:vapor /data
 USER vapor:vapor
 
+ENV DATABASE_PATH=/data/enterprise_app.db
 ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all
 
 EXPOSE 8080

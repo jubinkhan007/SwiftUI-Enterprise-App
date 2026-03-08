@@ -8,30 +8,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Keep the default in sync with Backend/Sources/App/configure.swift for local dev.
       - JWT_SECRET=${JWT_SECRET:-enterprise-app-dev-secret-key-change-in-production}
-      - DATABASE_URL=postgres://vapor:vapor@db:5432/enterprise_app
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: vapor
-      POSTGRES_PASSWORD: vapor
-      POSTGRES_DB: enterprise_app
-    ports:
-      - "5432:5432"
+      # SQLite database will be stored on the named volume so it persists across
+      # container restarts and is not blocked by a read-only image layer.
+      - DATABASE_PATH=/data/enterprise_app.db
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vapor -d enterprise_app"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - dbdata:/data
     restart: unless-stopped
 
 volumes:
-  pgdata:
+  dbdata:
