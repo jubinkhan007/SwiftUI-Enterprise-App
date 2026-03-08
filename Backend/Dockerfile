@@ -45,7 +45,6 @@ RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app
 USER vapor:vapor
 
 ENV DATABASE_PATH=/data/enterprise_app.db
-ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all
 
 EXPOSE 8080
 

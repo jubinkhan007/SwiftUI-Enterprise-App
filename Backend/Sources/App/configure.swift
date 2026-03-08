@@ -97,7 +97,17 @@ func configure(_ app: Application) throws {
 private func resolveSQLiteDatabasePath(app: Application) -> String {
     let configured = Environment.get("DATABASE_PATH") ?? Environment.get("SQLITE_DB_PATH")
     if let configured, !configured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return ensureParentDirectoryExists(path: configured, logger: app.logger)
+        let filePath = ensureParentDirectoryExists(path: configured, logger: app.logger)
+        let parent = URL(fileURLWithPath: filePath).deletingLastPathComponent().path
+        if !parent.isEmpty, !isWritableDirectory(parent) {
+            app.logger.warning("SQLite path \(filePath) is not writable; falling back to a temp database.")
+#if os(Linux)
+            return "/tmp/enterprise_app.db"
+#else
+            return "enterprise_app.db"
+#endif
+        }
+        return filePath
     }
 
 #if os(Linux)

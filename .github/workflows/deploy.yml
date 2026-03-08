@@ -23,6 +23,8 @@ jobs:
           passphrase: ${{ secrets.VPS_SSH_PASSPHRASE }} # Optional: only if your key has a passphrase
           password: ${{ secrets.VPS_PASSWORD }} # Alternative: use password if you don't use SSH keys
           port: 22
+          script_stop: true
+          command_timeout: 60m
           script: |
             cd /root/SwiftUI-Enterprise-App/Backend
             
@@ -30,7 +32,7 @@ jobs:
             git pull origin main
             
             # Rebuild and restart the Docker containers in the background
-            docker-compose up -d --build
+            docker-compose up -d --build --remove-orphans
             
             # Clean up old unused images to save disk space
             docker image prune -f
