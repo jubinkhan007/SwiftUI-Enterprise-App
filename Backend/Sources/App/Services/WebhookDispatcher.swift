@@ -5,10 +5,10 @@ import SharedModels
 
 /// An internal service that looks up active webhook subscriptions for a given organization and event,
 /// signs the payload with HMAC-SHA256, and fires an asynchronous HTTP request using Circuit Breaker logic.
-public struct WebhookDispatcher {
+struct WebhookDispatcher {
     
     /// Called directly by the test ping endpoint bypasses rules and sends a dummy payload.
-    public static func dispatchPing(to subscription: WebhookSubscriptionModel, on req: Request) async throws {
+    static func dispatchPing(to subscription: WebhookSubscriptionModel, on req: Request) async throws {
         let payload = WebhookPayload(
             eventId: UUID(),
             eventType: "ping",
@@ -20,23 +20,22 @@ public struct WebhookDispatcher {
     }
 
     /// Dispatches an event payload functionally to all active subscribers for that org/event type.
-    public static func dispatchEvent<T: Encodable>(
+    static func dispatchEvent<T: Encodable>(
         orgId: UUID,
         eventType: String,
         data: T,
         on req: Request
     ) {
         // Run in background to not block the main API response
-        req.task {
+        Task {
             do {
                 let subscriptions = try await WebhookSubscriptionModel.query(on: req.db)
                     .filter(\.$organization.$id == orgId)
                     .filter(\.$isActive == true)
-                    // Postgres Array contains operator
-                    .filter(\.$events, .custom("@>"), [eventType])
                     .all()
 
-                guard !subscriptions.isEmpty else { return }
+                let matching = subscriptions.filter { $0.events.contains(eventType) }
+                guard !matching.isEmpty else { return }
 
                 let eventId = UUID()
                 let payload = WebhookPayload(
@@ -47,9 +46,9 @@ public struct WebhookDispatcher {
                     data: data
                 )
 
-                for sub in subscriptions {
+                for sub in matching {
                     // Intentionally fire and forget each one individually so one failure doesnt block others
-                    req.task {
+                    Task {
                         try? await send(payload: payload, to: sub, on: req)
                     }
                 }

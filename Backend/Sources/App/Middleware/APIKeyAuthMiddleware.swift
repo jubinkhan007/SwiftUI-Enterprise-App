@@ -3,10 +3,6 @@ import SharedModels
 import Vapor
 
 struct APIKeyAuthMiddleware: AsyncMiddleware {
-    private struct ScopeRequirement {
-        let anyOf: Set<APIKeyScope>
-    }
-
     func respond(to req: Request, chainingTo next: any AsyncResponder) async throws -> Response {
         guard let raw = req.headers.bearerAuthorization?.token else {
             throw Abort(.unauthorized, reason: "Missing authorization token.")
@@ -16,29 +12,22 @@ struct APIKeyAuthMiddleware: AsyncMiddleware {
             throw Abort(.unauthorized, reason: "Invalid API key.")
         }
 
-        let prefix = Self.parsePrefix(raw)
-        guard let prefix else {
-            throw Abort(.unauthorized, reason: "Invalid API key.")
+        // Expected format: eap_<UUID>.<SECRET>
+        let withoutPrefix = raw.dropFirst(4)
+        let parts = withoutPrefix.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, let keyId = UUID(uuidString: String(parts[0])) else {
+            throw Abort(.unauthorized, reason: "Malformed API key.")
+        }
+        let secret = String(parts[1])
+        guard !secret.isEmpty else {
+            throw Abort(.unauthorized, reason: "Malformed API key.")
         }
 
-        let candidates = try await APIKeyModel.query(on: req.db)
-            .filter(\.$keyPrefix == prefix)
+        guard let key = try await APIKeyModel.query(on: req.db)
+            .filter(\.$id == keyId)
             .filter(\.$isRevoked == false)
-            .all()
-
-        guard !candidates.isEmpty else {
-            throw Abort(.unauthorized, reason: "Invalid API key.")
-        }
-
-        var matched: APIKeyModel? = nil
-        for candidate in candidates {
-            if (try? Bcrypt.verify(raw, created: candidate.keyHash)) == true {
-                matched = candidate
-                break
-            }
-        }
-
-        guard let key = matched else {
+            .first()
+        else {
             throw Abort(.unauthorized, reason: "Invalid API key.")
         }
 
@@ -46,10 +35,14 @@ struct APIKeyAuthMiddleware: AsyncMiddleware {
             throw Abort(.unauthorized, reason: "API key expired.")
         }
 
+        guard (try? Bcrypt.verify(secret, created: key.keyHash)) == true else {
+            throw Abort(.unauthorized, reason: "Invalid API key.")
+        }
+
         let scopes = Set(key.scopes)
         req.storage[AuthContextKey.self] = AuthContext(
             method: .apiKey,
-            userId: key.userId,
+            userId: key.$createdBy.id,
             role: nil,
             orgId: key.$organization.id,
             apiKeyId: key.id,
@@ -64,6 +57,10 @@ struct APIKeyAuthMiddleware: AsyncMiddleware {
         try enforceScopes(req: req, scopes: scopes)
 
         return try await next.respond(to: req)
+    }
+
+    private struct ScopeRequirement {
+        let anyOf: Set<APIKeyScope>
     }
 
     private func enforceScopes(req: Request, scopes: Set<String>) throws {
@@ -83,7 +80,7 @@ struct APIKeyAuthMiddleware: AsyncMiddleware {
         let path = req.url.path
         let method = req.method
 
-        if path.hasPrefix("/api/apikeys") {
+        if path.hasPrefix("/api/api-keys") {
             return ScopeRequirement(anyOf: [.apiKeysManage])
         }
         if path.hasPrefix("/api/webhooks") {
@@ -110,15 +107,4 @@ struct APIKeyAuthMiddleware: AsyncMiddleware {
 
         return nil
     }
-
-    private static func parsePrefix(_ raw: String) -> String? {
-        // Expected: eap_<prefix>_<random>
-        let parts = raw.split(separator: "_", omittingEmptySubsequences: false)
-        guard parts.count >= 3 else { return nil }
-        guard parts[0] == "eap" else { return nil }
-        let prefix = String(parts[1])
-        guard prefix.count >= 6 else { return nil }
-        return prefix
-    }
 }
-

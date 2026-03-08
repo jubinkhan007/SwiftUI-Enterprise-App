@@ -37,6 +37,13 @@ public struct APIResponse<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
+public extension APIResponse where T == EmptyResponse {
+    /// Convenience factory for endpoints that return no payload.
+    static func empty() -> APIResponse<EmptyResponse> {
+        .success(EmptyResponse())
+    }
+}
+
 // MARK: - API Error
 
 /// A structured error object returned by the API.
