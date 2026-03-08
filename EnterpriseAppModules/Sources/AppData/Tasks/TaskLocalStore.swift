@@ -22,7 +22,7 @@ public final class TaskLocalStore: TaskLocalStoreProtocol {
     @MainActor
     public func getTasks(query: TaskQuery) async throws -> [LocalTaskItem] {
         let context = modelContainer.mainContext
-        var fetchDescriptor = FetchDescriptor<LocalTaskItem>(
+        let fetchDescriptor = FetchDescriptor<LocalTaskItem>(
             predicate: #Predicate { $0.isDeletedLocally == false },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )

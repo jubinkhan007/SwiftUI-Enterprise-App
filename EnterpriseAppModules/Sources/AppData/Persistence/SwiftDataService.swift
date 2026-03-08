@@ -2,6 +2,8 @@ import Foundation
 import SwiftData
 
 /// Protocol defining the contract for local persistence.
+/// All methods are main-actor-isolated because SwiftData's ModelContext is not Sendable.
+@MainActor
 public protocol PersistenceServiceProtocol {
     func insert<T: PersistentModel>(_ model: T) throws
     func fetch<T: PersistentModel>(descriptor: FetchDescriptor<T>) throws -> [T]
@@ -11,7 +13,7 @@ public protocol PersistenceServiceProtocol {
 
 /// A SwiftData implementation of the Persistence Service.
 @MainActor
-public final class SwiftDataService: @preconcurrency PersistenceServiceProtocol {
+public final class SwiftDataService: PersistenceServiceProtocol {
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
 

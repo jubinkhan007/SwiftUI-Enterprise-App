@@ -338,7 +338,7 @@ public final class TaskRepository: TaskRepositoryProtocol {
 
     public func moveMultiple(payload: BulkMoveTaskRequest) async throws -> [TaskItemDTO] {
         // Optimistic local update involves fetching all tasks and applying moves
-        let localTasks = try await localStore.getTasks(query: TaskQuery()) // Simple fetch to get tasks in memory, optimized in real app
+        _ = try await localStore.getTasks(query: TaskQuery()) // Simple fetch to get tasks in memory, optimized in real app
         var updatedDTOs = [TaskItemDTO]()
         
         for moveAction in payload.moves {

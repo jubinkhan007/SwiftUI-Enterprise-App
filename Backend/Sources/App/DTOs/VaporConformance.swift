@@ -86,4 +86,4 @@ extension AnalyticsResponseDTO: @retroactive Content where T: Content {}
 extension ReleaseDTO: @retroactive Content {}
 extension CreateReleaseRequest: @retroactive Content {}
 extension ReleaseProgressDTO: @retroactive Content {}
-extension FinalizeReleaseRequest: @retroactive Content {}
+extension FinalizeReleaseRequest: @retroactive Vapor.Content {}
