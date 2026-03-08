@@ -95,29 +95,28 @@ func configure(_ app: Application) throws {
 }
 
 private func resolveSQLiteDatabasePath(app: Application) -> String {
+    // 1. Check for explicit env var override
     let configured = Environment.get("DATABASE_PATH") ?? Environment.get("SQLITE_DB_PATH")
     if let configured, !configured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        app.logger.info("DATABASE_PATH env var set to: \(configured)")
         let filePath = ensureParentDirectoryExists(path: configured, logger: app.logger)
-        let parent = URL(fileURLWithPath: filePath).deletingLastPathComponent().path
-        if !parent.isEmpty, !isWritableDirectory(parent) {
-            app.logger.warning("SQLite path \(filePath) is not writable; falling back to a temp database.")
-#if os(Linux)
-            return "/tmp/enterprise_app.db"
-#else
-            return "enterprise_app.db"
-#endif
-        }
         return filePath
     }
 
-#if os(Linux)
-    if isWritableDirectory("/data") {
-        return "/data/enterprise_app.db"
+    // 2. Production Linux default: always use /data (Docker volume)
+    #if os(Linux)
+    let dataDir = "/data"
+    let fm = FileManager.default
+    if !fm.fileExists(atPath: dataDir) {
+        try? fm.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
     }
-    return "/tmp/enterprise_app.db"
-#else
+    let dbPath = "\(dataDir)/enterprise_app.db"
+    app.logger.info("No DATABASE_PATH set. Linux detected, using: \(dbPath)")
+    return dbPath
+    #else
+    // macOS local development
     return "enterprise_app.db"
-#endif
+    #endif
 }
 
 private func ensureParentDirectoryExists(path: String, logger: Logger) -> String {

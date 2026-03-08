@@ -126,3 +126,17 @@ public struct WebhookTestResponse: Codable, Sendable, Equatable {
         self.statusCode = statusCode
     }
 }
+
+public struct UpdateWebhookSubscriptionRequest: Codable, Sendable {
+    public let targetUrl: String?
+    public let secret: String?
+    public let events: [String]?
+    public let isActive: Bool?
+
+    public init(targetUrl: String? = nil, secret: String? = nil, events: [String]? = nil, isActive: Bool? = nil) {
+        self.targetUrl = targetUrl
+        self.secret = secret
+        self.events = events
+        self.isActive = isActive
+    }
+}

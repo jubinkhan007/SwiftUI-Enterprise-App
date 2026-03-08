@@ -1,74 +1,47 @@
 import Foundation
 import SharedModels
 
-public enum IntegrationEndpoint {
-    case listAPIKeys(configuration: APIConfiguration)
-    case createAPIKey(payload: CreateAPIKeyRequest, configuration: APIConfiguration)
-    case revokeAPIKey(id: UUID, configuration: APIConfiguration)
-
-    case listWebhooks(configuration: APIConfiguration)
-    case createWebhook(payload: CreateWebhookSubscriptionRequest, configuration: APIConfiguration)
-    case deleteWebhook(id: UUID, configuration: APIConfiguration)
-    case testWebhook(id: UUID, configuration: APIConfiguration)
-}
-
-extension IntegrationEndpoint: APIEndpoint {
-    public var baseURL: URL {
-        switch self {
-        case .listAPIKeys(let c), .createAPIKey(_, let c), .revokeAPIKey(_, let c),
-             .listWebhooks(let c), .createWebhook(_, let c), .deleteWebhook(_, let c), .testWebhook(_, let c):
-            return c.baseURL
-        }
-    }
+public enum IntegrationEndpoint: Endpoint {
+    case getAPIKeys
+    case createAPIKey(CreateAPIKeyRequest)
+    case revokeAPIKey(UUID)
+    
+    case getWebhooks
+    case createWebhook(CreateWebhookSubscriptionRequest)
+    case updateWebhook(UUID, UpdateWebhookSubscriptionRequest)
+    case deleteWebhook(UUID)
+    case testWebhook(UUID)
 
     public var path: String {
         switch self {
-        case .listAPIKeys, .createAPIKey:
-            return "/api/apikeys"
-        case .revokeAPIKey(let id, _):
-            return "/api/apikeys/\(id.uuidString)"
-        case .listWebhooks, .createWebhook:
+        case .getAPIKeys, .createAPIKey:
+            return "/api/api-keys"
+        case .revokeAPIKey(let id):
+            return "/api/api-keys/\(id.uuidString)"
+        case .getWebhooks, .createWebhook:
             return "/api/webhooks"
-        case .deleteWebhook(let id, _):
+        case .updateWebhook(let id, _), .deleteWebhook(let id):
             return "/api/webhooks/\(id.uuidString)"
-        case .testWebhook(let id, _):
+        case .testWebhook(let id):
             return "/api/webhooks/\(id.uuidString)/test"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .listAPIKeys, .listWebhooks:
-            return .get
-        case .createAPIKey, .createWebhook, .testWebhook:
-            return .post
-        case .revokeAPIKey:
-            return .delete
-        case .deleteWebhook:
-            return .delete
+        case .getAPIKeys, .getWebhooks: return .get
+        case .createAPIKey, .createWebhook, .testWebhook: return .post
+        case .updateWebhook: return .patch
+        case .revokeAPIKey, .deleteWebhook: return .delete
         }
-    }
-
-    public var headers: [String: String]? {
-        var h = ["Content-Type": "application/json"]
-        if let token = TokenStore.shared.token {
-            h["Authorization"] = "Bearer \(token)"
-        }
-        if let orgId = OrganizationContext.shared.orgId {
-            h["X-Org-Id"] = orgId.uuidString
-        }
-        return h
     }
 
     public var body: Data? {
         switch self {
-        case .createAPIKey(let payload, _):
-            return try? JSONCoding.encoder.encode(payload)
-        case .createWebhook(let payload, _):
-            return try? JSONCoding.encoder.encode(payload)
-        case .listAPIKeys, .revokeAPIKey, .listWebhooks, .deleteWebhook, .testWebhook:
-            return nil
+        case .createAPIKey(let payload): return try? JSONCoding.encoder.encode(payload)
+        case .createWebhook(let payload): return try? JSONCoding.encoder.encode(payload)
+        case .updateWebhook(_, let payload): return try? JSONCoding.encoder.encode(payload)
+        default: return nil
         }
     }
 }
-

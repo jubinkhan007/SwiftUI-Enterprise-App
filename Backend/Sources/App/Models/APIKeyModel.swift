@@ -1,8 +1,11 @@
 import Fluent
 import Vapor
-import SharedModels
+import Foundation
 
-final class APIKeyModel: Model, Content, @unchecked Sendable {
+/// Represents a programmatically generated API Key for an organization.
+/// The raw key is only shown once to the user upon creation. We store a bcrypt hash for validation,
+/// and a prefix for UI identification purposes.
+final class APIKeyModel: Model, @unchecked Sendable {
     static let schema = "api_keys"
 
     @ID(key: .id)
@@ -11,8 +14,8 @@ final class APIKeyModel: Model, Content, @unchecked Sendable {
     @Parent(key: "org_id")
     var organization: OrganizationModel
 
-    @Field(key: "user_id")
-    var userId: UUID
+    @Parent(key: "user_id")
+    var createdBy: UserModel
 
     @Field(key: "name")
     var name: String
@@ -38,44 +41,29 @@ final class APIKeyModel: Model, Content, @unchecked Sendable {
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
+    @Timestamp(key: "updated_at", on: .update)
+    var updatedAt: Date?
+
     init() {}
 
     init(
         id: UUID? = nil,
         orgId: UUID,
-        userId: UUID,
+        createdById: UUID,
         name: String,
         keyHash: String,
         keyPrefix: String,
         scopes: [String],
-        expiresAt: Date? = nil,
-        isRevoked: Bool = false
+        expiresAt: Date? = nil
     ) {
         self.id = id
         self.$organization.id = orgId
-        self.userId = userId
+        self.$createdBy.id = createdById
         self.name = name
         self.keyHash = keyHash
         self.keyPrefix = keyPrefix
         self.scopes = scopes
         self.expiresAt = expiresAt
-        self.isRevoked = isRevoked
-    }
-
-    func toDTO() -> APIKeyDTO {
-        let parsedScopes = scopes.compactMap(APIKeyScope.init(rawValue:))
-        return APIKeyDTO(
-            id: id ?? UUID(),
-            orgId: $organization.id,
-            userId: userId,
-            name: name,
-            keyPrefix: keyPrefix,
-            scopes: parsedScopes,
-            lastUsedAt: lastUsedAt,
-            expiresAt: expiresAt,
-            isRevoked: isRevoked,
-            createdAt: createdAt
-        )
+        self.isRevoked = false
     }
 }
-

@@ -1,87 +1,116 @@
-import Fluent
 import Vapor
+import Fluent
+import Crypto
+import SharedModels
 
-struct WebhookDispatcher: Sendable {
-    struct Envelope<T: Content>: Content {
-        let event: String
-        let timestamp: Date
-        let data: T
+/// An internal service that looks up active webhook subscriptions for a given organization and event,
+/// signs the payload with HMAC-SHA256, and fires an asynchronous HTTP request using Circuit Breaker logic.
+public struct WebhookDispatcher {
+    
+    /// Called directly by the test ping endpoint bypasses rules and sends a dummy payload.
+    public static func dispatchPing(to subscription: WebhookSubscriptionModel, on req: Request) async throws {
+        let payload = WebhookPayload(
+            eventId: UUID(),
+            eventType: "ping",
+            timestamp: Date(),
+            orgId: subscription.$organization.id,
+            data: ["message": "Webhook ping successful!"]
+        )
+        try await send(payload: payload, to: subscription, on: req)
     }
 
-    let app: Application
+    /// Dispatches an event payload functionally to all active subscribers for that org/event type.
+    public static func dispatchEvent<T: Encodable>(
+        orgId: UUID,
+        eventType: String,
+        data: T,
+        on req: Request
+    ) {
+        // Run in background to not block the main API response
+        req.task {
+            do {
+                let subscriptions = try await WebhookSubscriptionModel.query(on: req.db)
+                    .filter(\.$organization.$id == orgId)
+                    .filter(\.$isActive == true)
+                    // Postgres Array contains operator
+                    .filter(\.$events, .custom("@>"), [eventType])
+                    .all()
 
-    func dispatch<T: Content>(event: String, orgId: UUID, data: T) {
-        let app = self.app
-        let logger = app.logger
+                guard !subscriptions.isEmpty else { return }
 
-        Task.detached(priority: .utility) {
-            let db = app.db
-            let client = app.client
+                let eventId = UUID()
+                let payload = WebhookPayload(
+                    eventId: eventId,
+                    eventType: eventType,
+                    timestamp: Date(),
+                    orgId: orgId,
+                    data: data
+                )
 
-            let subscriptions = try await WebhookSubscriptionModel.query(on: db)
-                .filter(\.$organization.$id == orgId)
-                .filter(\.$isActive == true)
-                .all()
-
-            let matches = subscriptions.filter { $0.events.contains(event) }
-            if matches.isEmpty { return }
-
-            let now = Date()
-            let timestampHeader = WebhookSigning.timestampString(for: now)
-            let envelope = Envelope(event: event, timestamp: now, data: data)
-
-            let encoder = JSONEncoder()
-            encoder.keyEncodingStrategy = .convertToSnakeCase
-            encoder.dateEncodingStrategy = .iso8601
-            let body = try encoder.encode(envelope)
-
-            await withTaskGroup(of: Void.self) { group in
-                for sub in matches {
-                    let subscriptionId = sub.id
-                    let targetUrl = sub.targetUrl
-                    let secret = sub.secret
-
-                    group.addTask {
-                        guard let subscriptionId else { return }
-                        do {
-                            let signature = WebhookSigning.signature(secret: secret, timestamp: timestampHeader, body: body)
-                            let response = try await client.post(URI(string: targetUrl)) { req in
-                                req.headers.contentType = .json
-                                req.headers.replaceOrAdd(name: "X-Webhook-Timestamp", value: timestampHeader)
-                                req.headers.replaceOrAdd(name: "X-Webhook-Signature", value: "sha256=\(signature)")
-                                req.body = .init(data: body)
-                            }
-
-                            try await updateDeliveryState(
-                                db: db,
-                                subscriptionId: subscriptionId,
-                                success: response.status.code >= 200 && response.status.code < 300
-                            )
-                        } catch {
-                            logger.warning("Webhook delivery failed (\(event) -> \(targetUrl)): \(String(describing: error))")
-                            try? await updateDeliveryState(db: db, subscriptionId: subscriptionId, success: false)
-                        }
+                for sub in subscriptions {
+                    // Intentionally fire and forget each one individually so one failure doesnt block others
+                    req.task {
+                        try? await send(payload: payload, to: sub, on: req)
                     }
                 }
+            } catch {
+                req.logger.error("Failed to query webhook subscriptions for event \(eventType): \(error)")
             }
         }
     }
 
-    private func updateDeliveryState(db: Database, subscriptionId: UUID, success: Bool) async throws {
-        guard let sub = try await WebhookSubscriptionModel.find(subscriptionId, on: db) else { return }
-
-        if success {
-            if sub.failureCount != 0 {
-                sub.failureCount = 0
-            }
-        } else {
-            sub.failureCount += 1
-            if sub.failureCount >= 10 {
-                sub.isActive = false
-            }
+    private static func send<T: Encodable>(payload: WebhookPayload<T>, to sub: WebhookSubscriptionModel, on req: Request) async throws {
+        // Enforce Circuit Breaker
+        if sub.failureCount >= 10 {
+            sub.isActive = false
+            req.logger.warning("Webhook \(sub.id?.uuidString ?? "") circuit breaker tripped. Deactivating.")
+            try await sub.save(on: req.db)
+            return
         }
 
-        try await sub.save(on: db)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        
+        let payloadData = try encoder.encode(payload)
+        
+        // Generate HMAC-SHA256 signature
+        let secretKey = SymmetricKey(data: Data(sub.secret.utf8))
+        let signature = HMAC<SHA256>.authenticationCode(for: payloadData, using: secretKey)
+        let signatureString = Data(signature).hex
+
+        do {
+            let response = try await req.client.post(URI(string: sub.targetUrl)) { request in
+                request.headers.contentType = .json
+                request.headers.add(name: "X-Webhook-Signature", value: "sha256=\(signatureString)")
+                request.headers.add(name: "X-Webhook-EventID", value: payload.eventId.uuidString)
+                request.body = .init(data: payloadData)
+            }
+
+            if response.status.code >= 200 && response.status.code < 300 {
+                // Success: reset failure count
+                if sub.failureCount > 0 {
+                    sub.failureCount = 0
+                    try await sub.save(on: req.db)
+                }
+            } else {
+                req.logger.error("Webhook \(sub.targetUrl) returned \(response.status.code)")
+                sub.failureCount += 1
+                try await sub.save(on: req.db)
+            }
+        } catch {
+            req.logger.error("Webhook \(sub.targetUrl) delivery failed: \(error)")
+            sub.failureCount += 1
+            try await sub.save(on: req.db)
+        }
     }
 }
 
+// Wrapper format for all outgoing webhooks
+struct WebhookPayload<T: Encodable>: Encodable {
+    let eventId: UUID
+    let eventType: String
+    let timestamp: Date
+    let orgId: UUID
+    let data: T
+}

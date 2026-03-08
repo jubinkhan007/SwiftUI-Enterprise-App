@@ -1,390 +1,281 @@
 import SwiftUI
-import Domain
-import SharedModels
 import DesignSystem
-#if os(iOS)
-import UIKit
-#elseif os(macOS)
-import AppKit
-#endif
-
-@MainActor
-final class IntegrationSettingsViewModel: ObservableObject {
-    @Published var apiKeys: [APIKeyDTO] = []
-    @Published var webhooks: [WebhookSubscriptionDTO] = []
-    @Published var isLoading = false
-    @Published var error: Error?
-
-    @Published var createdAPIKey: CreateAPIKeyResponse?
-
-    private let integrationRepository: IntegrationRepositoryProtocol
-
-    init(integrationRepository: IntegrationRepositoryProtocol) {
-        self.integrationRepository = integrationRepository
-    }
-
-    func refresh() async {
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
-        error = nil
-
-        do {
-            async let keys = integrationRepository.listAPIKeys()
-            async let hooks = integrationRepository.listWebhooks()
-            apiKeys = try await keys
-            webhooks = try await hooks
-        } catch {
-            self.error = error
-        }
-    }
-
-    func createAPIKey(name: String, scopes: [APIKeyScope]) async {
-        do {
-            let response = try await integrationRepository.createAPIKey(
-                payload: CreateAPIKeyRequest(name: name, scopes: scopes)
-            )
-            createdAPIKey = response
-            await refresh()
-        } catch {
-            self.error = error
-        }
-    }
-
-    func revokeAPIKey(id: UUID) async {
-        do {
-            try await integrationRepository.revokeAPIKey(id: id)
-            await refresh()
-        } catch {
-            self.error = error
-        }
-    }
-
-    func createWebhook(url: String, events: [String], secret: String?) async {
-        do {
-            _ = try await integrationRepository.createWebhook(
-                payload: CreateWebhookSubscriptionRequest(targetUrl: url, events: events, secret: secret)
-            )
-            await refresh()
-        } catch {
-            self.error = error
-        }
-    }
-
-    func deleteWebhook(id: UUID) async {
-        do {
-            try await integrationRepository.deleteWebhook(id: id)
-            await refresh()
-        } catch {
-            self.error = error
-        }
-    }
-
-    func testWebhook(id: UUID) async -> WebhookTestResponse? {
-        do {
-            return try await integrationRepository.testWebhook(id: id)
-        } catch {
-            self.error = error
-            return nil
-        }
-    }
-}
+import SharedModels
+import AppData
+import Domain
 
 public struct IntegrationSettingsView: View {
     @StateObject private var viewModel: IntegrationSettingsViewModel
-
-    @State private var showingCreateKey = false
+    
+    @State private var showingCreateKeyPopover = false
+    @State private var newKeyName = ""
+    
     @State private var showingCreateWebhook = false
-    @State private var showErrorAlert = false
-
-    public init(integrationRepository: IntegrationRepositoryProtocol) {
-        _viewModel = StateObject(wrappedValue: IntegrationSettingsViewModel(integrationRepository: integrationRepository))
+    @State private var newWebhookUrl = ""
+    @State private var newWebhookEvents: Set<String> = ["task.created", "task.updated"]
+    
+    let availableEvents = [
+        "task.created", "task.updated", "task.deleted",
+        "comment.created", "sprint.closed"
+    ]
+    
+    public init(integrationRepository repository: IntegrationRepositoryProtocol) {
+        _viewModel = StateObject(wrappedValue: IntegrationSettingsViewModel(repository: repository))
     }
-
+    
     public var body: some View {
-        List {
-            apiKeysSection
-            webhooksSection
+        ScrollView {
+            VStack(spacing: 32) {
+                if let error = viewModel.errorMessage {
+                    AppBanner(message: error, style: .error)
+                }
+                
+                apiKeysSection
+                
+                Divider()
+                
+                webhooksSection
+            }
+            .padding(24)
         }
         .navigationTitle("Integrations")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button("New API Key") { showingCreateKey = true }
-                    Button("New Webhook") { showingCreateWebhook = true }
-                } label: {
-                    Image(systemName: "plus")
+        .task {
+            await viewModel.loadData()
+        }
+        .sheet(item: Binding(
+            get: { viewModel.showAPIKeySecret.map { IdentifiableString(value: $0) } },
+            set: { _ in viewModel.showAPIKeySecret = nil }
+        )) { wrapper in
+            NavigationStack {
+                VStack(spacing: 24) {
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 48))
+                        .foregroundColor(AppColors.primary)
+                    
+                    Text("Your New API Key")
+                        .font(AppTypography.h2)
+                    
+                    Text("Copy this key now. You won't be able to see it again.")
+                        .font(AppTypography.body)
+                        .foregroundColor(AppColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                    
+                    HStack {
+                        Text(wrapper.value)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        
+                        Spacer()
+                        
+                        Button {
+                            UIPasteboard.general.string = wrapper.value
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                    }
+                    .padding()
+                    .background(AppColors.surfaceBackground)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(AppColors.border, lineWidth: 1)
+                        )
+                    
+                    Button("Done") {
+                        viewModel.showAPIKeySecret = nil
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
                 }
-            }
-        }
-        .task { await viewModel.refresh() }
-        .refreshable { await viewModel.refresh() }
-        .onChange(of: viewModel.error != nil) { _, hasError in
-            showErrorAlert = hasError
-        }
-        .alert("Error", isPresented: $showErrorAlert) {
-            Button("OK", role: .cancel) { viewModel.error = nil }
-        } message: {
-            Text(viewModel.error?.localizedDescription ?? "Something went wrong.")
-        }
-        .sheet(isPresented: $showingCreateKey) {
-            CreateAPIKeySheet { name, scopes in
-                Task { await viewModel.createAPIKey(name: name, scopes: scopes) }
-                showingCreateKey = false
-            }
-        }
-        .sheet(isPresented: $showingCreateWebhook) {
-            CreateWebhookSheet { url, events, secret in
-                Task { await viewModel.createWebhook(url: url, events: events, secret: secret) }
-                showingCreateWebhook = false
-            }
-        }
-        .sheet(item: $viewModel.createdAPIKey) { created in
-            CreatedAPIKeySheet(created: created) {
-                viewModel.createdAPIKey = nil
+                .padding(32)
+                .presentationDetents([.height(350)])
             }
         }
     }
-
+    
     private var apiKeysSection: some View {
-        Section {
-            if viewModel.apiKeys.isEmpty {
-                Text("No API keys yet.")
-                    .foregroundColor(AppColors.textSecondary)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Personal API Keys")
+                        .font(AppTypography.h3)
+                    Text("Generate keys for scripted access to your workspace.")
+                        .font(AppTypography.caption1)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+                Spacer()
+                Button("Generate Key") {
+                    showingCreateKeyPopover = true
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .popover(isPresented: $showingCreateKeyPopover) {
+                    VStack(spacing: 16) {
+                        Text("New API Key")
+                            .font(AppTypography.h4)
+                        TextField("e.g. Zapier Integration", text: $newKeyName)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Create") {
+                            Task {
+                                await viewModel.createAPIKey(name: newKeyName)
+                                newKeyName = ""
+                                showingCreateKeyPopover = false
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(newKeyName.isEmpty)
+                    }
+                    .padding()
+                    .frame(width: 300)
+                    .presentationCompactAdaptation(.popover)
+                }
+            }
+            
+            if viewModel.apiKeys.isEmpty && !viewModel.isLoading {
+                Text("No active API keys.")
+                    .font(AppTypography.body)
+                    .foregroundColor(AppColors.textTertiary)
+                    .padding(.vertical, 8)
             } else {
                 ForEach(viewModel.apiKeys) { key in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(key.name)
-                            .foregroundColor(AppColors.textPrimary)
-                        Text("Prefix: \(key.keyPrefix) • Scopes: \(key.scopes.map(\.rawValue).joined(separator: ", "))")
-                            .foregroundColor(AppColors.textSecondary)
-                            .font(.caption)
-                    }
-                    .swipeActions {
-                        Button(role: .destructive) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(key.name)
+                                .font(AppTypography.body.weight(.semibold))
+                            Text("\(key.keyPrefix)••••••••")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+                        Spacer()
+                        Button("Revoke", role: .destructive) {
                             Task { await viewModel.revokeAPIKey(id: key.id) }
-                        } label: {
-                            Label("Revoke", systemImage: "trash")
                         }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
                     }
-                }
-            }
-        } header: {
-            Text("API Keys")
-        } footer: {
-            Text("Keys are shown once on creation. Store them securely.")
-        }
-    }
-
-    private var webhooksSection: some View {
-        Section {
-            let hooks = viewModel.webhooks
-            if hooks.isEmpty {
-                Text("No webhooks yet.")
-                    .foregroundColor(AppColors.textSecondary)
-            } else {
-                ForEach(Array(hooks.enumerated()), id: \.element.id) { _, hook in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(hook.targetUrl)
-                            .foregroundColor(AppColors.textPrimary)
-                            .lineLimit(2)
-                        Text("Events: \(hook.events.joined(separator: ", "))")
-                            .foregroundColor(AppColors.textSecondary)
-                            .font(.caption)
-
-                        HStack(spacing: 12) {
-                            Text(hook.isActive ? "Active" : "Paused")
-                                .font(.caption2)
-                                .foregroundColor(hook.isActive ? AppColors.statusSuccess : AppColors.statusWarning)
-
-                            Text("Failures: \(hook.failureCount)")
-                                .font(.caption2)
-                                .foregroundColor(AppColors.textTertiary)
-
-                            Spacer()
-
-                            Button("Test") {
-                                Task {
-                                    _ = await viewModel.testWebhook(id: hook.id)
-                                }
-                            }
-                            .font(.caption)
-                        }
-                    }
-                    .swipeActions {
-                        Button(role: .destructive) {
-                            Task { await viewModel.deleteWebhook(id: hook.id) }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
-            }
-        } header: {
-            Text("Webhooks")
-        } footer: {
-            Text("Requests include HMAC signature in `X-Webhook-Signature`.")
-        }
-    }
-}
-
-private struct CreateAPIKeySheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String = ""
-    @State private var scopes: Set<APIKeyScope> = [.tasksRead, .tasksWrite]
-
-    let onCreate: (_ name: String, _ scopes: [APIKeyScope]) -> Void
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Details") {
-                    TextField("Name", text: $name)
-                }
-                Section("Scopes") {
-                    scopeToggle(.tasksRead, label: "Tasks: Read")
-                    scopeToggle(.tasksWrite, label: "Tasks: Write")
-                    scopeToggle(.webhooksManage, label: "Webhooks: Manage")
-                    scopeToggle(.apiKeysManage, label: "API Keys: Manage")
-                }
-            }
-            .navigationTitle("New API Key")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        onCreate(name.trimmingCharacters(in: .whitespacesAndNewlines), Array(scopes))
-                    }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || scopes.isEmpty)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func scopeToggle(_ scope: APIKeyScope, label: String) -> some View {
-        Toggle(isOn: Binding(
-            get: { scopes.contains(scope) },
-            set: { isOn in
-                if isOn { scopes.insert(scope) } else { scopes.remove(scope) }
-            }
-        )) {
-            Text(label)
-        }
-    }
-}
-
-private struct CreateWebhookSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var url: String = ""
-    @State private var eventsText: String = "task.created, task.updated, task.deleted"
-    @State private var secret: String = ""
-
-    let onCreate: (_ url: String, _ events: [String], _ secret: String?) -> Void
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Endpoint") {
-                    TextField("Target URL", text: $url)
-                        .platformTextEntry()
-                }
-                Section("Events") {
-                    TextField("Comma-separated events", text: $eventsText)
-                        .platformTextEntry()
-                }
-                Section("Secret (Optional)") {
-                    TextField("Signing secret", text: $secret)
-                        .platformTextEntry()
-                }
-            }
-            .navigationTitle("New Webhook")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        let events = eventsText
-                            .split(separator: ",")
-                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                            .filter { !$0.isEmpty }
-                        let sec = secret.trimmingCharacters(in: .whitespacesAndNewlines)
-                        onCreate(
-                            url.trimmingCharacters(in: .whitespacesAndNewlines),
-                            events,
-                            sec.isEmpty ? nil : sec
-                        )
-                    }
-                    .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
-    }
-}
-
-private struct CreatedAPIKeySheet: View {
-    let created: CreateAPIKeyResponse
-    let onDone: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("API Key Created")
-                    .font(.headline)
-
-                Text("Copy this key now. You won’t be able to see it again.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                Text(created.rawKey)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
                     .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.black.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                Button("Copy") {
-                    Clipboard.copy(created.rawKey)
+                    .background(AppColors.surfaceBackground)
+                    .cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.border, lineWidth: 1))
                 }
-                .buttonStyle(.borderedProminent)
-
-                Spacer()
             }
-            .padding()
-            .navigationTitle("API Key")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { onDone() }
+        }
+    }
+    
+    private var webhooksSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Outbound Webhooks")
+                        .font(AppTypography.h3)
+                    Text("Push events to your servers in real-time.")
+                        .font(AppTypography.caption1)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+                Spacer()
+                Button("Add Endpoint") {
+                    showingCreateWebhook = true
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .popover(isPresented: $showingCreateWebhook) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("New Webhook")
+                            .font(AppTypography.h4)
+                        
+                        TextField("https://your-server.com/webhook", text: $newWebhookUrl)
+                            .textFieldStyle(.roundedBorder)
+                            .keyboardType(.URL)
+                            .autocapitalization(.none)
+                        
+                        Text("Events")
+                            .font(AppTypography.caption1.weight(.semibold))
+                        
+                        ForEach(availableEvents, id: \.self) { event in
+                            Toggle(event, isOn: Binding(
+                                get: { newWebhookEvents.contains(event) },
+                                set: { isOn in
+                                    if isOn { newWebhookEvents.insert(event) }
+                                    else { newWebhookEvents.remove(event) }
+                                }
+                            ))
+                        }
+                        
+                        Button("Create Endpoint") {
+                            Task {
+                                await viewModel.createWebhook(targetUrl: newWebhookUrl, events: Array(newWebhookEvents))
+                                newWebhookUrl = ""
+                                showingCreateWebhook = false
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(newWebhookUrl.isEmpty || newWebhookEvents.isEmpty)
+                    }
+                    .padding()
+                    .frame(width: 320)
+                    .presentationCompactAdaptation(.popover)
+                }
+            }
+            
+            if viewModel.webhooks.isEmpty && !viewModel.isLoading {
+                Text("No webhooks configured.")
+                    .font(AppTypography.body)
+                    .foregroundColor(AppColors.textTertiary)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(viewModel.webhooks) { hook in
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Circle()
+                                .fill(hook.isActive ? Color.green : Color.red)
+                                .frame(width: 8, height: 8)
+                            
+                            Text(hook.targetUrl)
+                                .font(AppTypography.body.weight(.semibold))
+                            
+                            Spacer()
+                            
+                            Menu {
+                                Button("Test Ping") {
+                                    Task { await viewModel.testWebhook(id: hook.id) }
+                                }
+                                Button("Delete", role: .destructive) {
+                                    Task { await viewModel.deleteWebhook(id: hook.id) }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .padding(8)
+                                    .foregroundColor(AppColors.textSecondary)
+                            }
+                        }
+                        
+                        if hook.failureCount > 0 {
+                            Text("\(hook.failureCount) recent delivery failures")
+                                .font(AppTypography.caption1)
+                                .foregroundColor(.red)
+                        }
+                        
+                        HStack {
+                            ForEach(hook.events, id: \.self) { event in
+                                Text(event)
+                                    .font(AppTypography.caption1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(AppColors.brandSecondary)
+                                    .foregroundColor(AppColors.brandPrimary)
+                                    .cornerRadius(4)
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(AppColors.surfaceBackground)
+                    .cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.border, lineWidth: 1))
                 }
             }
         }
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func platformTextEntry() -> some View {
-#if os(iOS)
-        self
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-#else
-        self
-#endif
-    }
-}
-
-private enum Clipboard {
-    static func copy(_ text: String) {
-#if os(iOS)
-        UIPasteboard.general.string = text
-#elseif os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-#endif
-    }
+private struct IdentifiableString: Identifiable {
+    var id: String { value }
+    let value: String
 }

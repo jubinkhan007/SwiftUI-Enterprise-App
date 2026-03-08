@@ -1,8 +1,9 @@
 import Fluent
 import Vapor
-import SharedModels
+import Foundation
 
-final class WebhookSubscriptionModel: Model, Content, @unchecked Sendable {
+/// Represents a registered Webhook endpoint that listens for internal events (e.g. task.created).
+final class WebhookSubscriptionModel: Model, @unchecked Sendable {
     static let schema = "webhook_subscriptions"
 
     @ID(key: .id)
@@ -29,6 +30,9 @@ final class WebhookSubscriptionModel: Model, Content, @unchecked Sendable {
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
+    @Timestamp(key: "updated_at", on: .update)
+    var updatedAt: Date?
+
     init() {}
 
     init(
@@ -36,30 +40,14 @@ final class WebhookSubscriptionModel: Model, Content, @unchecked Sendable {
         orgId: UUID,
         targetUrl: String,
         secret: String,
-        events: [String],
-        isActive: Bool = true,
-        failureCount: Int = 0
+        events: [String]
     ) {
         self.id = id
         self.$organization.id = orgId
         self.targetUrl = targetUrl
         self.secret = secret
         self.events = events
-        self.isActive = isActive
-        self.failureCount = failureCount
-    }
-
-    func toDTO() -> WebhookSubscriptionDTO {
-        WebhookSubscriptionDTO(
-            id: id ?? UUID(),
-            orgId: $organization.id,
-            targetUrl: targetUrl,
-            secret: secret,
-            events: events,
-            isActive: isActive,
-            failureCount: failureCount,
-            createdAt: createdAt
-        )
+        self.isActive = true
+        self.failureCount = 0
     }
 }
-

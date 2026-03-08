@@ -266,7 +266,7 @@ struct TaskController: RouteCollection {
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
         let dto = dtos[0]
-        WebhookDispatcher(app: req.application).dispatch(event: "task.updated", orgId: ctx.orgId, data: dto)
+        WebhookDispatcher.dispatchEvent(orgId: ctx.orgId, eventType: "task.updated", data: dto, on: req)
         return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
@@ -516,7 +516,7 @@ struct TaskController: RouteCollection {
         }
 
         let dto = task.toDTO()
-        WebhookDispatcher(app: req.application).dispatch(event: "task.created", orgId: ctx.orgId, data: dto)
+        WebhookDispatcher.dispatchEvent(orgId: ctx.orgId, eventType: "task.created", data: dto, on: req)
         return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
@@ -822,7 +822,7 @@ struct TaskController: RouteCollection {
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
         let dto = dtos[0]
-        WebhookDispatcher(app: req.application).dispatch(event: "task.updated", orgId: ctx.orgId, data: dto)
+        WebhookDispatcher.dispatchEvent(orgId: ctx.orgId, eventType: "task.updated", data: dto, on: req)
         return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
@@ -1384,7 +1384,7 @@ struct TaskController: RouteCollection {
             }
         }
         struct DeletedTaskPayload: Content { let id: UUID }
-        WebhookDispatcher(app: req.application).dispatch(event: "task.deleted", orgId: ctx.orgId, data: DeletedTaskPayload(id: taskId))
+        WebhookDispatcher.dispatchEvent(orgId: ctx.orgId, eventType: "task.deleted", data: DeletedTaskPayload(id: taskId), on: req)
         return .noContent
     }
 
