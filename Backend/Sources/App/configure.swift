@@ -60,6 +60,10 @@ func configure(_ app: Application) throws {
     // Phase 13: Agile / Jira Features
     app.migrations.add(AddAgileJiraPhase13())
 
+    // Phase 16: Integrations (API keys + webhooks foundation)
+    app.migrations.add(CreateAPIKeys())
+    app.migrations.add(CreateWebhookSubscriptions())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

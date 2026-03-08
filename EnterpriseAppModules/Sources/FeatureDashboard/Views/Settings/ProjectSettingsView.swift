@@ -80,14 +80,16 @@ public struct ProjectSettingsView: View {
     @StateObject private var viewModel: ProjectSettingsViewModel
     @Environment(\.dismiss) private var dismiss
     private let projectId: UUID
+    private let integrationRepository: IntegrationRepositoryProtocol
 
     @State private var showingCreateStatus = false
     @State private var showingCreateRule = false
     @State private var showErrorAlert = false
 
-    public init(projectId: UUID, workflowRepository: WorkflowRepositoryProtocol) {
+    public init(projectId: UUID, workflowRepository: WorkflowRepositoryProtocol, integrationRepository: IntegrationRepositoryProtocol) {
         _viewModel = StateObject(wrappedValue: ProjectSettingsViewModel(projectId: projectId, workflowRepository: workflowRepository))
         self.projectId = projectId
+        self.integrationRepository = integrationRepository
     }
 
     public var body: some View {
@@ -126,6 +128,12 @@ public struct ProjectSettingsView: View {
                                 ReleaseManagementView(projectId: projectId)
                             } label: {
                                 Label("Release Management", systemImage: "shippingbox")
+                            }
+
+                            NavigationLink {
+                                IntegrationSettingsView(integrationRepository: integrationRepository)
+                            } label: {
+                                Label("Integrations", systemImage: "link")
                             }
                         }
                         statusesSection

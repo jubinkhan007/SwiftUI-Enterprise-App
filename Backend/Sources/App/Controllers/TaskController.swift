@@ -266,6 +266,7 @@ struct TaskController: RouteCollection {
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
         let dto = dtos[0]
+        WebhookDispatcher(app: req.application).dispatch(event: "task.updated", orgId: ctx.orgId, data: dto)
         return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
@@ -515,6 +516,7 @@ struct TaskController: RouteCollection {
         }
 
         let dto = task.toDTO()
+        WebhookDispatcher(app: req.application).dispatch(event: "task.created", orgId: ctx.orgId, data: dto)
         return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
@@ -820,6 +822,7 @@ struct TaskController: RouteCollection {
 
         let dtos = try await withSubtaskCounts(tasks: [task], db: req.db)
         let dto = dtos[0]
+        WebhookDispatcher(app: req.application).dispatch(event: "task.updated", orgId: ctx.orgId, data: dto)
         return try response(req: req, status: .ok, etag: Self.makeETag(version: dto.version), body: .success(dto))
     }
 
@@ -1365,6 +1368,7 @@ struct TaskController: RouteCollection {
             .first() else {
             throw Abort(.notFound, reason: "Task not found in this organization.")
         }
+        let taskId = try task.requireID()
         let parentIdSnapshot = task.$parent.id
         try await req.db.transaction { db in
             try await AuditLogModel.log(
@@ -1379,6 +1383,8 @@ struct TaskController: RouteCollection {
                 try? await EpicRollupService.recomputeEpic(epicId: parentId, db: db)
             }
         }
+        struct DeletedTaskPayload: Content { let id: UUID }
+        WebhookDispatcher(app: req.application).dispatch(event: "task.deleted", orgId: ctx.orgId, data: DeletedTaskPayload(id: taskId))
         return .noContent
     }
 

@@ -60,6 +60,7 @@ struct AuthenticatedRootView: View {
     let authManager: AppData.AuthManager
     let selectedOrg: OrganizationDTO
     let viewModel: DashboardViewModel
+    let integrationRepository: IntegrationRepositoryProtocol
     @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
     @StateObject private var syncManager: SyncEngineManager
@@ -92,6 +93,7 @@ struct AuthenticatedRootView: View {
         let workflowRepo = WorkflowRepository(apiClient: apiClient)
         let attachmentRepo = AttachmentRepository(apiClient: apiClient)
         let analyticsRepo = AnalyticsRepository(apiClient: apiClient)
+        let integrationRepo = IntegrationRepository(apiClient: apiClient)
         
         self.viewModel = DashboardViewModel(
             taskRepository: taskRepository,
@@ -101,6 +103,7 @@ struct AuthenticatedRootView: View {
             attachmentRepository: attachmentRepo,
             analyticsRepository: analyticsRepo
         )
+        self.integrationRepository = integrationRepo
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
         self._syncManager = StateObject(wrappedValue: SyncEngineManager(engine: syncEngine, operationStore: operationStore, taskLocalStore: localStore))
@@ -190,7 +193,7 @@ struct AuthenticatedRootView: View {
                     .presentationDetents([.medium, .large])
                 }
                 .sheet(item: $projectSettingsSheet) { item in
-                    ProjectSettingsView(projectId: item.id, workflowRepository: viewModel.workflowRepository)
+                    ProjectSettingsView(projectId: item.id, workflowRepository: viewModel.workflowRepository, integrationRepository: integrationRepository)
                 }
             }
         }

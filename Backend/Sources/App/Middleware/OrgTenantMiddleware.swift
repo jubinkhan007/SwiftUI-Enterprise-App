@@ -7,22 +7,28 @@ import Vapor
 /// in `Request.storage` for downstream handlers.
 struct OrgTenantMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
-        // Extract X-Org-Id header
-        guard let orgIdString = request.headers.first(name: "X-Org-Id"),
-              let orgId = UUID(uuidString: orgIdString) else {
-            throw Abort(.badRequest, reason: "Missing or invalid X-Org-Id header.")
-        }
+        let auth = try request.authContext
 
-        // Get the authenticated user
-        let authPayload = try request.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized, reason: "Invalid user token.")
+        let headerOrgId: UUID? = {
+            guard let raw = request.headers.first(name: "X-Org-Id") else { return nil }
+            return UUID(uuidString: raw)
+        }()
+
+        let resolvedOrgId: UUID
+        if let headerOrgId, let authOrgId = auth.orgId, headerOrgId != authOrgId {
+            throw Abort(.badRequest, reason: "X-Org-Id does not match API key organization.")
+        } else if let headerOrgId {
+            resolvedOrgId = headerOrgId
+        } else if let authOrgId = auth.orgId {
+            resolvedOrgId = authOrgId
+        } else {
+            throw Abort(.badRequest, reason: "Missing X-Org-Id header.")
         }
 
         // Verify user is a member of this organization
         guard let membership = try await OrganizationMemberModel.query(on: request.db)
-            .filter(\.$organization.$id == orgId)
-            .filter(\.$user.$id == userId)
+            .filter(\.$organization.$id == resolvedOrgId)
+            .filter(\.$user.$id == auth.userId)
             .first()
         else {
             throw Abort(.forbidden, reason: "You do not have access to this workspace.")
@@ -30,8 +36,8 @@ struct OrgTenantMiddleware: AsyncMiddleware {
 
         // Store the resolved context for downstream use
         request.storage[OrgContextKey.self] = OrgContext(
-            orgId: orgId,
-            userId: userId,
+            orgId: resolvedOrgId,
+            userId: auth.userId,
             role: membership.role,
             permissions: PermissionSet.defaultPermissions(for: membership.role)
         )

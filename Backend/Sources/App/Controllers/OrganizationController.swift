@@ -36,10 +36,7 @@ struct OrganizationController: RouteCollection {
     /// Returns the current user's profile, organizations, and (optionally) permissions for a specific org.
     @Sendable
     func me(req: Request) async throws -> APIResponse<MeResponse> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized)
-        }
+        let userId = try req.authContext.userId
 
         guard let user = try await UserModel.find(userId, on: req.db) else {
             throw Abort(.notFound, reason: "User not found.")
@@ -89,10 +86,7 @@ struct OrganizationController: RouteCollection {
     /// is not yet a member of the invited org.
     @Sendable
     func myInvites(req: Request) async throws -> APIResponse<[PendingInviteDTO]> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized)
-        }
+        let userId = try req.authContext.userId
 
         guard let user = try await UserModel.find(userId, on: req.db) else {
             throw Abort(.notFound, reason: "User not found.")
@@ -142,10 +136,7 @@ struct OrganizationController: RouteCollection {
 
     @Sendable
     func create(req: Request) async throws -> APIResponse<OrganizationDTO> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized)
-        }
+        let userId = try req.authContext.userId
 
         let payload = try req.content.decode(CreateOrganizationRequest.self)
 
@@ -204,10 +195,7 @@ struct OrganizationController: RouteCollection {
 
     @Sendable
     func listMyOrgs(req: Request) async throws -> APIResponse<[OrganizationDTO]> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized)
-        }
+        let userId = try req.authContext.userId
 
         let memberships = try await OrganizationMemberModel.query(on: req.db)
             .filter(\.$user.$id == userId)
@@ -340,10 +328,7 @@ struct OrganizationController: RouteCollection {
 
     @Sendable
     func acceptInvite(req: Request) async throws -> APIResponse<OrganizationMemberDTO> {
-        let authPayload = try req.authPayload
-        guard let userId = authPayload.userId else {
-            throw Abort(.unauthorized)
-        }
+        let userId = try req.authContext.userId
 
         guard let invite = try await OrganizationInviteModel.find(req.parameters.get("inviteID"), on: req.db) else {
             throw Abort(.notFound, reason: "Invite not found.")

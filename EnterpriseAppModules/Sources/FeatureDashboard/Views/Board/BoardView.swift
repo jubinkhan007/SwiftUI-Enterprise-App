@@ -47,7 +47,7 @@ public struct BoardView: View {
                     Text("Assignee").tag(BoardGroupBy.assignee)
                 }
                 .pickerStyle(.menu)
-                .onChange(of: viewModel.config.groupBy) { _ in
+                .onChange(of: viewModel.config.groupBy) { _, _ in
                     viewModel.updateTasks(tasks)
                 }
                 
@@ -84,10 +84,10 @@ public struct BoardView: View {
             viewModel.updateWorkflowStatuses(workflowStatuses)
             viewModel.updateTasks(tasks)
         }
-        .onChange(of: tasks) { newTasks in
+        .onChange(of: tasks) { _, newTasks in
             viewModel.updateTasks(newTasks)
         }
-        .onChange(of: workflowStatuses) { newValue in
+        .onChange(of: workflowStatuses) { _, newValue in
             viewModel.updateWorkflowStatuses(newValue)
         }
     }

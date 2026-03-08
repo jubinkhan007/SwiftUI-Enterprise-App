@@ -33,6 +33,16 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         }
 
         request.storage[UserPayloadKey.self] = payload
+        if let userId = payload.userId {
+            request.storage[AuthContextKey.self] = AuthContext(
+                method: .jwt,
+                userId: userId,
+                role: payload.role,
+                orgId: nil,
+                apiKeyId: nil,
+                apiKeyScopes: []
+            )
+        }
         return try await next.respond(to: request)
     }
 }

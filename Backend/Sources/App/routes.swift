@@ -17,7 +17,7 @@ func routes(_ app: Application) throws {
     try api.register(collection: authController)
 
     // Setup authenticated API routes
-    let authenticatedAPI = api.grouped(JWTAuthMiddleware())
+    let authenticatedAPI = api.grouped(AnyAuthMiddleware())
     // Org-scoped routes (require X-Org-Id header)
     let orgScopedAPI = authenticatedAPI.grouped(OrgTenantMiddleware())
 
@@ -38,6 +38,12 @@ func routes(_ app: Application) throws {
 
     let attachmentController = AttachmentController()
     try orgScopedAPI.register(collection: attachmentController)
+
+    // Phase 16: Integrations
+    let apiKeyController = APIKeyController()
+    try orgScopedAPI.register(collection: apiKeyController)
+    let webhookController = WebhookController()
+    try orgScopedAPI.register(collection: webhookController)
 
     let notificationController = NotificationController()
     try orgScopedAPI.register(collection: notificationController)

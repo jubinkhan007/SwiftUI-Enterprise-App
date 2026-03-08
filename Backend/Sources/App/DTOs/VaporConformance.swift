@@ -20,6 +20,7 @@ extension CreateTaskRequest: @retroactive Content {}
 extension UpdateTaskRequest: @retroactive Content {}
 extension RegisterRequest: @retroactive Content {}
 extension LoginRequest: @retroactive Content {}
+extension EmptyResponse: @retroactive Content {}
 
 // Organization types
 extension SpaceDTO: @retroactive Content {}
@@ -87,3 +88,11 @@ extension ReleaseDTO: @retroactive Content {}
 extension CreateReleaseRequest: @retroactive Content {}
 extension ReleaseProgressDTO: @retroactive Content {}
 extension FinalizeReleaseRequest: @retroactive Vapor.Content {}
+
+// Phase 16: Integrations
+extension APIKeyDTO: @retroactive Content {}
+extension CreateAPIKeyRequest: @retroactive Content {}
+extension CreateAPIKeyResponse: @retroactive Content {}
+extension WebhookSubscriptionDTO: @retroactive Content {}
+extension CreateWebhookSubscriptionRequest: @retroactive Content {}
+extension WebhookTestResponse: @retroactive Content {}
