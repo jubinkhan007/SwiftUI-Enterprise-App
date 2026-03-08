@@ -1,5 +1,5 @@
 import Foundation
-import CryptoKit
+import Crypto
 
 enum WebhookSigning {
     private static let timestampFormatter: ISO8601DateFormatter = {
@@ -31,4 +31,3 @@ enum WebhookSigning {
         return result
     }
 }
-

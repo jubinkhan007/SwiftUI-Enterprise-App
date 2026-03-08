@@ -4,95 +4,94 @@ import Vapor
 // MARK: - Vapor Content Conformance
 
 /// Make SharedModels DTOs usable as Vapor response bodies.
-/// Using @retroactive since these types are defined in SharedModels.
-extension APIResponse: @retroactive AsyncRequestDecodable where T: Content {}
-extension APIResponse: @retroactive AsyncResponseEncodable where T: Content {}
-extension APIResponse: @retroactive RequestDecodable where T: Content {}
-extension APIResponse: @retroactive ResponseEncodable where T: Content {}
-extension APIResponse: @retroactive Content where T: Content {}
+extension APIResponse: AsyncRequestDecodable where T: Content {}
+extension APIResponse: AsyncResponseEncodable where T: Content {}
+extension APIResponse: RequestDecodable where T: Content {}
+extension APIResponse: ResponseEncodable where T: Content {}
+extension APIResponse: Content where T: Content {}
 
-extension UserDTO: @retroactive Content {}
-extension TaskItemDTO: @retroactive Content {}
-extension TaskActivityDTO: @retroactive Content {}
-extension AuthResponse: @retroactive Content {}
-extension TokenRefreshResponse: @retroactive Content {}
-extension CreateTaskRequest: @retroactive Content {}
-extension UpdateTaskRequest: @retroactive Content {}
-extension RegisterRequest: @retroactive Content {}
-extension LoginRequest: @retroactive Content {}
-extension EmptyResponse: @retroactive Content {}
+extension UserDTO: Content {}
+extension TaskItemDTO: Content {}
+extension TaskActivityDTO: Content {}
+extension AuthResponse: Content {}
+extension TokenRefreshResponse: Content {}
+extension CreateTaskRequest: Content {}
+extension UpdateTaskRequest: Content {}
+extension RegisterRequest: Content {}
+extension LoginRequest: Content {}
+extension EmptyResponse: Content {}
 
 // Organization types
-extension SpaceDTO: @retroactive Content {}
-extension ProjectDTO: @retroactive Content {}
-extension TaskListDTO: @retroactive Content {}
-extension HierarchyTreeDTO: @retroactive Content {}
-extension HierarchyTreeDTO.SpaceNode: @retroactive Content {}
-extension HierarchyTreeDTO.ProjectNode: @retroactive Content {}
-extension OrganizationDTO: @retroactive Content {}
-extension OrganizationMemberDTO: @retroactive Content {}
-extension OrganizationInviteDTO: @retroactive Content {}
-extension PendingInviteDTO: @retroactive Content {}
-extension MeResponse: @retroactive Content {}
-extension CreateOrganizationRequest: @retroactive Content {}
-extension CreateInviteRequest: @retroactive Content {}
-extension UpdateMemberRoleRequest: @retroactive Content {}
-extension AuditLogDTO: @retroactive Content {}
+extension SpaceDTO: Content {}
+extension ProjectDTO: Content {}
+extension TaskListDTO: Content {}
+extension HierarchyTreeDTO: Content {}
+extension HierarchyTreeDTO.SpaceNode: Content {}
+extension HierarchyTreeDTO.ProjectNode: Content {}
+extension OrganizationDTO: Content {}
+extension OrganizationMemberDTO: Content {}
+extension OrganizationInviteDTO: Content {}
+extension PendingInviteDTO: Content {}
+extension MeResponse: Content {}
+extension CreateOrganizationRequest: Content {}
+extension CreateInviteRequest: Content {}
+extension UpdateMemberRoleRequest: Content {}
+extension AuditLogDTO: Content {}
 
 // Phase 8 types
-extension TaskRelationDTO: @retroactive Content {}
-extension ChecklistItemDTO: @retroactive Content {}
-extension CreateRelationRequest: @retroactive Content {}
-extension CreateChecklistItemRequest: @retroactive Content {}
-extension UpdateChecklistItemRequest: @retroactive Content {}
-extension ReorderChecklistRequest: @retroactive Content {}
+extension TaskRelationDTO: Content {}
+extension ChecklistItemDTO: Content {}
+extension CreateRelationRequest: Content {}
+extension CreateChecklistItemRequest: Content {}
+extension UpdateChecklistItemRequest: Content {}
+extension ReorderChecklistRequest: Content {}
 
 // View Config types
-extension ViewConfigDTO: @retroactive Content {}
-extension CreateViewConfigRequest: @retroactive Content {}
-extension UpdateViewConfigRequest: @retroactive Content {}
+extension ViewConfigDTO: Content {}
+extension CreateViewConfigRequest: Content {}
+extension UpdateViewConfigRequest: Content {}
 
 // Calendar / Timeline types
-extension TimelineResponseDTO: @retroactive Content {}
+extension TimelineResponseDTO: Content {}
 
 // Phase 10: Workflow & Automation
-extension WorkflowBundleDTO: @retroactive Content {}
-extension WorkflowStatusDTO: @retroactive Content {}
-extension CreateWorkflowStatusRequest: @retroactive Content {}
-extension UpdateWorkflowStatusRequest: @retroactive Content {}
-extension AutomationRuleDTO: @retroactive Content {}
-extension CreateAutomationRuleRequest: @retroactive Content {}
-extension UpdateAutomationRuleRequest: @retroactive Content {}
+extension WorkflowBundleDTO: Content {}
+extension WorkflowStatusDTO: Content {}
+extension CreateWorkflowStatusRequest: Content {}
+extension UpdateWorkflowStatusRequest: Content {}
+extension AutomationRuleDTO: Content {}
+extension CreateAutomationRuleRequest: Content {}
+extension UpdateAutomationRuleRequest: Content {}
 
 // Phase 11: Collaboration
-extension CommentDTO: @retroactive Content {}
-extension AttachmentDTO: @retroactive Content {}
-extension NotificationDTO: @retroactive Content {}
-extension CreateCommentRequest: @retroactive Content {}
+extension CommentDTO: Content {}
+extension AttachmentDTO: Content {}
+extension NotificationDTO: Content {}
+extension CreateCommentRequest: Content {}
 
 // Phase 12: Analytics
-extension SprintDTO: @retroactive Content {}
-extension CreateSprintRequest: @retroactive Content {}
-extension ProjectDailyStatsDTO: @retroactive Content {}
-extension WeeklyThroughputPointDTO: @retroactive Content {}
-extension SprintVelocityPointDTO: @retroactive Content {}
-extension AnalyticsReportPayloadDTO: @retroactive Content {}
-extension AnalyticsResponseDTO: @retroactive AsyncRequestDecodable where T: Content {}
-extension AnalyticsResponseDTO: @retroactive AsyncResponseEncodable where T: Content {}
-extension AnalyticsResponseDTO: @retroactive RequestDecodable where T: Content {}
-extension AnalyticsResponseDTO: @retroactive ResponseEncodable where T: Content {}
-extension AnalyticsResponseDTO: @retroactive Content where T: Content {}
+extension SprintDTO: Content {}
+extension CreateSprintRequest: Content {}
+extension ProjectDailyStatsDTO: Content {}
+extension WeeklyThroughputPointDTO: Content {}
+extension SprintVelocityPointDTO: Content {}
+extension AnalyticsReportPayloadDTO: Content {}
+extension AnalyticsResponseDTO: AsyncRequestDecodable where T: Content {}
+extension AnalyticsResponseDTO: AsyncResponseEncodable where T: Content {}
+extension AnalyticsResponseDTO: RequestDecodable where T: Content {}
+extension AnalyticsResponseDTO: ResponseEncodable where T: Content {}
+extension AnalyticsResponseDTO: Content where T: Content {}
 
 // Phase 13: Releases
-extension ReleaseDTO: @retroactive Content {}
-extension CreateReleaseRequest: @retroactive Content {}
-extension ReleaseProgressDTO: @retroactive Content {}
-extension FinalizeReleaseRequest: @retroactive Vapor.Content {}
+extension ReleaseDTO: Content {}
+extension CreateReleaseRequest: Content {}
+extension ReleaseProgressDTO: Content {}
+extension FinalizeReleaseRequest: Content {}
 
 // Phase 16: Integrations
-extension APIKeyDTO: @retroactive Content {}
-extension CreateAPIKeyRequest: @retroactive Content {}
-extension CreateAPIKeyResponse: @retroactive Content {}
-extension WebhookSubscriptionDTO: @retroactive Content {}
-extension CreateWebhookSubscriptionRequest: @retroactive Content {}
-extension WebhookTestResponse: @retroactive Content {}
+extension APIKeyDTO: Content {}
+extension CreateAPIKeyRequest: Content {}
+extension CreateAPIKeyResponse: Content {}
+extension WebhookSubscriptionDTO: Content {}
+extension CreateWebhookSubscriptionRequest: Content {}
+extension WebhookTestResponse: Content {}
