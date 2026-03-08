@@ -661,7 +661,7 @@ struct ActivityRow: View {
                 .frame(width: 30)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("User \(activity.userId.uuidString.prefix(4))") // Mocking user string
+                Text("User \(String(activity.userId.uuidString.prefix(4)))") // Mocking user string
                     .appFont(AppTypography.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(AppColors.textPrimary)
