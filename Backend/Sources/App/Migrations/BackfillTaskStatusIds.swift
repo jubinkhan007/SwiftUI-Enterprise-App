@@ -1,5 +1,7 @@
 import Fluent
+import FluentSQL
 import SharedModels
+import SQLKit
 import Vapor
 
 /// Step 2: Create standard per-project statuses and backfill `task_items.status_id` from legacy `status`.
@@ -7,16 +9,16 @@ struct BackfillTaskStatusIds: AsyncMigration {
     func prepare(on database: Database) async throws {
         let logger = database.logger
 
-        let projects = try await ProjectModel.query(on: database).all()
-        if projects.isEmpty {
+        // Important: at this phase, the schema may not yet include all ProjectModel columns (e.g. Phase 13 fields).
+        // Avoid eager-loading `ProjectModel` to keep this migration compatible with SQLite on fresh installs.
+        let projectIds: [UUID] = try await fetchProjectIds(database: database)
+        if projectIds.isEmpty {
             logger.info("No projects found. Skipping status_id backfill.")
             return
         }
 
         // Pre-create standard statuses for each project.
-        for project in projects {
-            guard let projectId = project.id else { continue }
-
+        for projectId in projectIds {
             let existing = try await CustomStatusModel.query(on: database)
                 .filter(\.$project.$id == projectId)
                 .all()
@@ -64,9 +66,7 @@ struct BackfillTaskStatusIds: AsyncMigration {
         }
 
         let tasks = try await TaskItemModel.query(on: database)
-            .with(\.$list) { list in
-                list.with(\.$project)
-            }
+            .with(\.$list)
             .all()
 
         var updated = 0
@@ -126,5 +126,21 @@ struct BackfillTaskStatusIds: AsyncMigration {
                 legacyStatus: legacy.rawValue
             )
         }
+    }
+
+    private func fetchProjectIds(database: Database) async throws -> [UUID] {
+        if let sql = database as? SQLDatabase {
+            struct Row: Decodable { let id: UUID }
+            let rows = try await sql.raw("SELECT id FROM projects").all(decoding: Row.self)
+            return rows.map(\.id)
+        }
+
+        // Fallback: infer projects via task lists (projects without lists are skipped).
+        let lists = try await TaskListModel.query(on: database).all()
+        var unique = Set<UUID>()
+        for list in lists {
+            unique.insert(list.$project.id)
+        }
+        return Array(unique)
     }
 }

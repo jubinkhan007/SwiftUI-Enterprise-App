@@ -48,8 +48,6 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateCustomStatuses())
     app.migrations.add(AddStatusIdToTaskItems())
     app.migrations.add(CreateAutomationTables())
-    app.migrations.add(BackfillTaskStatusIds())
-    app.migrations.add(EnforceStatusIdOnTasks())
 
     // Phase 11: Collaboration
     app.migrations.add(CreateComments())
@@ -63,6 +61,8 @@ func configure(_ app: Application) throws {
 
     // Phase 13: Agile / Jira Features
     app.migrations.add(AddAgileJiraPhase13())
+    app.migrations.add(BackfillTaskStatusIds())
+    app.migrations.add(EnforceStatusIdOnTasks())
 
     // Phase 16: Integrations (API keys + webhooks foundation)
     app.migrations.add(CreateAPIKeys())
