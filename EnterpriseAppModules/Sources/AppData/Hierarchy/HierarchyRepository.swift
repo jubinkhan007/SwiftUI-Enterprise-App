@@ -12,7 +12,7 @@ public final class HierarchyRepository: HierarchyRepositoryProtocol {
     public init(
         apiClient: APIClient,
         localStore: HierarchyLocalStoreProtocol,
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.apiClient = apiClient
         self.localStore = localStore

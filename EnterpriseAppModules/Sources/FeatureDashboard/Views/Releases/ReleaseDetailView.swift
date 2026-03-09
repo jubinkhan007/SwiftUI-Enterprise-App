@@ -17,7 +17,7 @@ struct ReleaseDetailView: View {
     @State private var toast: ToastMessage? = nil
 
     private let apiClient: APIClientProtocol = APIClient()
-    private let apiConfiguration: APIConfiguration = .localVapor
+    private let apiConfiguration: APIConfiguration = .current
 
     var body: some View {
         ZStack {

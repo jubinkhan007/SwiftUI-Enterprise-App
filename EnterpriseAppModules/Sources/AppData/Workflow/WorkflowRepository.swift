@@ -11,7 +11,7 @@ public final class WorkflowRepository: WorkflowRepositoryProtocol {
     public init(
         apiClient: APIClient,
         localStore: ProjectSettingsLocalStoreProtocol = ProjectSettingsLocalStore(),
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.apiClient = apiClient
         self.localStore = localStore

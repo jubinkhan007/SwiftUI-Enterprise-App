@@ -8,7 +8,7 @@ public final class TaskActivityRepository: TaskActivityRepositoryProtocol {
     private let apiClient: APIClient
     private let apiConfiguration: APIConfiguration
     
-    public init(apiClient: APIClient, configuration: APIConfiguration = .localVapor) {
+    public init(apiClient: APIClient, configuration: APIConfiguration = .current) {
         self.apiClient = apiClient
         self.apiConfiguration = configuration
     }

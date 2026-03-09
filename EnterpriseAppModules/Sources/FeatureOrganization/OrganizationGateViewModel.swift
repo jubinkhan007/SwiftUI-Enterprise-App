@@ -25,7 +25,7 @@ public final class OrganizationGateViewModel: ObservableObject {
     private let apiClient: APIClientProtocol
     private let configuration: APIConfiguration
 
-    public init(apiClient: APIClientProtocol = APIClient(), configuration: APIConfiguration = .localVapor) {
+    public init(apiClient: APIClientProtocol = APIClient(), configuration: APIConfiguration = .current) {
         self.apiClient = apiClient
         self.configuration = configuration
     }

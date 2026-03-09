@@ -23,10 +23,15 @@ public extension APIConfiguration {
         return APIConfiguration(baseURL: URL(string: "http://127.0.0.1:8080")!)
     }
 
-    /// Auto-selects production on real devices, local on Simulator.
+    /// Uses local Vapor server in Simulator/DEBUG, production otherwise.
     static var current: APIConfiguration {
+        #if DEBUG
+        // In the simulator TARGET_OS_SIMULATOR is 1; on a real device use production.
         #if targetEnvironment(simulator)
         return .localVapor
+        #else
+        return .production
+        #endif
         #else
         return .production
         #endif

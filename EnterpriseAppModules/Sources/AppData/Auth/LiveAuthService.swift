@@ -9,7 +9,7 @@ public struct LiveAuthService: AuthServiceProtocol {
 
     public init(
         apiClient: APIClientProtocol = APIClient(),
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.apiClient = apiClient
         self.configuration = configuration
@@ -43,7 +43,7 @@ public struct LiveAuthService: AuthServiceProtocol {
 public extension LiveAuthService {
     static func mappedErrors(
         apiClient: APIClientProtocol = APIClient(),
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) -> AuthServiceProtocol {
         MappedAuthService(base: LiveAuthService(apiClient: apiClient, configuration: configuration))
     }

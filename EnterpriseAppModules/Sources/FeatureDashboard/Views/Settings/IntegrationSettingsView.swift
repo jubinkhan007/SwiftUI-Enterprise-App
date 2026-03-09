@@ -1,8 +1,10 @@
 import SwiftUI
 import DesignSystem
 import SharedModels
-import AppData
 import Domain
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public struct IntegrationSettingsView: View {
     @StateObject private var viewModel: IntegrationSettingsViewModel
@@ -42,55 +44,18 @@ public struct IntegrationSettingsView: View {
         .task {
             await viewModel.loadData()
         }
-        .sheet(item: Binding(
-            get: { viewModel.showAPIKeySecret.map { IdentifiableString(value: $0) } },
-            set: { _ in viewModel.showAPIKeySecret = nil }
-        )) { wrapper in
-            NavigationStack {
-                VStack(spacing: 24) {
-                    Image(systemName: "key.fill")
-                        .font(.system(size: 48))
-                        .foregroundColor(AppColors.primary)
-                    
-                    Text("Your New API Key")
-                        .font(AppTypography.h2)
-                    
-                    Text("Copy this key now. You won't be able to see it again.")
-                        .font(AppTypography.body)
-                        .foregroundColor(AppColors.textSecondary)
-                        .multilineTextAlignment(.center)
-                    
-                    HStack {
-                        Text(wrapper.value)
-                            .font(.system(.body, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        
-                        Spacer()
-                        
-                        Button {
-                            UIPasteboard.general.string = wrapper.value
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                    }
-                    .padding()
-                    .background(AppColors.surfaceBackground)
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(AppColors.border, lineWidth: 1)
-                        )
-                    
-                    Button("Done") {
-                        viewModel.showAPIKeySecret = nil
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                }
-                .padding(32)
-                .presentationDetents([.height(350)])
+        .sheet(item: apiKeySecretSheetItem) { wrapper in
+            APIKeySecretSheet(secret: wrapper.value) {
+                viewModel.showAPIKeySecret = nil
             }
         }
+    }
+
+    private var apiKeySecretSheetItem: Binding<IdentifiableString?> {
+        Binding(
+            get: { viewModel.showAPIKeySecret.map { IdentifiableString(value: $0) } },
+            set: { _ in viewModel.showAPIKeySecret = nil }
+        )
     }
     
     private var apiKeysSection: some View {
@@ -271,6 +236,60 @@ public struct IntegrationSettingsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.border, lineWidth: 1))
                 }
             }
+        }
+    }
+}
+
+private struct APIKeySecretSheet: View {
+    let secret: String
+    let onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(AppColors.primary)
+
+                Text("Your New API Key")
+                    .font(AppTypography.h2)
+
+                Text("Copy this key now. You won't be able to see it again.")
+                    .font(AppTypography.body)
+                    .foregroundColor(AppColors.textSecondary)
+                    .multilineTextAlignment(.center)
+
+                HStack {
+                    Text(secret)
+                        .font(.system(.body, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Spacer()
+
+                    Button {
+                        #if canImport(UIKit)
+                        UIPasteboard.general.string = secret
+                        #endif
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                }
+                .padding()
+                .background(AppColors.surfaceBackground)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AppColors.border, lineWidth: 1)
+                )
+
+                Button("Done") {
+                    onDone()
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+            .padding(32)
+            .presentationDetents([.height(350)])
         }
     }
 }

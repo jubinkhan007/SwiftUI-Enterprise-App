@@ -152,4 +152,9 @@ public enum AppColors {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+
+    // MARK: Legacy aliases (kept for older feature code)
+    public static let primary = brandPrimary
+    public static let surfaceBackground = surfaceElevated
+    public static let border = borderDefault
 }

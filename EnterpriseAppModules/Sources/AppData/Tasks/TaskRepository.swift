@@ -14,7 +14,7 @@ public final class TaskRepository: TaskRepositoryProtocol {
         apiClient: APIClient,
         localStore: TaskLocalStoreProtocol,
         operationStore: LocalSyncOperationStoreProtocol,
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.apiClient = apiClient
         self.localStore = localStore

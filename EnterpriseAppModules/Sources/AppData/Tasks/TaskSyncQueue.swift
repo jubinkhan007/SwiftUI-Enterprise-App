@@ -24,7 +24,7 @@ public final class TaskSyncQueue: TaskSyncQueueProtocol {
                 do {
                     if localTask.isDeletedLocally {
                         // Attempt DELETE
-                        let endpoint = TaskEndpoint.deleteTask(id: localTask.id, configuration: .localVapor)
+                        let endpoint = TaskEndpoint.deleteTask(id: localTask.id, configuration: .current)
                         _ = try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
                         
                         // Success -> remove from local store entirely
@@ -40,7 +40,7 @@ public final class TaskSyncQueue: TaskSyncQueueProtocol {
                             dueDate: localTask.dueDate,
                             assigneeId: localTask.assigneeId
                         )
-                        let endpoint = TaskEndpoint.createTask(payload: payload, configuration: .localVapor)
+                        let endpoint = TaskEndpoint.createTask(payload: payload, configuration: .current)
                         let response = try await apiClient.request(endpoint, responseType: APIResponse<TaskItemDTO>.self)
                         
                         guard let data = response.data else { throw NetworkError.underlying("No data") }
@@ -62,7 +62,7 @@ public final class TaskSyncQueue: TaskSyncQueueProtocol {
                             assigneeId: localTask.assigneeId,
                             expectedVersion: localTask.version - 1 // Send the pre-mutation version
                         )
-                        let endpoint = TaskEndpoint.updateTask(id: localTask.id, payload: payload, configuration: .localVapor)
+                        let endpoint = TaskEndpoint.updateTask(id: localTask.id, payload: payload, configuration: .current)
                         let response = try await apiClient.request(endpoint, responseType: APIResponse<TaskItemDTO>.self)
                         
                         guard let data = response.data else { throw NetworkError.underlying("No data") }

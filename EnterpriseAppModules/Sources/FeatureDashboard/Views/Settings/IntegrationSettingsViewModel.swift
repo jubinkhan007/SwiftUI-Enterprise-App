@@ -1,6 +1,7 @@
+import Foundation
+import Security
 import SwiftUI
 import SharedModels
-import AppData
 import DesignSystem
 import Domain
 
@@ -24,8 +25,8 @@ public final class IntegrationSettingsViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            async let fetchedKeys = repository.getAPIKeys()
-            async let fetchedWebhooks = repository.getWebhooks()
+            async let fetchedKeys = repository.listAPIKeys()
+            async let fetchedWebhooks = repository.listWebhooks()
             
             let (keys, hooks) = try await (fetchedKeys, fetchedWebhooks)
             self.apiKeys = keys
@@ -39,8 +40,8 @@ public final class IntegrationSettingsViewModel: ObservableObject {
     public func createAPIKey(name: String) async {
         guard !name.isEmpty else { return }
         do {
-            let request = CreateAPIKeyRequest(name: name, scopes: ["all"], expiresAt: nil)
-            let response = try await repository.createAPIKey(request)
+            let request = CreateAPIKeyRequest(name: name, scopes: [.admin], expiresAt: nil)
+            let response = try await repository.createAPIKey(payload: request)
             apiKeys.insert(response.apiKey, at: 0)
             showAPIKeySecret = response.rawKey
         } catch {
@@ -63,9 +64,9 @@ public final class IntegrationSettingsViewModel: ObservableObject {
             return
         }
         do {
-            let secret = String([UInt8].random(count: 32).hex.prefix(32))
-            let request = CreateWebhookRequest(targetUrl: targetUrl, secret: secret, events: events)
-            let subscription = try await repository.createWebhook(request)
+            let secret = Self.randomHexSecret(bytesCount: 16) // 32 hex chars
+            let request = CreateWebhookSubscriptionRequest(targetUrl: targetUrl, events: events, secret: secret)
+            let subscription = try await repository.createWebhook(payload: request)
             webhooks.insert(subscription, at: 0)
         } catch {
             errorMessage = error.localizedDescription
@@ -74,9 +75,9 @@ public final class IntegrationSettingsViewModel: ObservableObject {
     
     public func testWebhook(id: UUID) async {
         do {
-            try await repository.testWebhook(id: id)
-            // Show a temporary success toast ideally, but print for now
-            print("Webhook test ping sent.")
+            let result = try await repository.testWebhook(id: id)
+            // Show a temporary success toast ideally, but print for now.
+            print("Webhook test ping delivered=\(result.delivered) statusCode=\(result.statusCode)")
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -89,5 +90,17 @@ public final class IntegrationSettingsViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private static func randomHexSecret(bytesCount: Int) -> String {
+        precondition(bytesCount > 0)
+        var bytes = [UInt8](repeating: 0, count: bytesCount)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytesCount, &bytes)
+        if status == errSecSuccess {
+            return bytes.map { String(format: "%02x", $0) }.joined()
+        }
+
+        // Fallback: not cryptographically strong, but avoids hard failure in rare simulator edge cases.
+        return UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 }

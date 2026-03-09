@@ -8,7 +8,7 @@ public struct CreateTaskSheet: View {
     @StateObject private var viewModel: CreateTaskViewModel
     private let hierarchy: [HierarchyTreeDTO.SpaceNode]
     private let apiClient: APIClientProtocol = APIClient()
-    private let apiConfiguration: APIConfiguration = .localVapor
+    private let apiConfiguration: APIConfiguration = .current
 
     @State private var orgMembers: [OrganizationMemberDTO] = []
     @State private var isLoadingOrgMembers = false

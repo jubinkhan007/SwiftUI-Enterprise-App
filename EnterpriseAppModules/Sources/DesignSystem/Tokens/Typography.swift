@@ -24,6 +24,12 @@ public enum AppTypography {
     public static let buttonLabelSmall = Font.system(size: 15, weight: .semibold, design: .rounded)
     public static let overline         = Font.system(size: 11, weight: .semibold, design: .default)
     public static let mono             = Font.system(size: 14, weight: .regular,  design: .monospaced)
+
+    // MARK: Legacy aliases (kept for older feature code)
+    public static let h1 = title1
+    public static let h2 = title2
+    public static let h3 = title3
+    public static let h4 = headline
 }
 
 // MARK: - View + Text Helpers

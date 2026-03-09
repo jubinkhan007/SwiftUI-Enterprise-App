@@ -35,7 +35,7 @@ public final class TeamManagementViewModel: ObservableObject {
     public init(
         orgId: UUID,
         apiClient: APIClientProtocol = APIClient(),
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.orgId = orgId
         self.apiClient = apiClient

@@ -3,72 +3,64 @@ import SharedModels
 import AppNetwork
 import Domain
 
-public protocol IntegrationRepositoryProtocol: Sendable {
-    func getAPIKeys() async throws -> [APIKeyDTO]
-    func createAPIKey(_ request: CreateAPIKeyRequest) async throws -> CreateAPIKeyResponse
-    func revokeAPIKey(id: UUID) async throws
-    
-    func getWebhooks() async throws -> [WebhookSubscriptionDTO]
-    func createWebhook(_ request: CreateWebhookRequest) async throws -> WebhookSubscriptionDTO
-    func updateWebhook(id: UUID, request: UpdateWebhookRequest) async throws -> WebhookSubscriptionDTO
-    func deleteWebhook(id: UUID) async throws
-    func testWebhook(id: UUID) async throws
-}
-
-public final class IntegrationRepository: IntegrationRepositoryProtocol {
+public final class IntegrationRepository: Domain.IntegrationRepositoryProtocol {
     private let apiClient: APIClient
+    private let configuration: APIConfiguration
     
-    public init(apiClient: APIClient) {
+    public init(apiClient: APIClient, configuration: APIConfiguration = .current) {
         self.apiClient = apiClient
+        self.configuration = configuration
     }
     
-    public func getAPIKeys() async throws -> [APIKeyDTO] {
-        let endpoint = IntegrationEndpoint.getAPIKeys
+    public func listAPIKeys() async throws -> [APIKeyDTO] {
+        let endpoint = IntegrationEndpoint.getAPIKeys(configuration: configuration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<[APIKeyDTO]>.self)
         guard let data = response.data else { throw NetworkError.underlying("No data") }
         return data
     }
     
-    public func createAPIKey(_ request: CreateAPIKeyRequest) async throws -> CreateAPIKeyResponse {
-        let endpoint = IntegrationEndpoint.createAPIKey(request)
+    public func createAPIKey(payload: CreateAPIKeyRequest) async throws -> CreateAPIKeyResponse {
+        let endpoint = IntegrationEndpoint.createAPIKey(payload, configuration: configuration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<CreateAPIKeyResponse>.self)
         guard let data = response.data else { throw NetworkError.underlying("No data") }
         return data
     }
     
     public func revokeAPIKey(id: UUID) async throws {
-        let endpoint = IntegrationEndpoint.revokeAPIKey(id)
+        let endpoint = IntegrationEndpoint.revokeAPIKey(id, configuration: configuration)
         _ = try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
     }
     
-    public func getWebhooks() async throws -> [WebhookSubscriptionDTO] {
-        let endpoint = IntegrationEndpoint.getWebhooks
+    public func listWebhooks() async throws -> [WebhookSubscriptionDTO] {
+        let endpoint = IntegrationEndpoint.getWebhooks(configuration: configuration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<[WebhookSubscriptionDTO]>.self)
         guard let data = response.data else { throw NetworkError.underlying("No data") }
         return data
     }
     
-    public func createWebhook(_ request: CreateWebhookRequest) async throws -> WebhookSubscriptionDTO {
-        let endpoint = IntegrationEndpoint.createWebhook(request)
+    public func createWebhook(payload: CreateWebhookSubscriptionRequest) async throws -> WebhookSubscriptionDTO {
+        let endpoint = IntegrationEndpoint.createWebhook(payload, configuration: configuration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<WebhookSubscriptionDTO>.self)
         guard let data = response.data else { throw NetworkError.underlying("No data") }
         return data
     }
     
-    public func updateWebhook(id: UUID, request: UpdateWebhookRequest) async throws -> WebhookSubscriptionDTO {
-        let endpoint = IntegrationEndpoint.updateWebhook(id, request)
+    public func updateWebhook(id: UUID, request: UpdateWebhookSubscriptionRequest) async throws -> WebhookSubscriptionDTO {
+        let endpoint = IntegrationEndpoint.updateWebhook(id, request, configuration: configuration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<WebhookSubscriptionDTO>.self)
         guard let data = response.data else { throw NetworkError.underlying("No data") }
         return data
     }
-    
+
     public func deleteWebhook(id: UUID) async throws {
-        let endpoint = IntegrationEndpoint.deleteWebhook(id)
+        let endpoint = IntegrationEndpoint.deleteWebhook(id, configuration: configuration)
         _ = try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
     }
     
-    public func testWebhook(id: UUID) async throws {
-        let endpoint = IntegrationEndpoint.testWebhook(id)
-        _ = try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
+    public func testWebhook(id: UUID) async throws -> WebhookTestResponse {
+        let endpoint = IntegrationEndpoint.testWebhook(id, configuration: configuration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<WebhookTestResponse>.self)
+        guard let data = response.data else { throw NetworkError.underlying("No data") }
+        return data
     }
 }

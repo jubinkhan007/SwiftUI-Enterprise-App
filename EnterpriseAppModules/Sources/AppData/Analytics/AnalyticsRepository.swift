@@ -7,7 +7,7 @@ public final class AnalyticsRepository: AnalyticsRepositoryProtocol {
     private let apiClient: APIClient
     private let configuration: APIConfiguration
     
-    public init(apiClient: APIClient, configuration: APIConfiguration = .localVapor) {
+    public init(apiClient: APIClient, configuration: APIConfiguration = .current) {
         self.apiClient = apiClient
         self.configuration = configuration
     }

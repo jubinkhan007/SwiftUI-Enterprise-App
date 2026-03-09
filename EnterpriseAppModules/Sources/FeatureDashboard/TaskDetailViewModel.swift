@@ -62,7 +62,7 @@ public final class TaskDetailViewModel: ObservableObject {
         workflowRepository: WorkflowRepositoryProtocol,
         attachmentRepository: AttachmentRepositoryProtocol,
         apiClient: APIClientProtocol = APIClient(),
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.task = task
         self.taskRepository = taskRepository

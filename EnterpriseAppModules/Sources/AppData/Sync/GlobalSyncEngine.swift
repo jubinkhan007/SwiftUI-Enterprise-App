@@ -56,7 +56,7 @@ public final class GlobalSyncEngine: GlobalSyncEngineProtocol, @unchecked Sendab
             throw NetworkError.underlying("Missing payload for task create")
         }
         let payload = try JSONCoding.decoder.decode(CreateTaskRequest.self, from: Data(payloadJSON.utf8))
-        let endpoint = TaskEndpoint.createTask(payload: payload, configuration: .localVapor)
+        let endpoint = TaskEndpoint.createTask(payload: payload, configuration: .current)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<TaskItemDTO>.self)
         guard let dto = response.data else { throw NetworkError.underlying("No data") }
 
@@ -73,7 +73,7 @@ public final class GlobalSyncEngine: GlobalSyncEngineProtocol, @unchecked Sendab
             throw NetworkError.underlying("Missing payload for task update")
         }
         var payload = try JSONCoding.decoder.decode(UpdateTaskRequest.self, from: Data(payloadJSON.utf8))
-        let endpoint = TaskEndpoint.updateTask(id: operation.entityId, payload: payload, configuration: .localVapor)
+        let endpoint = TaskEndpoint.updateTask(id: operation.entityId, payload: payload, configuration: .current)
 
         do {
             let response = try await apiClient.request(endpoint, responseType: APIResponse<TaskItemDTO>.self)
@@ -100,7 +100,7 @@ public final class GlobalSyncEngine: GlobalSyncEngineProtocol, @unchecked Sendab
                 }
 
                 payload.expectedVersion = latest.version
-                let retryEndpoint = TaskEndpoint.updateTask(id: operation.entityId, payload: payload, configuration: .localVapor)
+                let retryEndpoint = TaskEndpoint.updateTask(id: operation.entityId, payload: payload, configuration: .current)
                 let retryResponse = try await apiClient.request(retryEndpoint, responseType: APIResponse<TaskItemDTO>.self)
                 guard let mergedDTO = retryResponse.data else { throw NetworkError.underlying("No data") }
 
@@ -116,7 +116,7 @@ public final class GlobalSyncEngine: GlobalSyncEngineProtocol, @unchecked Sendab
     }
 
     private func replayTaskDelete(operation: LocalSyncOperation) async throws {
-        let endpoint = TaskEndpoint.deleteTask(id: operation.entityId, configuration: .localVapor)
+        let endpoint = TaskEndpoint.deleteTask(id: operation.entityId, configuration: .current)
         _ = try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
         try await taskLocalStore.delete(id: operation.entityId)
         try await operationStore.delete(operation)

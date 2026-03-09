@@ -24,7 +24,7 @@ public final class RealTimeProvider: ObservableObject {
     private var seenEventIds = Set<String>()
     private var seenEventQueue: [String] = []
 
-    public init(configuration: APIConfiguration = .localVapor, session: URLSession = .shared) {
+    public init(configuration: APIConfiguration = .current, session: URLSession = .shared) {
         self.configuration = configuration
         self.session = session
     }

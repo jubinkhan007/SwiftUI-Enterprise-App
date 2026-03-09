@@ -17,7 +17,7 @@ public final class ReleaseManagementViewModel: ObservableObject {
     public init(
         projectId: UUID,
         apiClient: APIClientProtocol = APIClient(),
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.projectId = projectId
         self.apiClient = apiClient

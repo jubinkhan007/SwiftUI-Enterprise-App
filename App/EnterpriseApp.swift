@@ -29,7 +29,7 @@ struct EnterpriseApp: App {
             fatalError("Failed to create SwiftData ModelContainer: \(error)")
         }
 
-        let service = AppData.LiveAuthService.mappedErrors(configuration: AppNetwork.APIConfiguration.localVapor)
+        let service = AppData.LiveAuthService.mappedErrors(configuration: AppNetwork.APIConfiguration.current)
         self._authManager = StateObject(wrappedValue: AppData.AuthManager(authService: service))
     }
     

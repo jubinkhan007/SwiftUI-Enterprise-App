@@ -16,7 +16,7 @@ public final class EpicDetailDashboardViewModel: ObservableObject {
     public init(
         epic: TaskItemDTO,
         apiClient: APIClientProtocol = APIClient(),
-        configuration: APIConfiguration = .localVapor
+        configuration: APIConfiguration = .current
     ) {
         self.epic = epic
         self.apiClient = apiClient
