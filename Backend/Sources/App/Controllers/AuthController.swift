@@ -37,7 +37,11 @@ struct AuthController: RouteCollection {
         }
 
         // Create user
-        let passwordHash = try Bcrypt.hash(payload.password)
+        let password = payload.password
+        let passwordHash = try await Task.detached(priority: .userInitiated) {
+            try Bcrypt.hash(password)
+        }.value
+        
         let user = UserModel(
             email: payload.email.lowercased(),
             displayName: payload.displayName,
@@ -66,7 +70,13 @@ struct AuthController: RouteCollection {
         }
 
         // Verify password
-        guard try Bcrypt.verify(payload.password, created: user.passwordHash) else {
+        let password = payload.password
+        let hash = user.passwordHash
+        let isValid = try await Task.detached(priority: .userInitiated) {
+            try Bcrypt.verify(password, created: hash)
+        }.value
+        
+        guard isValid else {
             throw Abort(.unauthorized, reason: "Invalid email or password.")
         }
 
@@ -79,8 +89,11 @@ struct AuthController: RouteCollection {
     // MARK: - Helpers
 
     private func generateToken(for user: UserModel, on req: Request) async throws -> String {
+        guard let userId = user.id else {
+            throw Abort(.internalServerError, reason: "User record is missing an id.")
+        }
         let payload = JWTAuthPayload(
-            subject: .init(value: user.id!.uuidString),
+            subject: .init(value: userId.uuidString),
             expiration: .init(value: Date().addingTimeInterval(60 * 60 * 24 * 7)), // 7 days
             role: user.role.rawValue
         )
