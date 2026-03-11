@@ -1,5 +1,6 @@
 import Fluent
 import JWT
+import NIOCore
 import SharedModels
 import Vapor
 
@@ -36,12 +37,9 @@ struct AuthController: RouteCollection {
             throw Abort(.conflict, reason: "A user with this email already exists.")
         }
 
-        // Create user
-        let password = payload.password
-        let passwordHash = try await Task.detached(priority: .userInitiated) {
-            try Bcrypt.hash(password, cost: 8)
-        }.value
-        
+        // Create user — offload blocking Bcrypt to NIO thread pool
+        let passwordHash = try await req.password.async.hash(payload.password)
+
         let user = UserModel(
             email: payload.email.lowercased(),
             displayName: payload.displayName,
@@ -69,13 +67,9 @@ struct AuthController: RouteCollection {
             throw Abort(.unauthorized, reason: "Invalid email or password.")
         }
 
-        // Verify password
-        let password = payload.password
-        let hash = user.passwordHash
-        let isValid = try await Task.detached(priority: .userInitiated) {
-            try Bcrypt.verify(password, created: hash)
-        }.value
-        
+        // Verify password — offload blocking Bcrypt to NIO thread pool
+        let isValid = try await req.password.async.verify(payload.password, created: user.passwordHash)
+
         guard isValid else {
             throw Abort(.unauthorized, reason: "Invalid email or password.")
         }

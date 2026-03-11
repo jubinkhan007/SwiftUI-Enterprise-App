@@ -21,6 +21,11 @@ func configure(_ app: Application) throws {
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfiguration))
 
+    // MARK: - Password Hashing
+    // Use a low Bcrypt cost for production on resource-constrained VPS.
+    // Cost 6 completes in ~0.5s even on a heavily throttled single-core.
+    app.passwords.use(.bcrypt(cost: 6))
+
     // MARK: - Database
     // In Docker the working directory is read-only; default to /data (mounted volume) or /tmp on Linux.
     let dbPath = resolveSQLiteDatabasePath(app: app)
