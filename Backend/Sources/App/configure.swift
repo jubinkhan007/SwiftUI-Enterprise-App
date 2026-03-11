@@ -9,6 +9,10 @@ func configure(_ app: Application) throws {
     // Allow larger bodies for multipart uploads (attachments). We still enforce per-file limits in controllers.
     app.routes.defaultMaxBodySize = "64mb"
 
+    // MARK: - Error Handling
+    // Ensure `Abort` and other thrown errors become valid HTTP responses instead of closing the connection.
+    app.middleware.use(ErrorMiddleware.default(environment: app.environment))
+
     // MARK: - CORS Middleware
     let corsConfiguration = CORSMiddleware.Configuration(
         allowedOrigin: .all,

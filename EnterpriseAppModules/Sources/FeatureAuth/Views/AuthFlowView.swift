@@ -272,7 +272,10 @@ public struct AuthFlowView: View {
             } catch let error as AuthError {
                 toast = ToastMessage(type: .error, title: "Authentication failed", message: error.localizedDescription)
             } catch {
-                toast = ToastMessage(type: .error, title: "Authentication failed", message: String(describing: error))
+                toast = ToastMessage(type: .error, title: "Authentication failed", message: error.localizedDescription)
+#if DEBUG
+                print("AuthFlowView submit error: \(String(describing: error))")
+#endif
             }
         }
     }

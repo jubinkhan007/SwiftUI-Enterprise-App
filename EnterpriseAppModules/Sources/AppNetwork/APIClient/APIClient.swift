@@ -164,6 +164,9 @@ public protocol APIClientProtocol: Sendable {
             throw error
         } catch let urlError as URLError where urlError.code == .timedOut {
             throw NetworkError.underlying("The request timed out. Is the backend running at \(endpoint.baseURL.absoluteString)?")
+        } catch let urlError as URLError where urlError.code.rawValue == -1022 {
+            // NSURLErrorAppTransportSecurityRequiresSecureConnection
+            throw NetworkError.underlying("Blocked by App Transport Security (ATS): this build requires HTTPS. Use an `https://` base URL or add an ATS exception for this host in `Info.plist`.")
         } catch let urlError as URLError
             where urlError.code == .cannotConnectToHost
                 || urlError.code == .cannotFindHost

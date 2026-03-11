@@ -39,7 +39,7 @@ struct AuthController: RouteCollection {
         // Create user
         let password = payload.password
         let passwordHash = try await Task.detached(priority: .userInitiated) {
-            try Bcrypt.hash(password)
+            try Bcrypt.hash(password, cost: 8)
         }.value
         
         let user = UserModel(

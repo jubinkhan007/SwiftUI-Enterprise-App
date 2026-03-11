@@ -75,20 +75,32 @@ private struct MappedAuthService: AuthServiceProtocol {
         case NetworkError.offline:
             return .offline
 
+        case NetworkError.invalidURL:
+            return .server("Invalid server URL. Check the API base URL configuration.")
+
         case NetworkError.unauthorized:
             return .invalidCredentials
+
+        case NetworkError.underlying(let message):
+            return .server(message)
 
         case NetworkError.serverError(let statusCode, let message):
             if statusCode == 400, let message, !message.isEmpty { return .invalidInput(message) }
             if statusCode == 409 { return .emailAlreadyInUse }
             if let message, !message.isEmpty { return .server(message) }
+            if (500...599).contains(statusCode) {
+                if statusCode == 502 || statusCode == 503 || statusCode == 504 {
+                    return .server("The server is temporarily unavailable (HTTP \(statusCode)). If you're using Nginx, check that it proxies `/api/*` to the backend on port 8080.")
+                }
+                return .server("Server error (HTTP \(statusCode)). Please try again.")
+            }
             return .unknown
 
         case NetworkError.conflict:
             return .emailAlreadyInUse
 
-        case NetworkError.decodingFailed:
-            return .unknown
+        case NetworkError.decodingFailed(let message):
+            return .server("Unexpected server response. \(message)")
 
         default:
             return .unknown
