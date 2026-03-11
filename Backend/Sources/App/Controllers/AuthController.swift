@@ -15,7 +15,9 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func register(req: Request) async throws -> APIResponse<AuthResponse> {
+        req.logger.info("Register request received")
         let payload = try req.content.decode(RegisterRequest.self)
+        req.logger.info("Payload decoded for \(payload.email)")
 
         // Validate input
         guard payload.email.contains("@") else {
@@ -37,7 +39,9 @@ struct AuthController: RouteCollection {
         }
 
         // Create user — cost 4 is very fast even on weak CPUs
+        req.logger.info("Beginning password hashing...")
         let passwordHash = try Bcrypt.hash(payload.password, cost: 4)
+        req.logger.info("Password hashed successfully")
 
         let user = UserModel(
             email: payload.email.lowercased(),
@@ -56,7 +60,9 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func login(req: Request) async throws -> APIResponse<AuthResponse> {
+        req.logger.info("Login request received")
         let payload = try req.content.decode(LoginRequest.self)
+        req.logger.info("Payload decoded for \(payload.email)")
 
         // Find user
         guard let user = try await UserModel.query(on: req.db)
@@ -67,9 +73,12 @@ struct AuthController: RouteCollection {
         }
 
         // Verify password — cost is embedded in the hash, no need to specify
+        req.logger.info("Verifying password...")
         guard try Bcrypt.verify(payload.password, created: user.passwordHash) else {
+            req.logger.info("Password verification failed")
             throw Abort(.unauthorized, reason: "Invalid email or password.")
         }
+        req.logger.info("Password verified successfully")
 
         // Generate token
         let token = try await generateToken(for: user, on: req)
