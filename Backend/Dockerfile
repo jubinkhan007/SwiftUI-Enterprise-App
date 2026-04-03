@@ -1,7 +1,7 @@
 # ================================
 # Build image
 # ================================
-FROM swift:5.9-jammy AS build
+FROM swift:5.9-focal AS build
 
 WORKDIR /build
 
