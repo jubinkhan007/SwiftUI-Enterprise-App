@@ -7,6 +7,10 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources: [App]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
     dependencies:
       - package: EnterpriseAppModules
         product: FeatureAuth

@@ -15,9 +15,9 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func register(req: Request) async throws -> APIResponse<AuthResponse> {
-        req.logger.info("Register request received")
+        req.logger.notice("Register request received")
         let payload = try req.content.decode(RegisterRequest.self)
-        req.logger.info("Payload decoded for \(payload.email)")
+        req.logger.notice("Payload decoded for \(payload.email)")
 
         // Validate input
         guard payload.email.contains("@") else {
@@ -39,9 +39,9 @@ struct AuthController: RouteCollection {
         }
 
         // Create user — cost 4 is very fast even on weak CPUs
-        req.logger.info("Beginning password hashing...")
+        req.logger.notice("Beginning password hashing...")
         let passwordHash = try Bcrypt.hash(payload.password, cost: 4)
-        req.logger.info("Password hashed successfully")
+        req.logger.notice("Password hashed successfully")
 
         let user = UserModel(
             email: payload.email.lowercased(),
@@ -60,9 +60,9 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func login(req: Request) async throws -> APIResponse<AuthResponse> {
-        req.logger.info("Login request received")
+        req.logger.notice("Login request received")
         let payload = try req.content.decode(LoginRequest.self)
-        req.logger.info("Payload decoded for \(payload.email)")
+        req.logger.notice("Payload decoded for \(payload.email)")
 
         // Find user
         guard let user = try await UserModel.query(on: req.db)
@@ -73,12 +73,12 @@ struct AuthController: RouteCollection {
         }
 
         // Verify password — cost is embedded in the hash, no need to specify
-        req.logger.info("Verifying password...")
+        req.logger.notice("Verifying password...")
         guard try Bcrypt.verify(payload.password, created: user.passwordHash) else {
-            req.logger.info("Password verification failed")
+            req.logger.notice("Password verification failed")
             throw Abort(.unauthorized, reason: "Invalid email or password.")
         }
-        req.logger.info("Password verified successfully")
+        req.logger.notice("Password verified successfully")
 
         // Generate token
         let token = try await generateToken(for: user, on: req)
@@ -97,6 +97,9 @@ struct AuthController: RouteCollection {
             expiration: .init(value: Date().addingTimeInterval(60 * 60 * 24 * 7)), // 7 days
             role: user.role.rawValue
         )
-        return try req.jwt.sign(payload)
+        req.logger.notice("Signing JWT token...")
+        let token = try req.jwt.sign(payload)
+        req.logger.notice("JWT signed successfully")
+        return token
     }
 }
