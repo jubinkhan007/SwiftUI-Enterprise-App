@@ -1,7 +1,7 @@
 # ================================
 # Build image
 # ================================
-FROM swift:5.9-jammy AS build
+FROM swift:6.0-jammy AS build
 
 WORKDIR /build
 
@@ -29,7 +29,7 @@ RUN swift build -c release
 # ================================
 # Runtime image
 # ================================
-FROM swift:5.9-jammy-slim
+FROM swift:6.0-jammy-slim
 
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
     && apt-get -q update \
