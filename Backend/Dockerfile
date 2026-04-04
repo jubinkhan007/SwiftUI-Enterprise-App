@@ -1,7 +1,7 @@
 # ================================
 # Build image
 # ================================
-FROM swift:5.9-focal AS build
+FROM swift:5.9-jammy AS build
 
 WORKDIR /build
 
@@ -21,17 +21,19 @@ COPY Backend/Sources Sources/
 COPY Backend/Tests Tests/
 
 # Build with optimizations
-RUN swift build -c release --static-swift-stdlib
+# NOTE: We do NOT use --static-swift-stdlib here so that crypto operations
+# (Bcrypt, JWT) use the system OpenSSL instead of statically-linked BoringSSL.
+# This prevents SIGILL crashes on VPS hosts with restricted CPU instruction sets.
+RUN swift build -c release
 
 # ================================
 # Runtime image
 # ================================
-FROM ubuntu:jammy
+FROM swift:5.9-jammy-slim
 
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
     && apt-get -q update \
-    && apt-get -q dist-upgrade -y \
-    && apt-get install -y libsqlite3-0 libssl3 ca-certificates \
+    && apt-get install -y --no-install-recommends libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -44,6 +46,8 @@ RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app
     && mkdir -p /data && chown vapor:vapor /data
 USER vapor:vapor
 
+# Disables BoringSSL hardware-accelerated crypto that crashes on some VPS hosts
+ENV OPENSSL_ia32cap=0
 ENV DATABASE_PATH=/data/enterprise_app.db
 
 EXPOSE 8080

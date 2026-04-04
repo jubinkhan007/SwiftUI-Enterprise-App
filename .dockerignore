@@ -1,0 +1,10 @@
+.git
+.build
+*.xcodeproj
+*.xcworkspace
+DerivedData
+EnterpriseApp
+EnterpriseAppModules
+.github
+*.md
+!Backend/DEPLOYMENT.md
