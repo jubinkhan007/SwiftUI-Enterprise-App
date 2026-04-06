@@ -68,6 +68,13 @@ extension CommentDTO: Content {}
 extension AttachmentDTO: Content {}
 extension NotificationDTO: Content {}
 extension CreateCommentRequest: Content {}
+extension CreateConversationRequest: Content {}
+extension SendMessageRequest: Content {}
+extension MarkReadRequest: Content {}
+extension ConversationDTO: Content {}
+extension ConversationListItemDTO: Content {}
+extension ConversationMemberDTO: Content {}
+extension MessageDTO: Content {}
 
 // Phase 12: Analytics
 extension SprintDTO: Content {}

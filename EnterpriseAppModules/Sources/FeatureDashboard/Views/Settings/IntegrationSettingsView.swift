@@ -148,8 +148,11 @@ public struct IntegrationSettingsView: View {
                         
                         TextField("https://your-server.com/webhook", text: $newWebhookUrl)
                             .textFieldStyle(.roundedBorder)
+#if os(iOS)
                             .keyboardType(.URL)
-                            .autocapitalization(.none)
+                            .textInputAutocapitalization(.never)
+#endif
+                            .autocorrectionDisabled(true)
                         
                         Text("Events")
                             .font(AppTypography.caption1.weight(.semibold))

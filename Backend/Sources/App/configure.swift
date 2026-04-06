@@ -72,6 +72,9 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateAPIKeys())
     app.migrations.add(CreateWebhookSubscriptions())
 
+    // Phase 17: Messaging (conversations, DMs, messages)
+    app.migrations.add(CreateMessaging())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

@@ -3,6 +3,8 @@ import SwiftData
 import FeatureAuth
 import FeatureOrganization
 import FeatureDashboard
+import FeatureInbox
+import FeatureMessaging
 import DesignSystem
 import AppNetwork
 import AppData
@@ -61,9 +63,13 @@ struct AuthenticatedRootView: View {
     let selectedOrg: OrganizationDTO
     let viewModel: DashboardViewModel
     let integrationRepository: IntegrationRepositoryProtocol
+    let messagingRepository: MessagingRepositoryProtocol
+    let realtimeProvider: RealTimeProvider
     @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
     @StateObject private var syncManager: SyncEngineManager
+    @StateObject private var inboxViewModel: InboxViewModel
+    @StateObject private var conversationListViewModel: ConversationListViewModel
     @State private var showTeamManagement = false
     @State private var showingCreateTask = false
     @State private var viewType: DashboardViewType = .list
@@ -94,6 +100,9 @@ struct AuthenticatedRootView: View {
         let attachmentRepo = AttachmentRepository(apiClient: apiClient)
         let analyticsRepo = AnalyticsRepository(apiClient: apiClient)
         let integrationRepo = IntegrationRepository(apiClient: apiClient)
+        let messagingRepo = LiveMessagingService(apiClient: apiClient)
+        let notificationRepo = LiveNotificationService(apiClient: apiClient)
+        let rtProvider = RealTimeProvider()
         
         self.viewModel = DashboardViewModel(
             taskRepository: taskRepository,
@@ -104,6 +113,8 @@ struct AuthenticatedRootView: View {
             analyticsRepository: analyticsRepo
         )
         self.integrationRepository = integrationRepo
+        self.messagingRepository = messagingRepo
+        self.realtimeProvider = rtProvider
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
         self._syncManager = StateObject(wrappedValue: SyncEngineManager(engine: syncEngine, operationStore: operationStore, taskLocalStore: localStore))
@@ -112,6 +123,8 @@ struct AuthenticatedRootView: View {
         gateVM.selectedOrg = selectedOrg
         gateVM.organizations = [selectedOrg]
         self._orgGateViewModel = StateObject(wrappedValue: gateVM)
+        self._inboxViewModel = StateObject(wrappedValue: InboxViewModel(notificationRepository: notificationRepo))
+        self._conversationListViewModel = StateObject(wrappedValue: ConversationListViewModel(messagingRepository: messagingRepo, realtimeProvider: rtProvider))
     }
     
     var body: some View {
@@ -120,13 +133,22 @@ struct AuthenticatedRootView: View {
         } detail: {
             NavigationStack {
                 VStack(spacing: 0) {
-                    if horizontalSizeClass == .compact {
-                        compactHeaderControls
+                    if sidebarViewModel.selectedArea == .inbox {
+                        InboxView(viewModel: inboxViewModel)
+                    } else if sidebarViewModel.selectedArea == .messages {
+                        ConversationListView(
+                            viewModel: conversationListViewModel,
+                            messagingRepository: messagingRepository,
+                            realtimeProvider: realtimeProvider,
+                            currentUserId: session.user.id
+                        )
+                    } else {
+                        if horizontalSizeClass == .compact {
+                            compactHeaderControls
+                        }
+                        DashboardView(viewModel: viewModel, viewType: $viewType)
                     }
-
-                    DashboardView(viewModel: viewModel, viewType: $viewType)
                 }
-                .navigationTitle("Tasks")
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         personMenu

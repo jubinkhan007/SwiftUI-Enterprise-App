@@ -46,7 +46,14 @@ enum RealtimeBroadcaster {
         )
     }
 
-    private static func broadcast(app: Application, orgId: UUID, type: String, entityId: UUID, payload: [String: String]) {
+    static func broadcast(
+        app: Application,
+        orgId: UUID,
+        channels: [String] = [],
+        type: String,
+        entityId: UUID,
+        payload: [String: String]
+    ) {
         let event = ServerEvent(
             eventId: UUID().uuidString,
             orgId: orgId,
@@ -65,6 +72,9 @@ enum RealtimeBroadcaster {
         }
         if let listId = payload["listId"], !listId.isEmpty {
             app.realtimeHub.broadcast(channel: "list:\(listId)", text: text)
+        }
+        for channel in channels {
+            app.realtimeHub.broadcast(channel: channel, text: text)
         }
     }
 }

@@ -65,6 +65,9 @@ public struct SidebarView: View {
             NavigationLink(value: SidebarViewModel.SidebarItem.inbox) {
                 Label("Inbox", systemImage: "envelope.fill")
             }
+            NavigationLink(value: SidebarViewModel.SidebarItem.messages) {
+                Label("Messages", systemImage: "bubble.left.and.bubble.right.fill")
+            }
         }
     }
 

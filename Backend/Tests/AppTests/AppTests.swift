@@ -881,4 +881,82 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(t1.issueKey, "PROJE-1")
         XCTAssertEqual(t2.issueKey, "PROJE-2")
     }
+
+    func testMessagingCreateDirectConversationIsIdempotent() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app)
+        let otherUser = UserModel(email: "peer+\(UUID().uuidString)@example.com", displayName: "Peer", passwordHash: "x", role: .member)
+        try await otherUser.save(on: app.db)
+        let otherUserId = try otherUser.requireID()
+        try await OrganizationMemberModel(orgId: seed.orgId, userId: otherUserId, role: .member).save(on: app.db)
+
+        let request = CreateConversationRequest(type: "direct", memberIds: [otherUserId], name: nil)
+
+        let firstConversationID = try await createConversation(app: app, seed: seed, request: request)
+        let secondConversationID = try await createConversation(app: app, seed: seed, request: request)
+
+        XCTAssertEqual(firstConversationID, secondConversationID)
+
+        let memberships = try await ConversationMemberModel.query(on: app.db)
+            .filter(\.$conversation.$id == firstConversationID)
+            .count()
+        XCTAssertEqual(memberships, 2)
+    }
+
+    func testMessagingSendAndFetchMessages() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app)
+        let otherUser = UserModel(email: "peer+\(UUID().uuidString)@example.com", displayName: "Peer", passwordHash: "x", role: .member)
+        try await otherUser.save(on: app.db)
+        let otherUserId = try otherUser.requireID()
+        try await OrganizationMemberModel(orgId: seed.orgId, userId: otherUserId, role: .member).save(on: app.db)
+
+        let conversationID = try await createConversation(
+            app: app,
+            seed: seed,
+            request: CreateConversationRequest(type: "direct", memberIds: [otherUserId], name: nil)
+        )
+
+        try await app.test(.POST, "api/conversations/\(conversationID.uuidString)/messages", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(SendMessageRequest(body: "hello"))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<MessageDTO>.self)
+            XCTAssertEqual(decoded.data?.body, "hello")
+        })
+
+        try await app.test(.GET, "api/conversations/\(conversationID.uuidString)/messages?limit=20", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<[MessageDTO]>.self)
+            XCTAssertEqual(decoded.data?.count, 1)
+            XCTAssertEqual(decoded.data?.first?.body, "hello")
+        })
+    }
+
+    private func createConversation(app: Application, seed: Seed, request: CreateConversationRequest) async throws -> UUID {
+        var conversationID: UUID?
+
+        try await app.test(.POST, "api/conversations", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(request)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<ConversationDTO>.self)
+            conversationID = decoded.data?.id
+        })
+
+        return try XCTUnwrap(conversationID)
+    }
 }

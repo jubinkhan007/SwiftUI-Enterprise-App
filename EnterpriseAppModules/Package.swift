@@ -18,6 +18,8 @@ let package = Package(
         .library(name: "FeatureAuth", targets: ["FeatureAuth"]),
         .library(name: "FeatureOrganization", targets: ["FeatureOrganization"]),
         .library(name: "FeatureDashboard", targets: ["FeatureDashboard"]),
+        .library(name: "FeatureInbox", targets: ["FeatureInbox"]),
+        .library(name: "FeatureMessaging", targets: ["FeatureMessaging"]),
     ],
     dependencies: [
         .package(path: "../SharedModels"),
@@ -68,6 +70,14 @@ let package = Package(
                 "Core", "Domain", "AppNetwork", "AppData", "DesignSystem",
                 .product(name: "SharedModels", package: "SharedModels"),
             ]
+        ),
+        .target(
+            name: "FeatureInbox",
+            dependencies: ["Core", "Domain", "AppData", "AppNetwork", "DesignSystem", .product(name: "SharedModels", package: "SharedModels")]
+        ),
+        .target(
+            name: "FeatureMessaging",
+            dependencies: ["Core", "Domain", "AppData", "AppNetwork", "DesignSystem", .product(name: "SharedModels", package: "SharedModels")]
         ),
         .testTarget(
             name: "EnterpriseAppModulesTests",

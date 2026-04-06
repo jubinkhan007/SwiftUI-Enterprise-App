@@ -1,0 +1,44 @@
+import Foundation
+import Domain
+import AppNetwork
+import SharedModels
+
+public final class LiveMessagingService: MessagingRepositoryProtocol {
+    private let apiClient: APIClientProtocol
+    private let apiConfiguration: APIConfiguration
+    
+    public init(apiClient: APIClientProtocol, configuration: APIConfiguration = .current) {
+        self.apiClient = apiClient
+        self.apiConfiguration = configuration
+    }
+    
+    public func getConversations() async throws -> APIResponse<[ConversationListItemDTO]> {
+        let endpoint = MessagingEndpoint.getConversations(configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[ConversationListItemDTO]>.self)
+    }
+    
+    public func createConversation(_ request: CreateConversationRequest) async throws -> APIResponse<ConversationDTO> {
+        let endpoint = MessagingEndpoint.createConversation(payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<ConversationDTO>.self)
+    }
+    
+    public func getConversation(id: UUID) async throws -> APIResponse<ConversationDTO> {
+        let endpoint = MessagingEndpoint.getConversation(id: id, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<ConversationDTO>.self)
+    }
+    
+    public func getMessages(conversationId: UUID, cursor: UUID?, limit: Int) async throws -> APIResponse<[MessageDTO]> {
+        let endpoint = MessagingEndpoint.getMessages(conversationId: conversationId, cursor: cursor, limit: limit, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[MessageDTO]>.self)
+    }
+    
+    public func sendMessage(conversationId: UUID, request: SendMessageRequest) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.sendMessage(conversationId: conversationId, payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+    
+    public func markRead(conversationId: UUID, request: MarkReadRequest) async throws -> APIResponse<EmptyResponse> {
+        let endpoint = MessagingEndpoint.markRead(conversationId: conversationId, payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
+    }
+}

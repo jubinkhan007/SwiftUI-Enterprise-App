@@ -40,7 +40,7 @@ enum RealtimeController {
                     userId: userId,
                     orgId: orgId,
                     socket: ws,
-                    initialChannels: ["org:\(orgId.uuidString)"]
+                    initialChannels: try await initialChannels(userId: userId, orgId: orgId, db: req.db)
                 )
 
                 // WebSocketKit requires callbacks to be installed from the socket's event loop.
@@ -51,7 +51,7 @@ enum RealtimeController {
 
                     ws.onText { ws, text in
                         Task {
-                            await handleClientText(app: app, req: req, ws: ws, connId: connId, orgId: orgId, text: text)
+                            await handleClientText(app: app, req: req, ws: ws, connId: connId, orgId: orgId, userId: userId, text: text)
                         }
                     }
                 }
@@ -69,6 +69,7 @@ enum RealtimeController {
         ws: WebSocket,
         connId: UUID,
         orgId: UUID,
+        userId: UUID,
         text: String
     ) async {
         guard let data = text.data(using: .utf8) else { return }
@@ -79,7 +80,7 @@ enum RealtimeController {
             try? await ws.send(#"{"type":"pong"}"#)
         case "subscribe":
             let channels = (msg.channels ?? []).filter { isValidChannel($0) }
-            let allowed = await filterAllowedChannels(channels, orgId: orgId, db: req.db)
+            let allowed = await filterAllowedChannels(channels, userId: userId, orgId: orgId, db: req.db)
             app.realtimeHub.subscribe(id: connId, channels: allowed)
         case "unsubscribe":
             let channels = (msg.channels ?? []).filter { isValidChannel($0) }
@@ -100,10 +101,10 @@ enum RealtimeController {
     }
 
     private static func isValidChannel(_ channel: String) -> Bool {
-        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:")
+        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:") || channel.hasPrefix("conversation:")
     }
 
-    private static func filterAllowedChannels(_ channels: [String], orgId: UUID, db: Database) async -> [String] {
+    private static func filterAllowedChannels(_ channels: [String], userId: UUID, orgId: UUID, db: Database) async -> [String] {
         var allowed: [String] = []
         allowed.reserveCapacity(channels.count)
 
@@ -154,8 +155,39 @@ enum RealtimeController {
                 if ok { allowed.append(ch) }
                 continue
             }
+
+            if ch.hasPrefix("conversation:") {
+                let idStr = String(ch.dropFirst("conversation:".count))
+                guard let conversationId = UUID(uuidString: idStr) else { continue }
+                let ok: Bool
+                do {
+                    ok = try await ConversationMemberModel.query(on: db)
+                        .join(ConversationModel.self, on: \ConversationMemberModel.$conversation.$id == \ConversationModel.$id)
+                        .filter(\ConversationMemberModel.$user.$id == userId)
+                        .filter(\ConversationMemberModel.$conversation.$id == conversationId)
+                        .filter(ConversationModel.self, \.$organization.$id == orgId)
+                        .count() > 0
+                } catch {
+                    ok = false
+                }
+                if ok { allowed.append(ch) }
+                continue
+            }
         }
 
         return allowed
+    }
+
+    private static func initialChannels(userId: UUID, orgId: UUID, db: Database) async throws -> [String] {
+        var channels = ["org:\(orgId.uuidString)"]
+        let conversationIds = try await ConversationMemberModel.query(on: db)
+            .join(ConversationModel.self, on: \ConversationMemberModel.$conversation.$id == \ConversationModel.$id)
+            .filter(\ConversationMemberModel.$user.$id == userId)
+            .filter(ConversationModel.self, \.$organization.$id == orgId)
+            .all()
+            .map(\.$conversation.id)
+
+        channels.append(contentsOf: conversationIds.map { "conversation:\($0.uuidString)" })
+        return channels
     }
 }

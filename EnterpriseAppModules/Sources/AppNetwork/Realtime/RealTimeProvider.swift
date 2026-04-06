@@ -20,6 +20,8 @@ public final class RealTimeProvider: ObservableObject {
 
     private var reconnectAttempt: Int = 0
     private var shouldReconnect: Bool = true
+    private var subscribedChannels = Set<String>()
+    private var listeners: [UUID: (ServerEvent) -> Void] = [:]
 
     private var seenEventIds = Set<String>()
     private var seenEventQueue: [String] = []
@@ -43,6 +45,7 @@ public final class RealTimeProvider: ObservableObject {
     }
 
     public func subscribe(channels: [String]) async {
+        subscribedChannels.formUnion(channels)
         guard let task else { return }
         let msg = ["action": "subscribe", "channels": channels] as [String: Any]
         guard let data = try? JSONSerialization.data(withJSONObject: msg, options: []),
@@ -54,6 +57,34 @@ public final class RealTimeProvider: ObservableObject {
         } catch {
             // Will reconnect on receive loop failure.
         }
+    }
+
+    public func unsubscribe(channels: [String]) async {
+        for channel in channels {
+            subscribedChannels.remove(channel)
+        }
+        guard let task else { return }
+        let msg = ["action": "unsubscribe", "channels": channels] as [String: Any]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg, options: []),
+              let text = String(data: data, encoding: .utf8)
+        else { return }
+
+        do {
+            try await task.send(.string(text))
+        } catch {
+            // Will reconnect on receive loop failure.
+        }
+    }
+
+    @discardableResult
+    public func addEventListener(_ handler: @escaping (ServerEvent) -> Void) -> UUID {
+        let id = UUID()
+        listeners[id] = handler
+        return id
+    }
+
+    public func removeEventListener(_ id: UUID) {
+        listeners.removeValue(forKey: id)
     }
 
     private func openSocket() async {
@@ -73,6 +104,10 @@ public final class RealTimeProvider: ObservableObject {
         let wsTask = session.webSocketTask(with: request)
         task = wsTask
         wsTask.resume()
+
+        if !subscribedChannels.isEmpty {
+            await subscribe(channels: Array(subscribedChannels))
+        }
 
         Task { await receiveLoop() }
     }
@@ -107,6 +142,9 @@ public final class RealTimeProvider: ObservableObject {
         guard event.orgId == orgId else { return }
         guard dedupe(eventId: event.eventId) else { return }
         onEvent?(event)
+        for listener in listeners.values {
+            listener(event)
+        }
     }
 
     private func dedupe(eventId: String) -> Bool {
@@ -143,4 +181,3 @@ private extension JSONDecoder {
         return d
     }
 }
-
