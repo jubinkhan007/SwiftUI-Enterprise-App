@@ -944,6 +944,150 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testMessagingThreadFetchIncludesReplies() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app)
+        let otherUser = UserModel(email: "peer+\(UUID().uuidString)@example.com", displayName: "Peer", passwordHash: "x", role: .member)
+        try await otherUser.save(on: app.db)
+        let otherUserId = try otherUser.requireID()
+        try await OrganizationMemberModel(orgId: seed.orgId, userId: otherUserId, role: .member).save(on: app.db)
+
+        let conversationID = try await createConversation(
+            app: app,
+            seed: seed,
+            request: CreateConversationRequest(type: "direct", memberIds: [otherUserId], name: "Design")
+        )
+
+        var rootMessageID: UUID?
+        try await app.test(.POST, "api/conversations/\(conversationID.uuidString)/messages", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(SendMessageRequest(body: "Root thread seed"))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<MessageDTO>.self)
+            rootMessageID = decoded.data?.id
+            XCTAssertEqual(decoded.data?.replyCount, 0)
+        })
+
+        let rootID = try XCTUnwrap(rootMessageID)
+
+        try await app.test(.POST, "api/conversations/\(conversationID.uuidString)/messages", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(SendMessageRequest(body: "First reply", parentId: rootID))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<MessageDTO>.self)
+            XCTAssertEqual(decoded.data?.parentId, rootID)
+        })
+
+        try await app.test(.POST, "api/conversations/\(conversationID.uuidString)/messages", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(SendMessageRequest(body: "Second reply", parentId: rootID))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        try await app.test(.GET, "api/messages/\(rootID.uuidString)/thread", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<ThreadMessageBundleDTO>.self)
+            XCTAssertEqual(decoded.data?.rootMessage.id, rootID)
+            XCTAssertEqual(decoded.data?.replies.count, 2)
+            XCTAssertEqual(decoded.data?.replies.map(\.body), ["First reply", "Second reply"])
+        })
+
+        try await app.test(.GET, "api/conversations/\(conversationID.uuidString)/messages?limit=20", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<[MessageDTO]>.self)
+            XCTAssertEqual(decoded.data?.count, 1)
+            XCTAssertEqual(decoded.data?.first?.id, rootID)
+            XCTAssertEqual(decoded.data?.first?.replyCount, 2)
+            XCTAssertEqual(decoded.data?.first?.threadPreviewText, "Second reply")
+        })
+    }
+
+    func testMessagingConversationGovernanceUpdatesMetadataAndPreferences() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app)
+        let otherUser = UserModel(email: "peer+\(UUID().uuidString)@example.com", displayName: "Peer", passwordHash: "x", role: .member)
+        try await otherUser.save(on: app.db)
+        let otherUserId = try otherUser.requireID()
+        try await OrganizationMemberModel(orgId: seed.orgId, userId: otherUserId, role: .member).save(on: app.db)
+
+        let conversationID = try await createConversation(
+            app: app,
+            seed: seed,
+            request: CreateConversationRequest(
+                type: "direct",
+                memberIds: [otherUserId],
+                name: "Launch planning",
+                description: "Initial draft",
+                topic: "Alpha"
+            )
+        )
+
+        try await app.test(.PUT, "api/conversations/\(conversationID.uuidString)", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(UpdateConversationRequest(name: "Launch war room", description: "Updated charter", topic: "Beta"))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<ConversationDTO>.self)
+            XCTAssertEqual(decoded.data?.name, "Launch war room")
+            XCTAssertEqual(decoded.data?.description, "Updated charter")
+            XCTAssertEqual(decoded.data?.topic, "Beta")
+            XCTAssertEqual(decoded.data?.ownerId, seed.userId)
+        })
+
+        try await app.test(.POST, "api/conversations/\(conversationID.uuidString)/preferences", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+            try req.content.encode(UpdateConversationMemberPreferencesRequest(notificationPreference: "mentions_only", isMuted: true))
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<ConversationMemberDTO>.self)
+            XCTAssertEqual(decoded.data?.notificationPreference, "mentions_only")
+            XCTAssertEqual(decoded.data?.isMuted, true)
+            XCTAssertEqual(decoded.data?.userId, seed.userId)
+        })
+
+        try await app.test(.POST, "api/conversations/\(conversationID.uuidString)/archive", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: seed.token)
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<ConversationDTO>.self)
+            XCTAssertEqual(decoded.data?.isArchived, true)
+        })
+
+        let membership = try await ConversationMemberModel.query(on: app.db)
+            .filter(\.$conversation.$id == conversationID)
+            .filter(\.$user.$id == seed.userId)
+            .first()
+        XCTAssertEqual(membership?.notificationPreference, "mentions_only")
+        XCTAssertEqual(membership?.isMuted, true)
+
+        let conversation = try await ConversationModel.find(conversationID, on: app.db)
+        XCTAssertEqual(conversation?.name, "Launch war room")
+        XCTAssertEqual(conversation?.description, "Updated charter")
+        XCTAssertEqual(conversation?.topic, "Beta")
+        XCTAssertEqual(conversation?.isArchived, true)
+    }
+
     private func createConversation(app: Application, seed: Seed, request: CreateConversationRequest) async throws -> UUID {
         var conversationID: UUID?
 

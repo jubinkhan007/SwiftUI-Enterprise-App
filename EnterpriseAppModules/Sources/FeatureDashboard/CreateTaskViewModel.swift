@@ -56,9 +56,16 @@ public final class CreateTaskViewModel: ObservableObject {
 
     private let taskRepository: TaskRepositoryProtocol
 
-    public init(taskRepository: TaskRepositoryProtocol, listId: UUID? = nil) {
+    public init(
+        taskRepository: TaskRepositoryProtocol,
+        listId: UUID? = nil,
+        initialTitle: String = "",
+        initialDescription: String = ""
+    ) {
         self.taskRepository = taskRepository
         self.listId = listId
+        self.title = initialTitle
+        self.descriptionText = initialDescription
     }
 
     public func saveTask() async {

@@ -2,27 +2,28 @@ import Fluent
 import SharedModels
 import Vapor
 
-/// Handles conversation CRUD — DM creation (find-or-create), listing with unread counts, and mark-read.
 struct ConversationController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let conversations = routes.grouped("conversations")
         conversations.post(use: create)
         conversations.get(use: list)
         conversations.get(":conversationID", use: show)
+        conversations.put(":conversationID", use: update)
         conversations.post(":conversationID", "read", use: markRead)
         conversations.post(":conversationID", "typing", use: sendTypingIndicator)
+        conversations.post(":conversationID", "archive", use: archive)
+        conversations.post(":conversationID", "leave", use: leave)
+        conversations.post(":conversationID", "members", use: addMembers)
+        conversations.delete(":conversationID", "members", ":memberID", use: removeMember)
+        conversations.post(":conversationID", "preferences", use: updatePreferences)
     }
 
-    // MARK: - POST /api/conversations
-
-    /// Create a new DM conversation. For DMs, find-or-create to prevent duplicate pairs.
     @Sendable
     func create(req: Request) async throws -> APIResponse<ConversationDTO> {
         let ctx = try req.orgContext
         let payload = try req.content.decode(CreateConversationRequest.self)
 
         guard payload.type == "direct" else {
-            // Groups/channels deferred to Phase 2
             throw Abort(.badRequest, reason: "Only direct messages are supported in this version.")
         }
 
@@ -35,7 +36,6 @@ struct ConversationController: RouteCollection {
             throw Abort(.badRequest, reason: "Cannot create a DM with yourself.")
         }
 
-        // Verify the other user is in the same org
         let isMember = try await OrganizationMemberModel.query(on: req.db)
             .filter(\.$organization.$id == ctx.orgId)
             .filter(\.$user.$id == otherUserId)
@@ -44,11 +44,10 @@ struct ConversationController: RouteCollection {
             throw Abort(.notFound, reason: "User not found in this organization.")
         }
 
-        // Find existing DM between these two users in this org
         let existingConvIds = try await ConversationMemberModel.query(on: req.db)
             .filter(\.$user.$id == ctx.userId)
             .all()
-            .map { $0.$conversation.id }
+            .map(\.$conversation.id)
 
         if !existingConvIds.isEmpty {
             let match = try await ConversationModel.query(on: req.db)
@@ -60,49 +59,42 @@ struct ConversationController: RouteCollection {
                 .first()
 
             if let existing = match {
-                let dto = try await conversationDTO(for: existing, currentUserId: ctx.userId, on: req.db)
-                return .success(dto)
+                return .success(try await conversationDTO(for: existing, currentUserId: ctx.userId, on: req.db))
             }
         }
 
-        // Create new DM
         let conversation = ConversationModel(
             type: "direct",
+            name: payload.name,
+            description: payload.description,
+            topic: payload.topic,
             createdBy: ctx.userId,
+            ownerId: ctx.userId,
             orgId: ctx.orgId
         )
         try await conversation.save(on: req.db)
-        let convId = try conversation.requireID()
+        let conversationID = try conversation.requireID()
 
-        // Add both members
-        let member1 = ConversationMemberModel(conversationId: convId, userId: ctx.userId, role: "admin")
-        let member2 = ConversationMemberModel(conversationId: convId, userId: otherUserId, role: "member")
-        try await member1.save(on: req.db)
-        try await member2.save(on: req.db)
+        let ownerMembership = ConversationMemberModel(conversationId: conversationID, userId: ctx.userId, role: "admin")
+        ownerMembership.lastSeenAt = Date()
+        let peerMembership = ConversationMemberModel(conversationId: conversationID, userId: otherUserId, role: "member")
+        try await ownerMembership.save(on: req.db)
+        try await peerMembership.save(on: req.db)
 
-        let dto = try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db)
-        return .success(dto)
+        return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
     }
 
-    // MARK: - GET /api/conversations
-
-    /// List all conversations for the current user, with last message preview and unread count.
     @Sendable
     func list(req: Request) async throws -> APIResponse<[ConversationListItemDTO]> {
         let ctx = try req.orgContext
-
-        // Get all conversation IDs the user is a member of
         let memberships = try await ConversationMemberModel.query(on: req.db)
             .filter(\.$user.$id == ctx.userId)
             .all()
 
-        let conversationIds = memberships.map { $0.$conversation.id }
-        guard !conversationIds.isEmpty else {
-            return .success([])
-        }
-        
-        let searchQuery = try? req.query.get(String.self, at: "search")
+        let conversationIds = memberships.map(\.$conversation.id)
+        guard !conversationIds.isEmpty else { return .success([]) }
 
+        let searchQuery = try? req.query.get(String.self, at: "search")
         let conversations = try await ConversationModel.query(on: req.db)
             .filter(\.$id ~~ conversationIds)
             .filter(\.$organization.$id == ctx.orgId)
@@ -111,150 +103,132 @@ struct ConversationController: RouteCollection {
             .all()
 
         var items: [ConversationListItemDTO] = []
-        for conv in conversations {
-            let convId = try conv.requireID()
-            let membership = memberships.first(where: { $0.$conversation.id == convId })
+        for conversation in conversations {
+            let conversationID = try conversation.requireID()
+            let membership = memberships.first(where: { $0.$conversation.id == conversationID })
 
-            // For DMs, resolve the other user's name
-            var displayName = conv.name
-            if conv.type == "direct" {
+            var displayName = conversation.name
+            if conversation.type == "direct" {
                 let otherMember = try await ConversationMemberModel.query(on: req.db)
-                    .filter(\.$conversation.$id == convId)
+                    .filter(\.$conversation.$id == conversationID)
                     .filter(\.$user.$id != ctx.userId)
                     .with(\.$user)
                     .first()
                 displayName = otherMember?.user.displayName
             }
-            
-            // Search bridging filter
+
             if let search = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines), !search.isEmpty {
-                let searchLower = search.lowercased()
-                let displayLower = displayName?.lowercased() ?? ""
-                if !displayLower.contains(searchLower) {
+                if !(displayName?.localizedCaseInsensitiveContains(search) ?? false) {
                     continue
                 }
             }
 
-            // Last message (non-deleted)
             let lastMessage = try await MessageModel.query(on: req.db)
-                .filter(\.$conversation.$id == convId)
-                .filter(\.$deletedAt == nil)
+                .filter(\.$conversation.$id == conversationID)
+                .filter(\.$parent.$id == nil)
                 .sort(\.$createdAt, .descending)
                 .with(\.$sender)
                 .first()
 
-            // Unread count
             let unreadCount: Int
             if let lastReadAt = membership?.lastReadAt {
                 unreadCount = try await MessageModel.query(on: req.db)
-                    .filter(\.$conversation.$id == convId)
+                    .filter(\.$conversation.$id == conversationID)
+                    .filter(\.$parent.$id == nil)
                     .filter(\.$createdAt > lastReadAt)
                     .filter(\.$sender.$id != ctx.userId)
                     .filter(\.$deletedAt == nil)
                     .count()
             } else {
                 unreadCount = try await MessageModel.query(on: req.db)
-                    .filter(\.$conversation.$id == convId)
+                    .filter(\.$conversation.$id == conversationID)
+                    .filter(\.$parent.$id == nil)
                     .filter(\.$sender.$id != ctx.userId)
                     .filter(\.$deletedAt == nil)
                     .count()
             }
 
-            let lastMessageDTO: MessageDTO? = lastMessage.map { msg in
-                MessageDTO(
-                    id: msg.id ?? UUID(),
-                    conversationId: msg.$conversation.id,
-                    senderId: msg.$sender.id,
-                    senderName: msg.sender.displayName,
-                    body: msg.body,
-                    messageType: msg.messageType,
-                    editedAt: msg.editedAt,
-                    deletedAt: msg.deletedAt,
-                    createdAt: msg.createdAt
-                )
+            let lastMessageDTO = try await lastMessage.flatMapAsync { message in
+                try await self.messageDTO(for: message, on: req.db)
             }
 
-            items.append(ConversationListItemDTO(
-                id: convId,
-                type: conv.type,
-                name: displayName,
-                lastMessage: lastMessageDTO,
-                unreadCount: unreadCount,
-                lastMessageAt: conv.lastMessageAt
-            ))
+            items.append(
+                ConversationListItemDTO(
+                    id: conversationID,
+                    type: conversation.type,
+                    name: displayName,
+                    lastMessage: lastMessageDTO,
+                    unreadCount: unreadCount,
+                    lastMessageAt: conversation.lastMessageAt
+                )
+            )
         }
 
         return .success(items)
     }
 
-    // MARK: - GET /api/conversations/:conversationID
-
     @Sendable
     func show(req: Request) async throws -> APIResponse<ConversationDTO> {
         let ctx = try req.orgContext
-        guard let convId = req.parameters.get("conversationID", as: UUID.self) else {
-            throw Abort(.badRequest, reason: "Invalid conversation ID.")
-        }
-
-        let conv = try await fetchAndAuthorize(convId: convId, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
-        let dto = try await conversationDTO(for: conv, currentUserId: ctx.userId, on: req.db)
-        return .success(dto)
+        let conversation = try await fetchAndAuthorize(
+            conversationID: try req.parameters.require("conversationID", as: UUID.self),
+            userId: ctx.userId,
+            orgId: ctx.orgId,
+            on: req.db
+        )
+        return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
     }
 
-    // MARK: - POST /api/conversations/:conversationID/read
+    @Sendable
+    func update(req: Request) async throws -> APIResponse<ConversationDTO> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let payload = try req.content.decode(UpdateConversationRequest.self)
+
+        let conversation = try await fetchAndAuthorize(conversationID: conversationID, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
+        let membership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try requireManagementAccess(conversation: conversation, membership: membership, userId: ctx.userId)
+
+        conversation.name = payload.name ?? conversation.name
+        conversation.description = payload.description ?? conversation.description
+        conversation.topic = payload.topic ?? conversation.topic
+        try await conversation.save(on: req.db)
+
+        return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
+    }
 
     @Sendable
     func markRead(req: Request) async throws -> APIResponse<EmptyResponse> {
         let ctx = try req.orgContext
-        guard let convId = req.parameters.get("conversationID", as: UUID.self) else {
-            throw Abort(.badRequest, reason: "Invalid conversation ID.")
-        }
-
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
         let payload = try? req.content.decode(MarkReadRequest.self)
 
-        guard let membership = try await ConversationMemberModel.query(on: req.db)
-            .filter(\.$conversation.$id == convId)
-            .filter(\.$user.$id == ctx.userId)
-            .first()
-        else {
-            throw Abort(.notFound, reason: "Not a member of this conversation.")
-        }
-
+        let membership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
         membership.lastReadAt = Date()
-        if let messageId = payload?.lastReadMessageId {
-            membership.lastReadMessageId = messageId
+        membership.lastSeenAt = Date()
+        if let lastReadMessageID = payload?.lastReadMessageId {
+            membership.lastReadMessageId = lastReadMessageID
         }
         try await membership.save(on: req.db)
 
         return .success(EmptyResponse())
     }
 
-    // MARK: - POST /api/conversations/:conversationID/typing
-
     @Sendable
     func sendTypingIndicator(req: Request) async throws -> APIResponse<EmptyResponse> {
         let ctx = try req.orgContext
-        guard let convId = req.parameters.get("conversationID", as: UUID.self) else {
-            throw Abort(.badRequest, reason: "Invalid conversation ID.")
-        }
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
 
-        // Verify membership
-        let isMember = try await ConversationMemberModel.query(on: req.db)
-            .filter(\.$conversation.$id == convId)
-            .filter(\.$user.$id == ctx.userId)
-            .count() > 0
-        guard isMember else {
-            throw Abort(.forbidden, reason: "Not a member of this conversation.")
-        }
+        _ = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
 
         RealtimeBroadcaster.broadcast(
             app: req.application,
             orgId: ctx.orgId,
-            channels: ["conversation:\(convId.uuidString)"],
+            channels: ["conversation:\(conversationID.uuidString)"],
             type: "conversation.typing_started",
             entityId: ctx.userId,
             payload: [
-                "conversationId": convId.uuidString,
+                "conversationId": conversationID.uuidString,
                 "userId": ctx.userId.uuidString
             ]
         )
@@ -262,54 +236,224 @@ struct ConversationController: RouteCollection {
         return .success(EmptyResponse())
     }
 
-    // MARK: - Helpers
+    @Sendable
+    func archive(req: Request) async throws -> APIResponse<ConversationDTO> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let conversation = try await fetchAndAuthorize(conversationID: conversationID, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
+        let membership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try requireManagementAccess(conversation: conversation, membership: membership, userId: ctx.userId)
 
-    private func fetchAndAuthorize(convId: UUID, userId: UUID, orgId: UUID, on db: Database) async throws -> ConversationModel {
-        guard let conv = try await ConversationModel.query(on: db)
-            .filter(\.$id == convId)
+        conversation.isArchived = true
+        try await conversation.save(on: req.db)
+
+        return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
+    }
+
+    @Sendable
+    func leave(req: Request) async throws -> APIResponse<EmptyResponse> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let conversation = try await fetchAndAuthorize(conversationID: conversationID, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
+
+        if conversation.$owner.id == ctx.userId {
+            throw Abort(.badRequest, reason: "The owner cannot leave without transferring ownership.")
+        }
+
+        let membership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try await membership.delete(on: req.db)
+        return .success(EmptyResponse())
+    }
+
+    @Sendable
+    func addMembers(req: Request) async throws -> APIResponse<ConversationDTO> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let payload = try req.content.decode(AddConversationMembersRequest.self)
+        guard !payload.memberIds.isEmpty else {
+            throw Abort(.badRequest, reason: "At least one member is required.")
+        }
+
+        let conversation = try await fetchAndAuthorize(conversationID: conversationID, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
+        let membership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try requireManagementAccess(conversation: conversation, membership: membership, userId: ctx.userId)
+
+        for memberId in Set(payload.memberIds) where memberId != ctx.userId {
+            let orgMemberExists = try await OrganizationMemberModel.query(on: req.db)
+                .filter(\.$organization.$id == ctx.orgId)
+                .filter(\.$user.$id == memberId)
+                .count() > 0
+            guard orgMemberExists else { continue }
+
+            let exists = try await ConversationMemberModel.query(on: req.db)
+                .filter(\.$conversation.$id == conversationID)
+                .filter(\.$user.$id == memberId)
+                .count() > 0
+            guard !exists else { continue }
+
+            try await ConversationMemberModel(
+                conversationId: conversationID,
+                userId: memberId,
+                role: "member"
+            ).save(on: req.db)
+        }
+
+        return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
+    }
+
+    @Sendable
+    func removeMember(req: Request) async throws -> APIResponse<ConversationDTO> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let memberID = try req.parameters.require("memberID", as: UUID.self)
+        let conversation = try await fetchAndAuthorize(conversationID: conversationID, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
+        let membership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try requireManagementAccess(conversation: conversation, membership: membership, userId: ctx.userId)
+
+        if conversation.$owner.id == memberID {
+            throw Abort(.badRequest, reason: "The owner cannot be removed from the channel.")
+        }
+
+        guard let targetMembership = try await ConversationMemberModel.query(on: req.db)
+            .filter(\.$conversation.$id == conversationID)
+            .filter(\.$user.$id == memberID)
+            .first() else {
+            throw Abort(.notFound, reason: "Member not found.")
+        }
+
+        try await targetMembership.delete(on: req.db)
+        return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
+    }
+
+    @Sendable
+    func updatePreferences(req: Request) async throws -> APIResponse<ConversationMemberDTO> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let payload = try req.content.decode(UpdateConversationMemberPreferencesRequest.self)
+        let membership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try await membership.$user.load(on: req.db)
+
+        if let notificationPreference = payload.notificationPreference {
+            membership.notificationPreference = notificationPreference
+        }
+        if let isMuted = payload.isMuted {
+            membership.isMuted = isMuted
+        }
+        membership.lastSeenAt = Date()
+        try await membership.save(on: req.db)
+
+        guard let dto = memberDTO(for: membership) else {
+            throw Abort(.internalServerError, reason: "Failed to serialize conversation membership.")
+        }
+        return .success(dto)
+    }
+
+    private func fetchAndAuthorize(conversationID: UUID, userId: UUID, orgId: UUID, on db: Database) async throws -> ConversationModel {
+        guard let conversation = try await ConversationModel.query(on: db)
+            .filter(\.$id == conversationID)
             .filter(\.$organization.$id == orgId)
-            .first()
-        else {
+            .first() else {
             throw Abort(.notFound, reason: "Conversation not found.")
         }
 
         let isMember = try await ConversationMemberModel.query(on: db)
-            .filter(\.$conversation.$id == convId)
+            .filter(\.$conversation.$id == conversationID)
             .filter(\.$user.$id == userId)
             .count() > 0
         guard isMember else {
             throw Abort(.forbidden, reason: "Not a member of this conversation.")
         }
-
-        return conv
+        return conversation
     }
 
-    private func conversationDTO(for conv: ConversationModel, currentUserId: UUID, on db: Database) async throws -> ConversationDTO {
-        let convId = try conv.requireID()
-        let memberRows = try await ConversationMemberModel.query(on: db)
-            .filter(\.$conversation.$id == convId)
+    private func requireMembership(conversationID: UUID, userId: UUID, on db: Database) async throws -> ConversationMemberModel {
+        guard let membership = try await ConversationMemberModel.query(on: db)
+            .filter(\.$conversation.$id == conversationID)
+            .filter(\.$user.$id == userId)
+            .first() else {
+            throw Abort(.forbidden, reason: "Not a member of this conversation.")
+        }
+        return membership
+    }
+
+    private func requireManagementAccess(conversation: ConversationModel, membership: ConversationMemberModel, userId: UUID) throws {
+        let normalizedRole = membership.role.lowercased()
+        if normalizedRole == "admin" || conversation.$owner.id == userId {
+            return
+        }
+        throw Abort(.forbidden, reason: "Insufficient permissions for channel management.")
+    }
+
+    private func conversationDTO(for conversation: ConversationModel, currentUserId: UUID, on db: Database) async throws -> ConversationDTO {
+        let conversationID = try conversation.requireID()
+        let members = try await ConversationMemberModel.query(on: db)
+            .filter(\.$conversation.$id == conversationID)
             .with(\.$user)
             .all()
 
-        let memberDTOs = memberRows.compactMap { m -> ConversationMemberDTO? in
-            guard let id = m.id else { return nil }
-            return ConversationMemberDTO(
-                id: id,
-                userId: m.$user.id,
-                displayName: m.user.displayName,
-                role: m.role,
-                lastReadAt: m.lastReadAt
-            )
-        }
-
+        let memberDTOs = members.compactMap(memberDTO(for:))
         return ConversationDTO(
-            id: convId,
-            type: conv.type,
-            name: conv.name,
-            isArchived: conv.isArchived,
-            lastMessageAt: conv.lastMessageAt,
-            createdAt: conv.createdAt,
+            id: conversationID,
+            type: conversation.type,
+            name: conversation.name,
+            description: conversation.description,
+            topic: conversation.topic,
+            isArchived: conversation.isArchived,
+            ownerId: conversation.$owner.id,
+            lastMessageAt: conversation.lastMessageAt,
+            createdAt: conversation.createdAt,
             members: memberDTOs
         )
+    }
+
+    private func memberDTO(for membership: ConversationMemberModel) -> ConversationMemberDTO? {
+        guard let id = membership.id else { return nil }
+        return ConversationMemberDTO(
+            id: id,
+            userId: membership.$user.id,
+            displayName: membership.user.displayName,
+            role: membership.role,
+            notificationPreference: membership.notificationPreference,
+            lastReadAt: membership.lastReadAt,
+            lastSeenAt: membership.lastSeenAt,
+            isMuted: membership.isMuted
+        )
+    }
+
+    private func messageDTO(for message: MessageModel, on db: Database) async throws -> MessageDTO {
+        let messageID = try message.requireID()
+        let replyCount = try await MessageModel.query(on: db)
+            .filter(\.$parent.$id == messageID)
+            .filter(\.$deletedAt == nil)
+            .count()
+
+        let latestReply = try await MessageModel.query(on: db)
+            .filter(\.$parent.$id == messageID)
+            .filter(\.$deletedAt == nil)
+            .sort(\.$createdAt, .descending)
+            .first()
+
+        return MessageDTO(
+            id: messageID,
+            conversationId: message.$conversation.id,
+            senderId: message.$sender.id,
+            senderName: message.sender.displayName,
+            body: message.body,
+            messageType: message.messageType,
+            parentId: message.$parent.id,
+            replyCount: replyCount,
+            threadPreviewText: latestReply?.body,
+            linkedTask: nil,
+            editedAt: message.editedAt,
+            deletedAt: message.deletedAt,
+            createdAt: message.createdAt
+        )
+    }
+}
+
+private extension Optional {
+    func flatMapAsync<T>(_ transform: (Wrapped) async throws -> T) async rethrows -> T? {
+        guard let value = self else { return nil }
+        return try await transform(value)
     }
 }

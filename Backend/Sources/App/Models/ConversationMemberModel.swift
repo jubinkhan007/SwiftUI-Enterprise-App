@@ -20,11 +20,17 @@ final class ConversationMemberModel: Model, Content, @unchecked Sendable {
     @OptionalField(key: "last_read_at")
     var lastReadAt: Date?
 
+    @OptionalField(key: "last_seen_at")
+    var lastSeenAt: Date?
+
     @OptionalField(key: "last_read_message_id")
     var lastReadMessageId: UUID?
 
     @Field(key: "notification_preference")
     var notificationPreference: String  // "all", "mentions", "none"
+
+    @Field(key: "is_muted")
+    var isMuted: Bool
 
     @Timestamp(key: "joined_at", on: .create)
     var joinedAt: Date?
@@ -36,12 +42,14 @@ final class ConversationMemberModel: Model, Content, @unchecked Sendable {
         conversationId: UUID,
         userId: UUID,
         role: String = "member",
-        notificationPreference: String = "all"
+        notificationPreference: String = "all",
+        isMuted: Bool = false
     ) {
         self.id = id
         self.$conversation.id = conversationId
         self.$user.id = userId
         self.role = role
         self.notificationPreference = notificationPreference
+        self.isMuted = isMuted
     }
 }

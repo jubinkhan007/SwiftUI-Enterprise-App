@@ -143,7 +143,9 @@ struct AuthenticatedRootView: View {
                             messagingRepository: messagingRepository,
                             apiClient: apiClient,
                             realtimeProvider: realtimeProvider,
-                            currentUserId: session.user.id
+                            currentUserId: session.user.id,
+                            taskRepository: viewModel.taskRepository,
+                            hierarchy: sidebarViewModel.areas
                         )
                     } else {
                         if horizontalSizeClass == .compact {
@@ -173,13 +175,15 @@ struct AuthenticatedRootView: View {
                         }
                     }
 
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            showingCreateTask = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .appFont(AppTypography.headline)
-                                .foregroundColor(AppColors.brandPrimary)
+                    if sidebarViewModel.selectedArea != .inbox && sidebarViewModel.selectedArea != .messages {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showingCreateTask = true
+                            } label: {
+                                Image(systemName: "plus")
+                                    .appFont(AppTypography.headline)
+                                    .foregroundColor(AppColors.brandPrimary)
+                            }
                         }
                     }
 

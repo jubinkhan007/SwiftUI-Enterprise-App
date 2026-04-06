@@ -74,6 +74,7 @@ func configure(_ app: Application) throws {
 
     // Phase 17: Messaging (conversations, DMs, messages)
     app.migrations.add(CreateMessaging())
+    app.migrations.add(AddMessagingPhase2Features())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

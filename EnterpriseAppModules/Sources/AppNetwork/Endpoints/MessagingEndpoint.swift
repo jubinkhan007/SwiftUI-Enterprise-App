@@ -5,7 +5,14 @@ public enum MessagingEndpoint {
     case getConversations(searchQuery: String?, configuration: APIConfiguration)
     case createConversation(payload: CreateConversationRequest, configuration: APIConfiguration)
     case getConversation(id: UUID, configuration: APIConfiguration)
+    case updateConversation(id: UUID, payload: UpdateConversationRequest, configuration: APIConfiguration)
+    case archiveConversation(id: UUID, configuration: APIConfiguration)
+    case leaveConversation(id: UUID, configuration: APIConfiguration)
+    case addMembers(conversationId: UUID, payload: AddConversationMembersRequest, configuration: APIConfiguration)
+    case removeMember(conversationId: UUID, memberId: UUID, configuration: APIConfiguration)
+    case updatePreferences(conversationId: UUID, payload: UpdateConversationMemberPreferencesRequest, configuration: APIConfiguration)
     case getMessages(conversationId: UUID, cursor: UUID?, limit: Int, configuration: APIConfiguration)
+    case getThread(messageId: UUID, configuration: APIConfiguration)
     case sendMessage(conversationId: UUID, payload: SendMessageRequest, configuration: APIConfiguration)
     case markRead(conversationId: UUID, payload: MarkReadRequest, configuration: APIConfiguration)
     case editMessage(messageId: UUID, payload: EditMessageRequest, configuration: APIConfiguration)
@@ -21,7 +28,11 @@ extension MessagingEndpoint: APIEndpoint {
     private var configuration: APIConfiguration {
         switch self {
         case .getConversations(_, let c), .createConversation(_, let c),
-             .getConversation(_, let c), .getMessages(_, _, _, let c),
+             .getConversation(_, let c), .updateConversation(_, _, let c),
+             .archiveConversation(_, let c), .leaveConversation(_, let c),
+             .addMembers(_, _, let c), .removeMember(_, _, let c),
+             .updatePreferences(_, _, let c), .getMessages(_, _, _, let c),
+             .getThread(_, let c),
              .sendMessage(_, _, let c), .markRead(_, _, let c),
              .editMessage(_, _, let c), .deleteMessage(_, let c),
              .sendTypingIndicator(_, _, let c):
@@ -35,8 +46,22 @@ extension MessagingEndpoint: APIEndpoint {
             return "/api/conversations"
         case .getConversation(let id, _):
             return "/api/conversations/\(id.uuidString)"
+        case .updateConversation(let id, _, _):
+            return "/api/conversations/\(id.uuidString)"
+        case .archiveConversation(let id, _):
+            return "/api/conversations/\(id.uuidString)/archive"
+        case .leaveConversation(let id, _):
+            return "/api/conversations/\(id.uuidString)/leave"
+        case .addMembers(let id, _, _):
+            return "/api/conversations/\(id.uuidString)/members"
+        case .removeMember(let id, let memberId, _):
+            return "/api/conversations/\(id.uuidString)/members/\(memberId.uuidString)"
+        case .updatePreferences(let id, _, _):
+            return "/api/conversations/\(id.uuidString)/preferences"
         case .getMessages(let id, _, _, _), .sendMessage(let id, _, _):
             return "/api/conversations/\(id.uuidString)/messages"
+        case .getThread(let id, _):
+            return "/api/messages/\(id.uuidString)/thread"
         case .markRead(let id, _, _):
             return "/api/conversations/\(id.uuidString)/read"
         case .editMessage(let id, _, _), .deleteMessage(let id, _):
@@ -48,13 +73,15 @@ extension MessagingEndpoint: APIEndpoint {
 
     public var method: HTTPMethod {
         switch self {
-        case .getConversations, .getConversation, .getMessages:
+        case .getConversations, .getConversation, .getMessages, .getThread:
             return .get
-        case .createConversation, .sendMessage, .markRead, .sendTypingIndicator:
+        case .createConversation, .archiveConversation, .leaveConversation, .addMembers, .updatePreferences, .sendMessage, .markRead, .sendTypingIndicator:
             return .post
+        case .updateConversation:
+            return .put
         case .editMessage:
             return .put
-        case .deleteMessage:
+        case .deleteMessage, .removeMember:
             return .delete
         }
     }
@@ -87,6 +114,12 @@ extension MessagingEndpoint: APIEndpoint {
     public var body: Data? {
         switch self {
         case .createConversation(let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .updateConversation(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .addMembers(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .updatePreferences(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .sendMessage(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
