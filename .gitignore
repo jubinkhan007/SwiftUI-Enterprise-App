@@ -13,3 +13,4 @@ build/
 *.log
 simulator_screen.png
 App/Info.plist
+build_output*.txt
