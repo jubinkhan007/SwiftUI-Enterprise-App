@@ -11,13 +11,31 @@ public struct InboxView: View {
     
     public var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: AppSpacing.md) {
                 Text("Inbox")
                     .appFont(AppTypography.title1)
                 Spacer()
-                Toggle("Unread Only", isOn: $viewModel.unreadOnly)
+                
+                Picker("Filter", selection: $viewModel.filterType) {
+                    ForEach(InboxViewModel.NotificationFilter.allCases) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                
+                Toggle("Unread", isOn: $viewModel.unreadOnly)
                     .toggleStyle(.button)
                     .tint(AppColors.brandPrimary)
+                
+                Button(action: {
+                    Task { await viewModel.markAllAsRead() }
+                }) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .resizable()
+                        .frame(width: 24, height: 24)
+                        .foregroundColor(AppColors.brandPrimary)
+                }
             }
             .padding()
             
@@ -37,7 +55,7 @@ public struct InboxView: View {
                 Spacer()
             } else {
                 List {
-                    ForEach(viewModel.notifications) { notification in
+                    ForEach(viewModel.filteredNotifications) { notification in
                         InboxRowView(notification: notification) {
                             Task {
                                 await viewModel.markAsRead(notification)

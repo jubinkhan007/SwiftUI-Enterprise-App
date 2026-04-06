@@ -26,6 +26,10 @@ targets:
         product: AppData
       - package: EnterpriseAppModules
         product: DesignSystem
+      - package: EnterpriseAppModules
+        product: FeatureInbox
+      - package: EnterpriseAppModules
+        product: FeatureMessaging
 packages:
   EnterpriseAppModules:
     path: EnterpriseAppModules

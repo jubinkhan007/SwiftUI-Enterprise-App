@@ -18,30 +18,81 @@ public struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: AppSpacing.md) {
+                        if viewModel.hasMoreMessages {
+                            Button {
+                                Task { await viewModel.loadMoreMessages() }
+                            } label: {
+                                if viewModel.isLoadingMore {
+                                    ProgressView()
+                                } else {
+                                    Text("Load earlier messages")
+                                        .appFont(AppTypography.caption1)
+                                        .foregroundColor(AppColors.brandPrimary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, AppSpacing.sm)
+                        }
+
                         ForEach(viewModel.messages) { message in
                             MessageBubbleView(
                                 message: message,
-                                isCurrentUser: message.senderId == currentUserId
+                                isCurrentUser: message.senderId == currentUserId,
+                                onDelete: message.senderId == currentUserId && message.deletedAt == nil ? {
+                                    Task { await viewModel.deleteMessage(id: message.id) }
+                                } : nil,
+                                onEdit: message.senderId == currentUserId && message.deletedAt == nil ? {
+                                    viewModel.editingMessageId = message.id
+                                    viewModel.inputText = message.body
+                                } : nil
                             )
                             .id(message.id)
                         }
                     }
                     .padding()
+
+                    if viewModel.isTypingIndicatorVisible {
+                        HStack {
+                            Text("Someone is typing...")
+                                .appFont(AppTypography.caption1)
+                                .foregroundColor(AppColors.textSecondary)
+                                .italic()
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, AppSpacing.md)
+                        .id("typing_indicator")
+                    }
                 }
-                .onChange(of: viewModel.messages.count) { _ in
-                    if let lastId = viewModel.messages.last?.id {
+                .onChange(of: viewModel.messages.last?.id) { lastId in
+                    if let lastId {
                         withAnimation {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
                 }
-            }
-            
-            ChatInputBar(text: $viewModel.inputText) {
-                Task {
-                    await viewModel.sendMessage()
+                .onChange(of: viewModel.isTypingIndicatorVisible) { isTyping in
+                    if isTyping {
+                        withAnimation {
+                            proxy.scrollTo("typing_indicator", anchor: .bottom)
+                        }
+                    }
                 }
             }
+            
+            ChatInputBar(
+                text: $viewModel.inputText,
+                isEditing: viewModel.editingMessageId != nil,
+                onCancelEdit: {
+                    viewModel.editingMessageId = nil
+                    viewModel.inputText = ""
+                },
+                onSend: {
+                    Task {
+                        await viewModel.sendMessage()
+                    }
+                }
+            )
         }
         .background(AppColors.backgroundPrimary)
         .navigationTitle(conversationName)

@@ -1,0 +1,220 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -scheme EnterpriseApp -destination "platform=iOS Simulator,name=iPhone 16,OS=18.4" build
+
+Resolve Package Graph
+
+
+Resolved source packages:
+  SharedModels: /Users/mac/SwiftUI-Enterprise-App/SharedModels @ local
+  EnterpriseAppModules: /Users/mac/SwiftUI-Enterprise-App/EnterpriseAppModules
+
+2026-04-06 17:09:23.446 xcodebuild[42541:475043] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (22 targets)
+    Target 'EnterpriseApp' in project 'EnterpriseApp'
+        ➜ Explicit dependency on target 'FeatureAuth' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureOrganization' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureDashboard' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureInbox' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureMessaging' in project 'EnterpriseAppModules'
+    Target 'FeatureMessaging' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureMessaging' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureMessaging' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureInbox' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureInbox' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureInbox' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+    Target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureDashboard' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureDashboard' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureDashboard' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureOrganization' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureOrganization' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureOrganization' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureAuth' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'FeatureAuth' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'FeatureAuth' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'DesignSystem' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+    Target 'AppData' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'AppNetwork' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'Domain' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'Core' in project 'EnterpriseAppModules'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'SharedModels' in project 'SharedModels'
+        ➜ Explicit dependency on target 'SharedModels' in project 'SharedModels'
+    Target 'SharedModels' in project 'SharedModels' (no dependencies)
+    Target 'Core' in project 'EnterpriseAppModules' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk /Users/mac/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.2-23C53-7d00a8b37fbd7999ea79df8ebc024bf0.sdkstatcache
+    cd /Users/mac/SwiftUI-Enterprise-App/EnterpriseApp.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk -o /Users/mac/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.2-23C53-7d00a8b37fbd7999ea79df8ebc024bf0.sdkstatcache
+
+SwiftDriver EnterpriseApp normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'EnterpriseApp' from project 'EnterpriseApp')
+    cd /Users/mac/SwiftUI-Enterprise-App
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name EnterpriseApp -Onone -enforce-exclusivity\=checked @/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk -target x86_64-apple-ios17.0-simulator -g -module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator -parse-as-library -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.2-23C53-7d00a8b37fbd7999ea79df8ebc024bf0.sdkstatcache -output-file-map /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp_const_extract_protocols.json -Xcc -iquote -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-generated-files.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-own-target-headers.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp-fa8899bbfad316504d28d6ac44814911-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-project-headers.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources-normal/x86_64 -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources/x86_64 -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp-Swift.h -working-directory /Users/mac/SwiftUI-Enterprise-App -experimental-emit-module-separately -disable-cmo
+
+SwiftCompile normal x86_64 Compiling\ EnterpriseApp.swift /Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift (in target 'EnterpriseApp' from project 'EnterpriseApp')
+
+SwiftCompile normal x86_64 /Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift (in target 'EnterpriseApp' from project 'EnterpriseApp')
+    cd /Users/mac/SwiftUI-Enterprise-App
+    
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:91:54: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+        let syncEngine = GlobalSyncEngine(apiClient: apiClient, taskLocalStore: localStore, operationStore: operationStore)
+                                                     ^
+                                                               as! APIClient
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:93:24: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+            apiClient: apiClient,
+                       ^
+                                 as! APIClient
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:97:68: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+        let activityRepository = TaskActivityRepository(apiClient: apiClient)
+                                                                   ^
+                                                                             as! APIClient
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:99:60: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+        let hierarchyRepo = HierarchyRepository(apiClient: apiClient, localStore: hierarchyLocalStore)
+                                                           ^
+                                                                     as! APIClient
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:100:58: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+        let workflowRepo = WorkflowRepository(apiClient: apiClient)
+                                                         ^
+                                                                   as! APIClient
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:101:62: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+        let attachmentRepo = AttachmentRepository(apiClient: apiClient)
+                                                             ^
+                                                                       as! APIClient
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:102:60: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+        let analyticsRepo = AnalyticsRepository(apiClient: apiClient)
+                                                           ^
+                                                                     as! APIClient
+/Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift:103:64: error: cannot convert value of type 'any APIClientProtocol' to expected argument type 'APIClient'
+        let integrationRepo = IntegrationRepository(apiClient: apiClient)
+                                                               ^
+                                                                         as! APIClient
+
+Failed frontend command:
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -c -primary-file /Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift -emit-dependencies-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.d -emit-const-values-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.swiftconstvalues -emit-reference-dependencies-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.swiftdeps -serialize-diagnostics-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.dia -target x86_64-apple-ios17.0-simulator -disable-cross-import-overlay-search -swift-module-cross-import SwiftData /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk/System/Library/Frameworks/SwiftData.framework/Modules/SwiftData.swiftcrossimport/CoreData.swiftoverlay -swift-module-cross-import SwiftData /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk/System/Library/Frameworks/SwiftData.framework/Modules/SwiftData.swiftcrossimport/SwiftUI.swiftoverlay -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libFoundationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#FoundationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libObservationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#ObservationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libPreviewsMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#PreviewsMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libSwiftDataMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#SwiftDataMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libSwiftMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#SwiftMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#SwiftUIMacros -disable-implicit-swift-modules -Xcc -fno-implicit-modules -Xcc -fno-implicit-module-maps -explicit-swift-module-map-file /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp-dependencies-1.json -enable-objc-interop -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk -I /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator -no-color-diagnostics -Xcc -fno-color-diagnostics -enable-testing -g -debug-info-format\=dwarf -dwarf-version\=4 -module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -swift-version 5 -enforce-exclusivity\=checked -Onone -D DEBUG -serialize-debugging-options -const-gather-protocols-file /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp_const_extract_protocols.json -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -empty-abi-descriptor -validate-clang-modules-once -clang-build-session-file /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -working-directory -Xcc /Users/mac/SwiftUI-Enterprise-App -enable-anonymous-context-mangled-names -file-compilation-dir /Users/mac/SwiftUI-Enterprise-App -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -Xcc -ivfsstatcache -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.2-23C53-7d00a8b37fbd7999ea79df8ebc024bf0.sdkstatcache -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/swift-overrides.hmap -Xcc -iquote -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-generated-files.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-own-target-headers.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp-fa8899bbfad316504d28d6ac44814911-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-project-headers.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources-normal/x86_64 -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources/x86_64 -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources -Xcc -DDEBUG\=1 -no-auto-bridging-header-chaining -module-name EnterpriseApp -frontend-parseable-output -disable-clang-spi -target-sdk-version 26.2 -target-sdk-name iphonesimulator26.2 -clang-target x86_64-apple-ios26.2-simulator -in-process-plugin-server-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -parse-as-library -o /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.o -index-unit-output-path /EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.o -index-store-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Index.noindex/DataStore -index-system-modules
+SwiftEmitModule normal x86_64 Emitting\ module\ for\ EnterpriseApp (in target 'EnterpriseApp' from project 'EnterpriseApp')
+
+SwiftCompile normal x86_64 /Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift (in target 'EnterpriseApp' from project 'EnterpriseApp')
+    cd /Users/mac/SwiftUI-Enterprise-App
+    
+
+SwiftDriverJobDiscovery normal x86_64 Emitting module for EnterpriseApp (in target 'EnterpriseApp' from project 'EnterpriseApp')
+
+SwiftDriver\ Compilation\ Requirements EnterpriseApp normal x86_64 com.apple.xcode.tools.swift.compiler (in target 'EnterpriseApp' from project 'EnterpriseApp')
+    cd /Users/mac/SwiftUI-Enterprise-App
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name EnterpriseApp -Onone -enforce-exclusivity\=checked @/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk -target x86_64-apple-ios17.0-simulator -g -module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator -parse-as-library -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphonesimulator26.2-23C53-7d00a8b37fbd7999ea79df8ebc024bf0.sdkstatcache -output-file-map /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/mac/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp_const_extract_protocols.json -Xcc -iquote -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-generated-files.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-own-target-headers.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp-fa8899bbfad316504d28d6ac44814911-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/EnterpriseApp-project-headers.hmap -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources-normal/x86_64 -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources/x86_64 -Xcc -I/Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp-Swift.h -working-directory /Users/mac/SwiftUI-Enterprise-App -experimental-emit-module-separately -disable-cmo
+
+Copy /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/EnterpriseApp.swiftmodule/x86_64-apple-ios-simulator.abi.json /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.abi.json (in target 'EnterpriseApp' from project 'EnterpriseApp')
+    cd /Users/mac/SwiftUI-Enterprise-App
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Intermediates.noindex/EnterpriseApp.build/Debug-iphonesimulator/EnterpriseApp.build/Objects-normal/x86_64/EnterpriseApp.abi.json /Users/mac/Library/Developer/Xcode/DerivedData/EnterpriseApp-bxosauczcvclsbbfvvshlpjwmlkg/Build/Products/Debug-iphonesimulator/EnterpriseApp.swiftmodule/x86_64-apple-ios-simulator.abi.json
+
+** BUILD FAILED **
+
+
+The following build commands failed:
+	SwiftCompile normal x86_64 /Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift (in target 'EnterpriseApp' from project 'EnterpriseApp')
+	SwiftCompile normal x86_64 Compiling\ EnterpriseApp.swift /Users/mac/SwiftUI-Enterprise-App/App/EnterpriseApp.swift (in target 'EnterpriseApp' from project 'EnterpriseApp')
+	Building project EnterpriseApp with scheme EnterpriseApp
+(3 failures)

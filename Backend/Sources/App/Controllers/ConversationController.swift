@@ -10,6 +10,7 @@ struct ConversationController: RouteCollection {
         conversations.get(use: list)
         conversations.get(":conversationID", use: show)
         conversations.post(":conversationID", "read", use: markRead)
+        conversations.post(":conversationID", "typing", use: sendTypingIndicator)
     }
 
     // MARK: - POST /api/conversations
@@ -99,6 +100,8 @@ struct ConversationController: RouteCollection {
         guard !conversationIds.isEmpty else {
             return .success([])
         }
+        
+        let searchQuery = try? req.query.get(String.self, at: "search")
 
         let conversations = try await ConversationModel.query(on: req.db)
             .filter(\.$id ~~ conversationIds)
@@ -111,6 +114,26 @@ struct ConversationController: RouteCollection {
         for conv in conversations {
             let convId = try conv.requireID()
             let membership = memberships.first(where: { $0.$conversation.id == convId })
+
+            // For DMs, resolve the other user's name
+            var displayName = conv.name
+            if conv.type == "direct" {
+                let otherMember = try await ConversationMemberModel.query(on: req.db)
+                    .filter(\.$conversation.$id == convId)
+                    .filter(\.$user.$id != ctx.userId)
+                    .with(\.$user)
+                    .first()
+                displayName = otherMember?.user.displayName
+            }
+            
+            // Search bridging filter
+            if let search = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines), !search.isEmpty {
+                let searchLower = search.lowercased()
+                let displayLower = displayName?.lowercased() ?? ""
+                if !displayLower.contains(searchLower) {
+                    continue
+                }
+            }
 
             // Last message (non-deleted)
             let lastMessage = try await MessageModel.query(on: req.db)
@@ -135,17 +158,6 @@ struct ConversationController: RouteCollection {
                     .filter(\.$sender.$id != ctx.userId)
                     .filter(\.$deletedAt == nil)
                     .count()
-            }
-
-            // For DMs, resolve the other user's name
-            var displayName = conv.name
-            if conv.type == "direct" {
-                let otherMember = try await ConversationMemberModel.query(on: req.db)
-                    .filter(\.$conversation.$id == convId)
-                    .filter(\.$user.$id != ctx.userId)
-                    .with(\.$user)
-                    .first()
-                displayName = otherMember?.user.displayName
             }
 
             let lastMessageDTO: MessageDTO? = lastMessage.map { msg in
@@ -213,6 +225,39 @@ struct ConversationController: RouteCollection {
             membership.lastReadMessageId = messageId
         }
         try await membership.save(on: req.db)
+
+        return .success(EmptyResponse())
+    }
+
+    // MARK: - POST /api/conversations/:conversationID/typing
+
+    @Sendable
+    func sendTypingIndicator(req: Request) async throws -> APIResponse<EmptyResponse> {
+        let ctx = try req.orgContext
+        guard let convId = req.parameters.get("conversationID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid conversation ID.")
+        }
+
+        // Verify membership
+        let isMember = try await ConversationMemberModel.query(on: req.db)
+            .filter(\.$conversation.$id == convId)
+            .filter(\.$user.$id == ctx.userId)
+            .count() > 0
+        guard isMember else {
+            throw Abort(.forbidden, reason: "Not a member of this conversation.")
+        }
+
+        RealtimeBroadcaster.broadcast(
+            app: req.application,
+            orgId: ctx.orgId,
+            channels: ["conversation:\(convId.uuidString)"],
+            type: "conversation.typing_started",
+            entityId: ctx.userId,
+            payload: [
+                "conversationId": convId.uuidString,
+                "userId": ctx.userId.uuidString
+            ]
+        )
 
         return .success(EmptyResponse())
     }

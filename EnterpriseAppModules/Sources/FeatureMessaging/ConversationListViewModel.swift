@@ -22,8 +22,13 @@ public final class ConversationListViewModel: ObservableObject {
         self.realtimeProvider = realtimeProvider
         
         $searchQuery
-            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
-            .sink { _ in }
+            .dropFirst()
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.fetchConversations()
+                }
+            }
             .store(in: &cancellables)
 
         realtimeListenerID = realtimeProvider.addEventListener { [weak self] event in
@@ -42,11 +47,7 @@ public final class ConversationListViewModel: ObservableObject {
     }
     
     public var filteredConversations: [ConversationListItemDTO] {
-        if searchQuery.isEmpty {
-            return conversations
-        } else {
-            return conversations.filter { $0.name?.localizedCaseInsensitiveContains(searchQuery) == true }
-        }
+        return conversations
     }
     
     public func setOrgId(_ orgId: UUID) {
@@ -60,7 +61,8 @@ public final class ConversationListViewModel: ObservableObject {
         error = nil
         
         do {
-            let response = try await messagingRepository.getConversations()
+            let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            let response = try await messagingRepository.getConversations(searchQuery: query.isEmpty ? nil : query)
             self.conversations = response.data ?? []
             
             let channels = self.conversations.map { "conversation:\($0.id.uuidString)" }

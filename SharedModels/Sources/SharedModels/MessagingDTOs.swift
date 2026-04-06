@@ -30,6 +30,24 @@ public struct SendMessageRequest: Codable, Sendable, Hashable {
     }
 }
 
+/// Request to edit a message body.
+public struct EditMessageRequest: Codable, Sendable, Hashable {
+    public let body: String
+    
+    public init(body: String) {
+        self.body = body
+    }
+}
+
+/// Request to send a typing indicator.
+public struct TypingIndicatorRequest: Codable, Sendable, Hashable {
+    public let userId: UUID
+    
+    public init(userId: UUID) {
+        self.userId = userId
+    }
+}
+
 /// Request to mark a conversation as read.
 public struct MarkReadRequest: Codable, Sendable, Hashable {
     public let lastReadMessageId: UUID?

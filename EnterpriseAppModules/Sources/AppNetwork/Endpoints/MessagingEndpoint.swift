@@ -2,12 +2,15 @@ import Foundation
 import SharedModels
 
 public enum MessagingEndpoint {
-    case getConversations(configuration: APIConfiguration)
+    case getConversations(searchQuery: String?, configuration: APIConfiguration)
     case createConversation(payload: CreateConversationRequest, configuration: APIConfiguration)
     case getConversation(id: UUID, configuration: APIConfiguration)
     case getMessages(conversationId: UUID, cursor: UUID?, limit: Int, configuration: APIConfiguration)
     case sendMessage(conversationId: UUID, payload: SendMessageRequest, configuration: APIConfiguration)
     case markRead(conversationId: UUID, payload: MarkReadRequest, configuration: APIConfiguration)
+    case editMessage(messageId: UUID, payload: EditMessageRequest, configuration: APIConfiguration)
+    case deleteMessage(messageId: UUID, configuration: APIConfiguration)
+    case sendTypingIndicator(conversationId: UUID, payload: TypingIndicatorRequest, configuration: APIConfiguration)
 }
 
 extension MessagingEndpoint: APIEndpoint {
@@ -17,9 +20,11 @@ extension MessagingEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .getConversations(let c), .createConversation(_, let c),
+        case .getConversations(_, let c), .createConversation(_, let c),
              .getConversation(_, let c), .getMessages(_, _, _, let c),
-             .sendMessage(_, _, let c), .markRead(_, _, let c):
+             .sendMessage(_, _, let c), .markRead(_, _, let c),
+             .editMessage(_, _, let c), .deleteMessage(_, let c),
+             .sendTypingIndicator(_, _, let c):
             return c
         }
     }
@@ -34,6 +39,10 @@ extension MessagingEndpoint: APIEndpoint {
             return "/api/conversations/\(id.uuidString)/messages"
         case .markRead(let id, _, _):
             return "/api/conversations/\(id.uuidString)/read"
+        case .editMessage(let id, _, _), .deleteMessage(let id, _):
+            return "/api/messages/\(id.uuidString)"
+        case .sendTypingIndicator(let id, _, _):
+            return "/api/conversations/\(id.uuidString)/typing"
         }
     }
 
@@ -41,8 +50,12 @@ extension MessagingEndpoint: APIEndpoint {
         switch self {
         case .getConversations, .getConversation, .getMessages:
             return .get
-        case .createConversation, .sendMessage, .markRead:
+        case .createConversation, .sendMessage, .markRead, .sendTypingIndicator:
             return .post
+        case .editMessage:
+            return .put
+        case .deleteMessage:
+            return .delete
         }
     }
 
@@ -52,6 +65,9 @@ extension MessagingEndpoint: APIEndpoint {
             var params: [String: String] = ["limit": "\(limit)"]
             if let cursor = cursor { params["cursor"] = cursor.uuidString }
             return params
+        case .getConversations(let search, _):
+            if let s = search, !s.isEmpty { return ["search": s] }
+            return nil
         default:
             return nil
         }
@@ -75,6 +91,10 @@ extension MessagingEndpoint: APIEndpoint {
         case .sendMessage(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .markRead(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .editMessage(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .sendTypingIndicator(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         default:
             return nil

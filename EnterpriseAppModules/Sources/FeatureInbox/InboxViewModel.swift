@@ -9,11 +9,35 @@ public final class InboxViewModel: ObservableObject {
     @Published public private(set) var notifications: [NotificationDTO] = []
     @Published public private(set) var isLoading: Bool = false
     @Published public var error: Error?
+    public enum NotificationFilter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case mentions = "Mentions"
+        case assignments = "Assignments"
+        case updates = "Updates"
+        
+        public var id: String { self.rawValue }
+    }
+    
+    @Published public var filterType: NotificationFilter = .all
     @Published public var unreadOnly: Bool = false {
         didSet {
             Task {
                 await fetchNotifications()
             }
+        }
+    }
+    
+    public var filteredNotifications: [NotificationDTO] {
+        let base = notifications
+        switch filterType {
+        case .all:
+            return base
+        case .mentions:
+            return base.filter { $0.type.lowercased().contains("mention") }
+        case .assignments:
+            return base.filter { $0.type.lowercased().contains("assign") }
+        case .updates:
+            return base.filter { $0.type.lowercased().contains("update") || $0.type.lowercased().contains("status") }
         }
     }
     
@@ -52,6 +76,13 @@ public final class InboxViewModel: ObservableObject {
             }
         } catch {
             self.error = error
+        }
+    }
+    
+    public func markAllAsRead() async {
+        let unread = notifications.filter { $0.readAt == nil }
+        for notification in unread {
+            await markAsRead(notification)
         }
     }
 }

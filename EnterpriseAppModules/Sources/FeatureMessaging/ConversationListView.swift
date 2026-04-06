@@ -7,15 +7,17 @@ import Domain
 public struct ConversationListView: View {
     @StateObject private var viewModel: ConversationListViewModel
     let messagingRepository: MessagingRepositoryProtocol
+    let apiClient: APIClientProtocol
     let realtimeProvider: RealTimeProvider
     let currentUserId: UUID
-    
+
     @State private var showingNewSheet = false
     @State private var navigationPath = NavigationPath()
-    
-    public init(viewModel: ConversationListViewModel, messagingRepository: MessagingRepositoryProtocol, realtimeProvider: RealTimeProvider, currentUserId: UUID) {
+
+    public init(viewModel: ConversationListViewModel, messagingRepository: MessagingRepositoryProtocol, apiClient: APIClientProtocol, realtimeProvider: RealTimeProvider, currentUserId: UUID) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.messagingRepository = messagingRepository
+        self.apiClient = apiClient
         self.realtimeProvider = realtimeProvider
         self.currentUserId = currentUserId
     }
@@ -60,19 +62,23 @@ public struct ConversationListView: View {
                 }
             }
             .navigationDestination(for: ConversationListItemDTO.self) { conv in
-                let chatVM = ChatViewModel(conversationId: conv.id, messagingRepository: messagingRepository, realtimeProvider: realtimeProvider)
+                let chatVM = ChatViewModel(conversationId: conv.id, currentUserId: currentUserId, messagingRepository: messagingRepository, realtimeProvider: realtimeProvider)
                 ChatView(viewModel: chatVM, conversationName: conv.name ?? "Unknown", currentUserId: currentUserId)
             }
             .navigationDestination(for: ConversationDTO.self) { conv in
-                let chatVM = ChatViewModel(conversationId: conv.id, messagingRepository: messagingRepository, realtimeProvider: realtimeProvider)
+                let chatVM = ChatViewModel(conversationId: conv.id, currentUserId: currentUserId, messagingRepository: messagingRepository, realtimeProvider: realtimeProvider)
                 ChatView(viewModel: chatVM, conversationName: conv.name ?? "Unknown", currentUserId: currentUserId)
             }
             .sheet(isPresented: $showingNewSheet) {
-                NewConversationSheet(messagingRepository: messagingRepository) { newConv in
+                NewConversationSheet(
+                    messagingRepository: messagingRepository,
+                    apiClient: apiClient,
+                    currentUserId: currentUserId
+                ) { newConv in
                     navigationPath.append(newConv)
                     Task { await viewModel.fetchConversations() }
                 }
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large])
             }
             .task {
                 if viewModel.conversations.isEmpty {

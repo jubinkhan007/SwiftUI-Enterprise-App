@@ -62,6 +62,7 @@ struct AuthenticatedRootView: View {
     let authManager: AppData.AuthManager
     let selectedOrg: OrganizationDTO
     let viewModel: DashboardViewModel
+    let apiClient: APIClientProtocol
     let integrationRepository: IntegrationRepositoryProtocol
     let messagingRepository: MessagingRepositoryProtocol
     let realtimeProvider: RealTimeProvider
@@ -112,6 +113,7 @@ struct AuthenticatedRootView: View {
             attachmentRepository: attachmentRepo,
             analyticsRepository: analyticsRepo
         )
+        self.apiClient = apiClient
         self.integrationRepository = integrationRepo
         self.messagingRepository = messagingRepo
         self.realtimeProvider = rtProvider
@@ -139,6 +141,7 @@ struct AuthenticatedRootView: View {
                         ConversationListView(
                             viewModel: conversationListViewModel,
                             messagingRepository: messagingRepository,
+                            apiClient: apiClient,
                             realtimeProvider: realtimeProvider,
                             currentUserId: session.user.id
                         )

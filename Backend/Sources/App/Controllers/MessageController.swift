@@ -8,6 +8,10 @@ struct MessageController: RouteCollection {
         let conversations = routes.grouped("conversations")
         conversations.get(":conversationID", "messages", use: listMessages)
         conversations.post(":conversationID", "messages", use: sendMessage)
+        
+        let messages = routes.grouped("messages")
+        messages.put(":messageID", use: editMessage)
+        messages.delete(":messageID", use: deleteMessage)
     }
 
     // MARK: - GET /api/conversations/:conversationID/messages
@@ -34,7 +38,6 @@ struct MessageController: RouteCollection {
 
         var query = MessageModel.query(on: req.db)
             .filter(\.$conversation.$id == convId)
-            .filter(\.$deletedAt == nil)
             .with(\.$sender)
             .sort(\.$createdAt, .descending)
             .limit(limit)
@@ -147,5 +150,99 @@ struct MessageController: RouteCollection {
         )
 
         return .success(dto)
+    }
+
+    // MARK: - PUT /api/messages/:messageID
+
+    @Sendable
+    func editMessage(req: Request) async throws -> APIResponse<MessageDTO> {
+        let ctx = try req.orgContext
+        guard let messageId = req.parameters.get("messageID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid message ID.")
+        }
+        let payload = try req.content.decode(EditMessageRequest.self)
+        guard !payload.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw Abort(.badRequest, reason: "Message body cannot be empty.")
+        }
+
+        guard let message = try await MessageModel.query(on: req.db)
+            .filter(\.$id == messageId)
+            .with(\.$sender)
+            .first() else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        guard message.$sender.id == ctx.userId else {
+            throw Abort(.forbidden, reason: "Cannot edit someone else's message.")
+        }
+
+        message.body = payload.body
+        message.editedAt = Date()
+        try await message.save(on: req.db)
+
+        let dto = MessageDTO(
+            id: messageId,
+            conversationId: message.$conversation.id,
+            senderId: message.$sender.id,
+            senderName: message.sender.displayName,
+            body: message.body,
+            messageType: message.messageType,
+            editedAt: message.editedAt,
+            deletedAt: message.deletedAt,
+            createdAt: message.createdAt
+        )
+
+        RealtimeBroadcaster.broadcast(
+            app: req.application,
+            orgId: ctx.orgId,
+            channels: ["conversation:\(message.$conversation.id.uuidString)"],
+            type: "message.updated",
+            entityId: messageId,
+            payload: [
+                "conversationId": message.$conversation.id.uuidString,
+                "messageId": messageId.uuidString,
+                "body": message.body,
+                "editedAt": ISO8601DateFormatter().string(from: message.editedAt!)
+            ]
+        )
+
+        return .success(dto)
+    }
+
+    // MARK: - DELETE /api/messages/:messageID
+
+    @Sendable
+    func deleteMessage(req: Request) async throws -> APIResponse<EmptyResponse> {
+        let ctx = try req.orgContext
+        guard let messageId = req.parameters.get("messageID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid message ID.")
+        }
+
+        guard let message = try await MessageModel.query(on: req.db)
+            .filter(\.$id == messageId)
+            .with(\.$sender)
+            .first() else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        guard message.$sender.id == ctx.userId else {
+            throw Abort(.forbidden, reason: "Cannot delete someone else's message.")
+        }
+
+        message.deletedAt = Date()
+        try await message.save(on: req.db)
+
+        RealtimeBroadcaster.broadcast(
+            app: req.application,
+            orgId: ctx.orgId,
+            channels: ["conversation:\(message.$conversation.id.uuidString)"],
+            type: "message.deleted",
+            entityId: messageId,
+            payload: [
+                "conversationId": message.$conversation.id.uuidString,
+                "messageId": messageId.uuidString,
+                "deletedAt": ISO8601DateFormatter().string(from: message.deletedAt!)
+            ]
+        )
+
+        return .success(EmptyResponse())
     }
 }

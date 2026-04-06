@@ -12,8 +12,8 @@ public final class LiveMessagingService: MessagingRepositoryProtocol {
         self.apiConfiguration = configuration
     }
     
-    public func getConversations() async throws -> APIResponse<[ConversationListItemDTO]> {
-        let endpoint = MessagingEndpoint.getConversations(configuration: apiConfiguration)
+    public func getConversations(searchQuery: String?) async throws -> APIResponse<[ConversationListItemDTO]> {
+        let endpoint = MessagingEndpoint.getConversations(searchQuery: searchQuery, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<[ConversationListItemDTO]>.self)
     }
     
@@ -39,6 +39,21 @@ public final class LiveMessagingService: MessagingRepositoryProtocol {
     
     public func markRead(conversationId: UUID, request: MarkReadRequest) async throws -> APIResponse<EmptyResponse> {
         let endpoint = MessagingEndpoint.markRead(conversationId: conversationId, payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
+    }
+    
+    public func editMessage(messageId: UUID, request: EditMessageRequest) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.editMessage(messageId: messageId, payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+    
+    public func deleteMessage(messageId: UUID) async throws -> APIResponse<EmptyResponse> {
+        let endpoint = MessagingEndpoint.deleteMessage(messageId: messageId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
+    }
+    
+    public func sendTypingIndicator(conversationId: UUID, request: TypingIndicatorRequest) async throws -> APIResponse<EmptyResponse> {
+        let endpoint = MessagingEndpoint.sendTypingIndicator(conversationId: conversationId, payload: request, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
     }
 }
