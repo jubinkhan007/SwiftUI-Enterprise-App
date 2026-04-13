@@ -39,7 +39,16 @@ public struct OrganizationGateView<AuthenticatedContent: View>: View {
         }
         .task { await viewModel.fetchOrganizations() }
         .sheet(isPresented: $viewModel.showCreateSheet) { createOrgSheet }
-        .sheet(isPresented: $viewModel.showJoinSheet) { joinOrgSheet }
+        .sheet(isPresented: $viewModel.showJoinSheet) {
+            JoinWorkspaceView(
+                viewModel: JoinWorkspaceViewModel { membership in
+                    Task {
+                        await viewModel.fetchOrganizations()
+                        viewModel.showJoinSheet = false
+                    }
+                }
+            )
+        }
     }
 
     private var gatedNavigation: some View {
@@ -327,64 +336,4 @@ public struct OrganizationGateView<AuthenticatedContent: View>: View {
         }
     }
 
-    // MARK: - Join Org Sheet
-
-    private var joinOrgSheet: some View {
-        NavigationStack {
-            ZStack {
-                AppColors.backgroundSecondary.ignoresSafeArea()
-
-                VStack(spacing: AppSpacing.lg) {
-                    if !viewModel.pendingInvites.isEmpty {
-                        pendingInvitesSection
-                    }
-
-                    AppTextField(
-                        "Invite ID",
-                        text: $viewModel.inviteIdToAccept,
-                        placeholder: "Paste the invite UUID"
-                    )
-
-                    Text("Ask a workspace admin to share an invite ID with you.")
-                        .appFont(AppTypography.caption1)
-                        .foregroundColor(AppColors.textTertiary)
-                        .multilineTextAlignment(.center)
-
-                    if let error = viewModel.errorMessage {
-                        Text(error)
-                            .appFont(AppTypography.caption1)
-                            .foregroundColor(AppColors.statusError)
-                    }
-
-                    AppButton(
-                        viewModel.isJoining ? "Joining…" : "Join Workspace",
-                        variant: .primary,
-                        isLoading: viewModel.isJoining
-                    ) {
-                        Task { await viewModel.acceptInvite() }
-                    }
-                    .disabled(viewModel.inviteIdToAccept.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isJoining)
-
-                    Spacer()
-                }
-                .padding()
-            }
-            .navigationTitle("Join Workspace")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        viewModel.errorMessage = nil
-                        viewModel.showJoinSheet = false
-                    }
-                    .foregroundColor(AppColors.textSecondary)
-                }
-            }
-            .task {
-                await viewModel.fetchPendingInvites()
-            }
-        }
-    }
 }

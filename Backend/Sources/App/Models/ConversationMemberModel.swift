@@ -26,6 +26,9 @@ final class ConversationMemberModel: Model, Content, @unchecked Sendable {
     @OptionalField(key: "last_read_message_id")
     var lastReadMessageId: UUID?
 
+    @Field(key: "status")
+    var status: String  // "active", "pending"
+
     @Field(key: "notification_preference")
     var notificationPreference: String  // "all", "mentions", "none"
 
@@ -42,6 +45,7 @@ final class ConversationMemberModel: Model, Content, @unchecked Sendable {
         conversationId: UUID,
         userId: UUID,
         role: String = "member",
+        status: String = "active",
         notificationPreference: String = "all",
         isMuted: Bool = false
     ) {
@@ -49,6 +53,7 @@ final class ConversationMemberModel: Model, Content, @unchecked Sendable {
         self.$conversation.id = conversationId
         self.$user.id = userId
         self.role = role
+        self.status = status
         self.notificationPreference = notificationPreference
         self.isMuted = isMuted
     }

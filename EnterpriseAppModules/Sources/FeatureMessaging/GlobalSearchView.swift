@@ -22,10 +22,17 @@ final class GlobalSearchViewModel: ObservableObject {
 
     @Published var query = ""
     @Published var selectedTab: Tab = .messages
+    @Published var filterFrom: String = ""
+    @Published var filterIn: String = ""
+    @Published var filterAfterDate: Date? = nil
     @Published private(set) var conversations: [ConversationListItemDTO] = []
     @Published private(set) var messageResults: [MessageResult] = []
     @Published private(set) var people: [ConversationMemberDTO] = []
     @Published private(set) var isLoading = false
+
+    var hasActiveFilters: Bool {
+        !filterFrom.isEmpty || !filterIn.isEmpty || filterAfterDate != nil
+    }
 
     private let messagingRepository: MessagingRepositoryProtocol
 
@@ -33,8 +40,14 @@ final class GlobalSearchViewModel: ObservableObject {
         self.messagingRepository = messagingRepository
     }
 
+    func clearFilters() {
+        filterFrom = ""
+        filterIn = ""
+        filterAfterDate = nil
+    }
+
     func search() async {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasActiveFilters else {
             conversations = []
             messageResults = []
             people = []
@@ -44,7 +57,14 @@ final class GlobalSearchViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let parsed = SearchQuery(raw: query)
+        // Merge visual filter bar values into the raw query for parsing
+        var augmented = query
+        if !filterFrom.isEmpty { augmented += " from:\(filterFrom)" }
+        if !filterIn.isEmpty   { augmented += " in:\(filterIn)" }
+        if let date = filterAfterDate {
+            augmented += " after:\(ISO8601DateFormatter().string(from: date))"
+        }
+        let parsed = SearchQuery(raw: augmented)
         do {
             let conversationResponse = try await messagingRepository.getConversations(searchQuery: parsed.channel)
             let fetchedConversations = conversationResponse.data ?? []
@@ -135,27 +155,116 @@ public struct GlobalSearchView: View {
 
     public var body: some View {
         NavigationStack {
-            VStack(spacing: AppSpacing.md) {
+            VStack(spacing: 0) {
+                filterBar
+                    .padding(.horizontal)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(AppColors.backgroundPrimary)
+
+                Divider()
+
                 Picker("Results", selection: $viewModel.selectedTab) {
                     ForEach(GlobalSearchViewModel.Tab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, AppSpacing.sm)
 
                 resultsView
             }
-            .padding()
             .searchable(text: $viewModel.query, prompt: "Search messages, channels, people")
             .onSubmit(of: .search) {
                 Task { await viewModel.search() }
             }
             .navigationTitle("Global Search")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                 }
+                if viewModel.hasActiveFilters {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Clear Filters") {
+                            viewModel.clearFilters()
+                            Task { await viewModel.search() }
+                        }
+                        .foregroundColor(AppColors.statusError)
+                    }
+                }
             }
+        }
+    }
+
+    private var filterBar: some View {
+        VStack(spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: "person")
+                    .foregroundColor(AppColors.textSecondary)
+                    .frame(width: 16)
+                TextField("From (sender name)", text: $viewModel.filterFrom)
+                    .appFont(AppTypography.caption1)
+                    .autocorrectionDisabled()
+                    .onSubmit { Task { await viewModel.search() } }
+            }
+            .padding(.horizontal, AppSpacing.sm)
+            .padding(.vertical, 7)
+            .background(AppColors.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: "number")
+                    .foregroundColor(AppColors.textSecondary)
+                    .frame(width: 16)
+                TextField("In (channel name)", text: $viewModel.filterIn)
+                    .appFont(AppTypography.caption1)
+                    .autocorrectionDisabled()
+                    .onSubmit { Task { await viewModel.search() } }
+            }
+            .padding(.horizontal, AppSpacing.sm)
+            .padding(.vertical, 7)
+            .background(AppColors.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: "calendar")
+                    .foregroundColor(AppColors.textSecondary)
+                    .frame(width: 16)
+                if let date = viewModel.filterAfterDate {
+                    HStack {
+                        Text("After: \(date.formatted(date: .abbreviated, time: .omitted))")
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.textPrimary)
+                        Spacer()
+                        Button {
+                            viewModel.filterAfterDate = nil
+                            Task { await viewModel.search() }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    DatePicker(
+                        "After date",
+                        selection: Binding(
+                            get: { viewModel.filterAfterDate ?? Date() },
+                            set: { viewModel.filterAfterDate = $0; Task { await viewModel.search() } }
+                        ),
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                    .appFont(AppTypography.caption1)
+                }
+            }
+            .padding(.horizontal, AppSpacing.sm)
+            .padding(.vertical, 7)
+            .background(AppColors.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 

@@ -25,7 +25,15 @@ struct OrganizationController: RouteCollection {
             org.delete("members", ":memberID", use: removeMember)
             org.post("invites", ":inviteID", "revoke", use: revokeInvite)
             org.get("audit-log", use: listAuditLog)
+            org.post("join", use: requestToJoin)
+            org.get("join-requests", use: listJoinRequests)
         }
+
+        // Join request response (no specific org context in header — admin acts on a pending request)
+        orgs.post("join-requests", ":requestID", "respond", use: respondToJoinRequest)
+
+        // Workspace discovery search (no org membership required)
+        orgs.get("search", use: searchOrganizations)
 
         // Public invite acceptance (no org context needed, uses invite token)
         orgs.post("invites", ":inviteID", "accept", use: acceptInvite)
@@ -467,6 +475,167 @@ struct OrganizationController: RouteCollection {
         )
 
         return .success(invite.toDTO())
+    }
+
+    // MARK: - GET /api/organizations/search
+
+    @Sendable
+    func searchOrganizations(req: Request) async throws -> APIResponse<[OrganizationDTO]> {
+        let userId = try req.authContext.userId
+        let query = (try? req.query.get(String.self, at: "q")) ?? ""
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return .success([])
+        }
+
+        // Return orgs that match the query and the user is NOT already a member of
+        let memberships = try await OrganizationMemberModel.query(on: req.db)
+            .filter(\.$user.$id == userId)
+            .all()
+        let joinedIds = Set(memberships.map { $0.$organization.id })
+
+        let orgs = try await OrganizationModel.query(on: req.db)
+            .filter(\.$name ~~ query)
+            .all()
+
+        let results = orgs.filter { org in
+            guard let id = org.id else { return false }
+            return !joinedIds.contains(id)
+        }
+
+        return .success(results.map { $0.toDTO() })
+    }
+
+    // MARK: - POST /api/organizations/:orgID/join
+
+    @Sendable
+    func requestToJoin(req: Request) async throws -> APIResponse<OrganizationJoinRequestDTO> {
+        let userId = try req.authContext.userId
+        guard let orgId = req.parameters.get("orgID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid organization ID.")
+        }
+
+        guard let org = try await OrganizationModel.find(orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+
+        // Check not already a member
+        let isMember = try await OrganizationMemberModel.query(on: req.db)
+            .filter(\.$organization.$id == orgId)
+            .filter(\.$user.$id == userId)
+            .count() > 0
+        guard !isMember else {
+            throw Abort(.conflict, reason: "You are already a member of this workspace.")
+        }
+
+        // Check no existing pending request
+        let existing = try await OrganizationJoinRequestModel.query(on: req.db)
+            .filter(\.$organization.$id == orgId)
+            .filter(\.$user.$id == userId)
+            .filter(\.$status == "pending")
+            .first()
+        guard existing == nil else {
+            throw Abort(.conflict, reason: "You already have a pending join request for this workspace.")
+        }
+
+        guard let user = try await UserModel.find(userId, on: req.db) else {
+            throw Abort(.notFound, reason: "User not found.")
+        }
+
+        let joinRequest = OrganizationJoinRequestModel(orgId: orgId, userId: userId)
+        try await joinRequest.save(on: req.db)
+
+        return .success(joinRequest.toDTO(orgName: org.name, userName: user.displayName, userEmail: user.email))
+    }
+
+    // MARK: - GET /api/organizations/:orgID/join-requests
+
+    @Sendable
+    func listJoinRequests(req: Request) async throws -> APIResponse<[OrganizationJoinRequestDTO]> {
+        let ctx = try req.orgContext
+        try req.requirePermission(.membersManage)
+
+        guard let org = try await OrganizationModel.find(ctx.orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+
+        let requests = try await OrganizationJoinRequestModel.query(on: req.db)
+            .filter(\.$organization.$id == ctx.orgId)
+            .filter(\.$status == "pending")
+            .with(\.$user)
+            .sort(\.$createdAt, .descending)
+            .all()
+
+        let dtos = requests.map { r in
+            r.toDTO(orgName: org.name, userName: r.user.displayName, userEmail: r.user.email)
+        }
+
+        return .success(dtos)
+    }
+
+    // MARK: - POST /api/organizations/join-requests/:requestID/respond
+
+    @Sendable
+    func respondToJoinRequest(req: Request) async throws -> APIResponse<OrganizationJoinRequestDTO> {
+        let userId = try req.authContext.userId
+
+        guard let requestId = req.parameters.get("requestID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid request ID.")
+        }
+
+        guard let joinRequest = try await OrganizationJoinRequestModel.query(on: req.db)
+            .filter(\.$id == requestId)
+            .with(\.$organization)
+            .with(\.$user)
+            .first() else {
+            throw Abort(.notFound, reason: "Join request not found.")
+        }
+
+        guard joinRequest.status == "pending" else {
+            throw Abort(.badRequest, reason: "This join request has already been resolved.")
+        }
+
+        // Verify the responding user is an admin/owner of the org
+        guard let membership = try await OrganizationMemberModel.query(on: req.db)
+            .filter(\.$organization.$id == joinRequest.$organization.id)
+            .filter(\.$user.$id == userId)
+            .first(),
+            membership.role == .admin || membership.role == .owner else {
+            throw Abort(.forbidden, reason: "Only workspace admins can respond to join requests.")
+        }
+
+        let payload = try req.content.decode(RespondToJoinRequestRequest.self)
+        guard payload.action == "accept" || payload.action == "reject" else {
+            throw Abort(.badRequest, reason: "Action must be 'accept' or 'reject'.")
+        }
+
+        if payload.action == "accept" {
+            joinRequest.status = "accepted"
+            joinRequest.respondedBy = userId
+            try await joinRequest.save(on: req.db)
+
+            let orgId = joinRequest.$organization.id
+            let targetUserId = joinRequest.$user.id
+
+            let alreadyMember = try await OrganizationMemberModel.query(on: req.db)
+                .filter(\.$organization.$id == orgId)
+                .filter(\.$user.$id == targetUserId)
+                .count() > 0
+
+            if !alreadyMember {
+                let newMembership = OrganizationMemberModel(orgId: orgId, userId: targetUserId, role: .member)
+                try await newMembership.save(on: req.db)
+            }
+        } else {
+            joinRequest.status = "rejected"
+            joinRequest.respondedBy = userId
+            try await joinRequest.save(on: req.db)
+        }
+
+        return .success(joinRequest.toDTO(
+            orgName: joinRequest.organization.name,
+            userName: joinRequest.user.displayName,
+            userEmail: joinRequest.user.email
+        ))
     }
 
     // MARK: - GET /api/organizations/:orgID/audit-log

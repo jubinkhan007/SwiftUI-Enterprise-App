@@ -28,11 +28,13 @@ public struct UpdateConversationRequest: Codable, Sendable, Hashable {
     public let name: String?
     public let description: String?
     public let topic: String?
+    public let isPrivate: Bool?
 
-    public init(name: String? = nil, description: String? = nil, topic: String? = nil) {
+    public init(name: String? = nil, description: String? = nil, topic: String? = nil, isPrivate: Bool? = nil) {
         self.name = name
         self.description = description
         self.topic = topic
+        self.isPrivate = isPrivate
     }
 }
 
@@ -51,6 +53,22 @@ public struct UpdateConversationMemberPreferencesRequest: Codable, Sendable, Has
     public init(notificationPreference: String? = nil, isMuted: Bool? = nil) {
         self.notificationPreference = notificationPreference
         self.isMuted = isMuted
+    }
+}
+
+public struct UpdateChannelMemberRoleRequest: Codable, Sendable, Hashable {
+    public let role: String
+
+    public init(role: String) {
+        self.role = role
+    }
+}
+
+public struct ApproveChannelMemberRequest: Codable, Sendable, Hashable {
+    public let status: String // "active", "rejected"
+
+    public init(status: String) {
+        self.status = status
     }
 }
 
@@ -99,6 +117,7 @@ public struct ConversationDTO: Codable, Sendable, Identifiable, Hashable {
     public let description: String?
     public let topic: String?
     public let isArchived: Bool
+    public let isPrivate: Bool
     public let ownerId: UUID?
     public let lastMessageAt: Date?
     public let createdAt: Date?
@@ -111,6 +130,7 @@ public struct ConversationDTO: Codable, Sendable, Identifiable, Hashable {
         description: String? = nil,
         topic: String? = nil,
         isArchived: Bool,
+        isPrivate: Bool = true,
         ownerId: UUID? = nil,
         lastMessageAt: Date?,
         createdAt: Date?,
@@ -122,6 +142,7 @@ public struct ConversationDTO: Codable, Sendable, Identifiable, Hashable {
         self.description = description
         self.topic = topic
         self.isArchived = isArchived
+        self.isPrivate = isPrivate
         self.ownerId = ownerId
         self.lastMessageAt = lastMessageAt
         self.createdAt = createdAt
@@ -159,6 +180,7 @@ public struct ConversationMemberDTO: Codable, Sendable, Identifiable, Hashable {
     public let userId: UUID
     public let displayName: String
     public let role: String
+    public let status: String
     public let notificationPreference: String?
     public let lastReadAt: Date?
     public let lastSeenAt: Date?
@@ -169,6 +191,7 @@ public struct ConversationMemberDTO: Codable, Sendable, Identifiable, Hashable {
         userId: UUID,
         displayName: String,
         role: String,
+        status: String = "active",
         notificationPreference: String? = nil,
         lastReadAt: Date?,
         lastSeenAt: Date? = nil,
@@ -178,6 +201,7 @@ public struct ConversationMemberDTO: Codable, Sendable, Identifiable, Hashable {
         self.userId = userId
         self.displayName = displayName
         self.role = role
+        self.status = status
         self.notificationPreference = notificationPreference
         self.lastReadAt = lastReadAt
         self.lastSeenAt = lastSeenAt

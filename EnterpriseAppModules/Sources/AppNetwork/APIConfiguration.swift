@@ -23,8 +23,13 @@ public extension APIConfiguration {
         return APIConfiguration(baseURL: URL(string: "http://127.0.0.1:8080")!)
     }
 
-    /// Applies the production server setting to all environments.
+    /// Chooses a sensible default for the current runtime.
     static var current: APIConfiguration {
+        if let override = ProcessInfo.processInfo.environment["ENTERPRISE_API_BASE_URL"],
+           let url = URL(string: override) {
+            return APIConfiguration(baseURL: url)
+        }
+
         return .production
     }
 }

@@ -75,9 +75,9 @@ public struct NewConversationSheet: View {
                         .disabled(isCreating)
                     }
                     .listStyle(.plain)
-                    .searchable(text: $searchText, prompt: "Search members")
                 }
             }
+            .searchable(text: $searchText, placement: .automatic, prompt: "Search members")
             .navigationTitle("New Message")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -99,7 +99,11 @@ public struct NewConversationSheet: View {
     }
 
     private func fetchMembers() async {
-        guard let orgId = OrganizationContext.shared.orgId else { return }
+        // Fallback: Use organization context if available, otherwise we might need an alternative.
+        guard let orgId = OrganizationContext.shared.orgId else { 
+            isLoadingMembers = false
+            return 
+        }
         isLoadingMembers = true
         do {
             let endpoint = OrganizationEndpoint.listMembers(orgId: orgId, configuration: .current)

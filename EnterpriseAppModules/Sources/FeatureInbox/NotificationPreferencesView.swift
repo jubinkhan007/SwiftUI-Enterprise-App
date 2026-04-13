@@ -14,6 +14,7 @@ public struct NotificationPreferencesView: View {
     @State private var selectedPreference: String
     @State private var isMuted: Bool
     @State private var isSaving = false
+    @State private var errorMessage: String?
 
     public init(
         conversation: ConversationDTO,
@@ -44,7 +45,16 @@ public struct NotificationPreferencesView: View {
                     }
                     .pickerStyle(.inline)
                 }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
             }
+            .disabled(isSaving)
             .navigationTitle("Notifications")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -62,6 +72,7 @@ public struct NotificationPreferencesView: View {
 
     private func save() async {
         isSaving = true
+        errorMessage = nil
         defer { isSaving = false }
         do {
             let response = try await messagingRepository.updatePreferences(
@@ -71,12 +82,17 @@ public struct NotificationPreferencesView: View {
                     isMuted: isMuted
                 )
             )
-            if let updated = response.data {
-                onUpdated(updated)
+            guard let updated = response.data else {
+                errorMessage = response.error?.message ?? "Could not save notification preferences."
+                return
             }
+
+            selectedPreference = updated.notificationPreference ?? selectedPreference
+            isMuted = updated.isMuted
+            onUpdated(updated)
             dismiss()
         } catch {
-            dismiss()
+            errorMessage = error.localizedDescription
         }
     }
 }

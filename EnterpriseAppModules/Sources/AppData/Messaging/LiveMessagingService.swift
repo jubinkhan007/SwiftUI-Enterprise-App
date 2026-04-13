@@ -91,4 +91,14 @@ public final class LiveMessagingService: MessagingRepositoryProtocol {
         let endpoint = MessagingEndpoint.sendTypingIndicator(conversationId: conversationId, payload: request, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
     }
+
+    public func updateMemberRole(conversationId: UUID, memberId: UUID, request: UpdateChannelMemberRoleRequest) async throws -> APIResponse<ConversationMemberDTO> {
+        let endpoint = MessagingEndpoint.updateMemberRole(conversationId: conversationId, memberId: memberId, payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<ConversationMemberDTO>.self)
+    }
+
+    public func approveMember(conversationId: UUID, memberId: UUID) async throws -> APIResponse<ConversationMemberDTO> {
+        let endpoint = MessagingEndpoint.approveMember(conversationId: conversationId, memberId: memberId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<ConversationMemberDTO>.self)
+    }
 }

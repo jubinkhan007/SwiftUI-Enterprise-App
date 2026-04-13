@@ -5,14 +5,21 @@ import DesignSystem
 public struct MessageBubbleView: View {
     let message: MessageDTO
     let isCurrentUser: Bool
+    let currentUserId: UUID
+    let participantNames: [UUID: String]
     let onDelete: (() -> Void)?
     let onEdit: (() -> Void)?
     let onOpenThread: (() -> Void)?
     let onOpenActions: (() -> Void)?
 
+    @ObservedObject private var store: MessageInteractionStore = MessageInteractionStore.shared
+    @State private var reactionDetail: ReactionDetailItem?
+
     public init(
         message: MessageDTO,
         isCurrentUser: Bool,
+        currentUserId: UUID = UUID(),
+        participantNames: [UUID: String] = [:],
         onDelete: (() -> Void)? = nil,
         onEdit: (() -> Void)? = nil,
         onOpenThread: (() -> Void)? = nil,
@@ -20,6 +27,8 @@ public struct MessageBubbleView: View {
     ) {
         self.message = message
         self.isCurrentUser = isCurrentUser
+        self.currentUserId = currentUserId
+        self.participantNames = participantNames
         self.onDelete = onDelete
         self.onEdit = onEdit
         self.onOpenThread = onOpenThread
@@ -71,11 +80,39 @@ public struct MessageBubbleView: View {
                 }
             }
         }
+        .sheet(item: $reactionDetail) { detail in
+            ReactionDetailView(
+                emoji: detail.emoji,
+                messageId: message.id,
+                currentUserId: detail.currentUserId,
+                interactionStore: store,
+                participantNames: participantNames
+            )
+        }
     }
 
     @ViewBuilder
     private var bubbleContent: some View {
         VStack(alignment: isCurrentUser ? .trailing : .leading, spacing: AppSpacing.sm) {
+            // Pinned / Bookmarked badges
+            let isPinned = store.pinnedMessages.contains(message.id)
+            let isBookmarked = store.bookmarkedMessages.contains(message.id)
+            if (isPinned || isBookmarked) && message.deletedAt == nil {
+                HStack(spacing: AppSpacing.xs) {
+                    if isPinned {
+                        Label("Pinned", systemImage: "pin.fill")
+                            .appFont(AppTypography.caption2)
+                            .foregroundColor(isCurrentUser ? .white.opacity(0.75) : AppColors.brandPrimary)
+                    }
+                    if isBookmarked {
+                        Label("Saved", systemImage: "bookmark.fill")
+                            .appFont(AppTypography.caption2)
+                            .foregroundColor(isCurrentUser ? .white.opacity(0.75) : AppColors.brandPrimary)
+                    }
+                }
+                .labelStyle(.titleAndIcon)
+            }
+
             if message.deletedAt != nil {
                 Text("This message was deleted")
                     .appFont(AppTypography.body)
@@ -103,23 +140,35 @@ public struct MessageBubbleView: View {
                     .buttonStyle(.plain)
                 }
 
-                let reactions = MessageInteractionStore.shared.reactionSummary(for: message.id)
+                let reactions = store.reactionSummary(for: message.id)
                 if !reactions.isEmpty {
                     HStack(spacing: AppSpacing.xs) {
                         ForEach(reactions, id: \.emoji) { reaction in
-                            Text("\(reaction.emoji) \(reaction.count)")
-                                .appFont(AppTypography.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(AppColors.backgroundPrimary.opacity(isCurrentUser ? 0.18 : 1))
-                                .clipShape(Capsule())
+                            Button {
+                                reactionDetail = ReactionDetailItem(emoji: reaction.emoji, currentUserId: currentUserId)
+                            } label: {
+                                Text("\(reaction.emoji) \(reaction.count)")
+                                    .appFont(AppTypography.caption2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(AppColors.backgroundPrimary.opacity(isCurrentUser ? 0.18 : 1))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Remove my reaction", role: .destructive) {
+                                    store.toggleReaction(reaction.emoji, for: message.id, userId: currentUserId)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
         .padding(12)
-        .background(message.deletedAt == nil ? (isCurrentUser ? AppColors.brandPrimary : AppColors.surfaceElevated) : AppColors.surfaceElevated)
+        .background(message.deletedAt == nil
+            ? (isCurrentUser ? AppColors.brandPrimary : AppColors.surfaceElevated)
+            : AppColors.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
@@ -154,4 +203,12 @@ public struct MessageBubbleView: View {
                     .appFont(AppTypography.caption1)
             )
     }
+}
+
+// MARK: - Supporting Types
+
+struct ReactionDetailItem: Identifiable {
+    let id = UUID()
+    let emoji: String
+    let currentUserId: UUID
 }

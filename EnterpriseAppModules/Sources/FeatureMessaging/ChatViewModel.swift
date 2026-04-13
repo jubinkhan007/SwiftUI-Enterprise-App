@@ -8,6 +8,7 @@ import AppNetwork
 @MainActor
 public final class ChatViewModel: ObservableObject {
     @Published public private(set) var messages: [MessageDTO] = []
+    @Published public private(set) var memberDirectory: [UUID: String] = [:]
     @Published public var inputText: String = ""
     @Published public private(set) var isLoading: Bool = false
     @Published public private(set) var isLoadingMore: Bool = false
@@ -68,7 +69,9 @@ public final class ChatViewModel: ObservableObject {
             let response = try await messagingRepository.getMessages(conversationId: conversationId, cursor: nil, limit: 50)
             let fetched = response.data ?? []
             self.messages = Array(fetched.reversed())
+            mergeMemberDirectory(from: self.messages)
             self.hasMoreMessages = fetched.count == 50
+            await refreshMemberDirectory()
 
             if let last = self.messages.last {
                 self.lastMessageId = last.id
@@ -89,6 +92,7 @@ public final class ChatViewModel: ObservableObject {
             let response = try await messagingRepository.getMessages(conversationId: conversationId, cursor: oldest.id, limit: 50)
             let fetched = response.data ?? []
             self.messages = Array(fetched.reversed()) + self.messages
+            mergeMemberDirectory(from: self.messages)
             self.hasMoreMessages = fetched.count == 50
         } catch {
             self.error = error
@@ -110,6 +114,7 @@ public final class ChatViewModel: ObservableObject {
                 let response = try await messagingRepository.editMessage(messageId: editId, request: EditMessageRequest(body: text))
                 if let newMsg = response.data, let idx = messages.firstIndex(where: { $0.id == editId }) {
                     messages[idx] = newMsg
+                    memberDirectory[newMsg.senderId] = newMsg.senderName
                 }
             } catch {
                 self.error = error
@@ -123,6 +128,7 @@ public final class ChatViewModel: ObservableObject {
                     if !messages.contains(where: { $0.id == newMsg.id }) {
                         messages.append(newMsg)
                     }
+                    memberDirectory[newMsg.senderId] = newMsg.senderName
                 }
             } catch {
                 self.error = error
@@ -136,7 +142,7 @@ public final class ChatViewModel: ObservableObject {
             _ = try await messagingRepository.deleteMessage(messageId: id)
             if let idx = messages.firstIndex(where: { $0.id == id }) {
                 // optimistic
-                var old = messages[idx]
+                let old = messages[idx]
                 messages[idx] = MessageDTO(id: old.id, conversationId: old.conversationId, senderId: old.senderId, senderName: old.senderName, body: old.body, messageType: old.messageType, editedAt: old.editedAt, deletedAt: Date(), createdAt: old.createdAt)
             }
         } catch {
@@ -185,6 +191,27 @@ public final class ChatViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.isTypingIndicatorVisible = false
             }
+        }
+    }
+
+    private func mergeMemberDirectory(from messages: [MessageDTO]) {
+        for message in messages {
+            memberDirectory[message.senderId] = message.senderName
+        }
+    }
+
+    private func refreshMemberDirectory() async {
+        do {
+            let response = try await messagingRepository.getConversation(id: conversationId)
+            guard let members = response.data?.members else { return }
+
+            var updated = memberDirectory
+            for member in members {
+                updated[member.userId] = member.displayName
+            }
+            memberDirectory = updated
+        } catch {
+            // Message rendering can proceed with sender names if member lookup fails.
         }
     }
 }

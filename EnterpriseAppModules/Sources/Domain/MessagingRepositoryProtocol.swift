@@ -18,4 +18,6 @@ public protocol MessagingRepositoryProtocol: Sendable {
     func editMessage(messageId: UUID, request: EditMessageRequest) async throws -> APIResponse<MessageDTO>
     func deleteMessage(messageId: UUID) async throws -> APIResponse<EmptyResponse>
     func sendTypingIndicator(conversationId: UUID, request: TypingIndicatorRequest) async throws -> APIResponse<EmptyResponse>
+    func updateMemberRole(conversationId: UUID, memberId: UUID, request: UpdateChannelMemberRoleRequest) async throws -> APIResponse<ConversationMemberDTO>
+    func approveMember(conversationId: UUID, memberId: UUID) async throws -> APIResponse<ConversationMemberDTO>
 }

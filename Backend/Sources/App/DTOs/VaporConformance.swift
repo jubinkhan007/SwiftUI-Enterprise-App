@@ -107,3 +107,8 @@ extension CreateAPIKeyResponse: Content {}
 extension WebhookSubscriptionDTO: Content {}
 extension CreateWebhookSubscriptionRequest: Content {}
 extension WebhookTestResponse: Content {}
+
+// Phase 17 & 18: Messaging and Governance
+extension UpdateChannelMemberRoleRequest: Content {}
+extension OrganizationJoinRequestDTO: Content {}
+extension RespondToJoinRequestRequest: Content {}

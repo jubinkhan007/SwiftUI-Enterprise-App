@@ -12,10 +12,12 @@ public final class TeamManagementViewModel: ObservableObject {
 
     @Published public var members: [OrganizationMemberDTO] = []
     @Published public var invites: [OrganizationInviteDTO] = []
+    @Published public var joinRequests: [OrganizationJoinRequestDTO] = []
     @Published public var currentPermissions: PermissionSet? = nil
     @Published public var currentRole: UserRole? = nil
     @Published public var isLoadingMembers = false
     @Published public var isLoadingInvites = false
+    @Published public var isLoadingJoinRequests = false
     @Published public var errorMessage: String? = nil
 
     // Invite sheet state
@@ -60,6 +62,10 @@ public final class TeamManagementViewModel: ObservableObject {
         currentPermissions?.has(.membersManage) ?? false
     }
 
+    public var canViewJoinRequests: Bool {
+        currentPermissions?.has(.membersManage) ?? false
+    }
+
     // MARK: - Fetch Current User Permissions
 
     public func fetchMyPermissions() async {
@@ -95,6 +101,46 @@ public final class TeamManagementViewModel: ObservableObject {
         }
 
         isLoadingMembers = false
+    }
+
+    // MARK: - Fetch Join Requests
+
+    public func fetchJoinRequests() async {
+        guard canViewJoinRequests else { return }
+        isLoadingJoinRequests = true
+        defer { isLoadingJoinRequests = false }
+        do {
+            let endpoint = OrganizationEndpoint.listJoinRequests(orgId: orgId, configuration: configuration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<[OrganizationJoinRequestDTO]>.self)
+            joinRequests = response.data ?? []
+        } catch {
+            // Silent — tab stays empty if admin lacks access
+        }
+    }
+
+    // MARK: - Respond to Join Request
+
+    public func respondToJoinRequest(_ request: OrganizationJoinRequestDTO, action: String) async {
+        errorMessage = nil
+        do {
+            let payload = RespondToJoinRequestRequest(action: action)
+            let endpoint = OrganizationEndpoint.respondToJoinRequest(
+                requestId: request.id,
+                payload: payload,
+                configuration: configuration
+            )
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<OrganizationJoinRequestDTO>.self)
+            if let updated = response.data,
+               let index = joinRequests.firstIndex(where: { $0.id == updated.id }) {
+                joinRequests.remove(at: index)
+            }
+            if action == "accept" {
+                // Refresh members to include newly added member
+                await fetchMembers()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Fetch Invites
@@ -215,5 +261,6 @@ public final class TeamManagementViewModel: ObservableObject {
         await fetchMyPermissions()
         await fetchMembers()
         await fetchInvites()
+        await fetchJoinRequests()
     }
 }

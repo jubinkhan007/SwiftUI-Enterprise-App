@@ -18,6 +18,8 @@ public enum MessagingEndpoint {
     case editMessage(messageId: UUID, payload: EditMessageRequest, configuration: APIConfiguration)
     case deleteMessage(messageId: UUID, configuration: APIConfiguration)
     case sendTypingIndicator(conversationId: UUID, payload: TypingIndicatorRequest, configuration: APIConfiguration)
+    case updateMemberRole(conversationId: UUID, memberId: UUID, payload: UpdateChannelMemberRoleRequest, configuration: APIConfiguration)
+    case approveMember(conversationId: UUID, memberId: UUID, configuration: APIConfiguration)
 }
 
 extension MessagingEndpoint: APIEndpoint {
@@ -35,7 +37,8 @@ extension MessagingEndpoint: APIEndpoint {
              .getThread(_, let c),
              .sendMessage(_, _, let c), .markRead(_, _, let c),
              .editMessage(_, _, let c), .deleteMessage(_, let c),
-             .sendTypingIndicator(_, _, let c):
+             .sendTypingIndicator(_, _, let c),
+             .updateMemberRole(_, _, _, let c), .approveMember(_, _, let c):
             return c
         }
     }
@@ -68,6 +71,10 @@ extension MessagingEndpoint: APIEndpoint {
             return "/api/messages/\(id.uuidString)"
         case .sendTypingIndicator(let id, _, _):
             return "/api/conversations/\(id.uuidString)/typing"
+        case .updateMemberRole(let conversationId, let memberId, _, _):
+            return "/api/conversations/\(conversationId.uuidString)/members/\(memberId.uuidString)/role"
+        case .approveMember(let conversationId, let memberId, _):
+            return "/api/conversations/\(conversationId.uuidString)/members/\(memberId.uuidString)/approve"
         }
     }
 
@@ -75,11 +82,9 @@ extension MessagingEndpoint: APIEndpoint {
         switch self {
         case .getConversations, .getConversation, .getMessages, .getThread:
             return .get
-        case .createConversation, .archiveConversation, .leaveConversation, .addMembers, .updatePreferences, .sendMessage, .markRead, .sendTypingIndicator:
+        case .createConversation, .archiveConversation, .leaveConversation, .addMembers, .updatePreferences, .sendMessage, .markRead, .sendTypingIndicator, .approveMember:
             return .post
-        case .updateConversation:
-            return .put
-        case .editMessage:
+        case .updateConversation, .editMessage, .updateMemberRole:
             return .put
         case .deleteMessage, .removeMember:
             return .delete
@@ -128,6 +133,8 @@ extension MessagingEndpoint: APIEndpoint {
         case .editMessage(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .sendTypingIndicator(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .updateMemberRole(_, _, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         default:
             return nil

@@ -76,6 +76,9 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateMessaging())
     app.migrations.add(AddMessagingPhase2Features())
 
+    // Phase 18: Governance (workspace join requests, channel role management)
+    app.migrations.add(AddGovernanceFeatures())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

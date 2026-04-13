@@ -16,6 +16,8 @@ struct ConversationController: RouteCollection {
         conversations.post(":conversationID", "members", use: addMembers)
         conversations.delete(":conversationID", "members", ":memberID", use: removeMember)
         conversations.post(":conversationID", "preferences", use: updatePreferences)
+        conversations.put(":conversationID", "members", ":memberID", "role", use: updateMemberRole)
+        conversations.post(":conversationID", "members", ":memberID", "approve", use: approveMember)
     }
 
     @Sendable
@@ -192,6 +194,7 @@ struct ConversationController: RouteCollection {
         conversation.name = payload.name ?? conversation.name
         conversation.description = payload.description ?? conversation.description
         conversation.topic = payload.topic ?? conversation.topic
+        conversation.isPrivate = payload.isPrivate ?? conversation.isPrivate
         try await conversation.save(on: req.db)
 
         return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
@@ -348,6 +351,78 @@ struct ConversationController: RouteCollection {
         return .success(dto)
     }
 
+    // MARK: - PUT /conversations/:conversationID/members/:memberID/role
+
+    @Sendable
+    func updateMemberRole(req: Request) async throws -> APIResponse<ConversationMemberDTO> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let targetMemberID = try req.parameters.require("memberID", as: UUID.self)
+        let payload = try req.content.decode(UpdateChannelMemberRoleRequest.self)
+
+        let conversation = try await fetchAndAuthorize(conversationID: conversationID, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
+        let requestingMembership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try requireManagementAccess(conversation: conversation, membership: requestingMembership, userId: ctx.userId)
+
+        guard conversation.$owner.id != targetMemberID else {
+            throw Abort(.forbidden, reason: "Cannot change the channel owner's role.")
+        }
+
+        guard let targetMembership = try await ConversationMemberModel.query(on: req.db)
+            .filter(\.$conversation.$id == conversationID)
+            .filter(\.$user.$id == targetMemberID)
+            .with(\.$user)
+            .first() else {
+            throw Abort(.notFound, reason: "Member not found in this conversation.")
+        }
+
+        let normalizedRole = payload.role.lowercased()
+        guard normalizedRole == "admin" || normalizedRole == "member" else {
+            throw Abort(.badRequest, reason: "Role must be 'admin' or 'member'.")
+        }
+
+        targetMembership.role = normalizedRole
+        try await targetMembership.save(on: req.db)
+
+        guard let dto = memberDTO(for: targetMembership) else {
+            throw Abort(.internalServerError, reason: "Failed to serialize membership.")
+        }
+        return .success(dto)
+    }
+
+    // MARK: - POST /conversations/:conversationID/members/:memberID/approve
+
+    @Sendable
+    func approveMember(req: Request) async throws -> APIResponse<ConversationMemberDTO> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        let targetMemberID = try req.parameters.require("memberID", as: UUID.self)
+
+        let conversation = try await fetchAndAuthorize(conversationID: conversationID, userId: ctx.userId, orgId: ctx.orgId, on: req.db)
+        let requestingMembership = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+        try requireManagementAccess(conversation: conversation, membership: requestingMembership, userId: ctx.userId)
+
+        guard let targetMembership = try await ConversationMemberModel.query(on: req.db)
+            .filter(\.$conversation.$id == conversationID)
+            .filter(\.$user.$id == targetMemberID)
+            .with(\.$user)
+            .first() else {
+            throw Abort(.notFound, reason: "Member not found in this conversation.")
+        }
+
+        guard targetMembership.status == "pending" else {
+            throw Abort(.badRequest, reason: "Member is not in a pending state.")
+        }
+
+        targetMembership.status = "active"
+        try await targetMembership.save(on: req.db)
+
+        guard let dto = memberDTO(for: targetMembership) else {
+            throw Abort(.internalServerError, reason: "Failed to serialize membership.")
+        }
+        return .success(dto)
+    }
+
     private func fetchAndAuthorize(conversationID: UUID, userId: UUID, orgId: UUID, on db: Database) async throws -> ConversationModel {
         guard let conversation = try await ConversationModel.query(on: db)
             .filter(\.$id == conversationID)
@@ -399,6 +474,7 @@ struct ConversationController: RouteCollection {
             description: conversation.description,
             topic: conversation.topic,
             isArchived: conversation.isArchived,
+            isPrivate: conversation.isPrivate,
             ownerId: conversation.$owner.id,
             lastMessageAt: conversation.lastMessageAt,
             createdAt: conversation.createdAt,
@@ -413,6 +489,7 @@ struct ConversationController: RouteCollection {
             userId: membership.$user.id,
             displayName: membership.user.displayName,
             role: membership.role,
+            status: membership.status,
             notificationPreference: membership.notificationPreference,
             lastReadAt: membership.lastReadAt,
             lastSeenAt: membership.lastSeenAt,

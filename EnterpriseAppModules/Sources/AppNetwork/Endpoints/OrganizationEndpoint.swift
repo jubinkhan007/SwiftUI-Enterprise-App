@@ -16,6 +16,10 @@ public enum OrganizationEndpoint {
     case removeMember(orgId: UUID, memberId: UUID, configuration: APIConfiguration)
     case revokeInvite(orgId: UUID, inviteId: UUID, configuration: APIConfiguration)
     case auditLog(orgId: UUID, configuration: APIConfiguration)
+    case searchOrganizations(query: String, configuration: APIConfiguration)
+    case requestToJoin(orgId: UUID, configuration: APIConfiguration)
+    case listJoinRequests(orgId: UUID, configuration: APIConfiguration)
+    case respondToJoinRequest(requestId: UUID, payload: RespondToJoinRequestRequest, configuration: APIConfiguration)
 }
 
 extension OrganizationEndpoint: APIEndpoint {
@@ -26,7 +30,9 @@ extension OrganizationEndpoint: APIEndpoint {
              .createInvite(_, _, let c), .listInvites(_, let c),
              .acceptInvite(_, let c), .updateMemberRole(_, _, _, let c),
              .removeMember(_, _, let c), .revokeInvite(_, _, let c),
-             .auditLog(_, let c):
+             .auditLog(_, let c), .searchOrganizations(_, let c),
+             .requestToJoin(_, let c), .listJoinRequests(_, let c),
+             .respondToJoinRequest(_, _, let c):
             return c.baseURL
         }
     }
@@ -60,14 +66,24 @@ extension OrganizationEndpoint: APIEndpoint {
             return "/api/organizations/\(orgId.uuidString)/invites/\(inviteId.uuidString)/revoke"
         case .auditLog(let orgId, _):
             return "/api/organizations/\(orgId.uuidString)/audit-log"
+        case .searchOrganizations(let query, _):
+            return "/api/organizations/search?query=\(query)"
+        case .requestToJoin(let orgId, _):
+            return "/api/organizations/\(orgId.uuidString)/join"
+        case .listJoinRequests(let orgId, _):
+            return "/api/organizations/\(orgId.uuidString)/join-requests"
+        case .respondToJoinRequest(let requestId, _, _):
+            return "/api/organizations/join-requests/\(requestId.uuidString)/respond"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .me, .myInvites, .listOrgs, .showOrg, .listMembers, .listInvites, .auditLog:
+        case .me, .myInvites, .listOrgs, .showOrg, .listMembers, .listInvites, .auditLog,
+             .searchOrganizations, .listJoinRequests:
             return .get
-        case .createOrg, .createInvite, .acceptInvite, .revokeInvite:
+        case .createOrg, .createInvite, .acceptInvite, .revokeInvite,
+             .requestToJoin, .respondToJoinRequest:
             return .post
         case .updateMemberRole:
             return .put
@@ -94,6 +110,8 @@ extension OrganizationEndpoint: APIEndpoint {
         case .createInvite(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .updateMemberRole(_, _, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .respondToJoinRequest(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         default:
             return nil

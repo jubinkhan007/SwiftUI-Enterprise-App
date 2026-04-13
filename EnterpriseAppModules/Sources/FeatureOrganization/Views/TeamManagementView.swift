@@ -29,6 +29,9 @@ public struct TeamManagementView: View {
                         if viewModel.canViewInvites {
                             Text("Invites (\(viewModel.invites.count))").tag(1)
                         }
+                        if viewModel.canViewJoinRequests {
+                            Text("Requests (\(viewModel.joinRequests.count))").tag(2)
+                        }
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
@@ -57,8 +60,10 @@ public struct TeamManagementView: View {
                     // Content
                     if selectedTab == 0 {
                         membersListView
-                    } else {
+                    } else if selectedTab == 1 {
                         invitesListView
+                    } else {
+                        joinRequestsListView
                     }
                 }
             }
@@ -203,6 +208,80 @@ public struct TeamManagementView: View {
                 .listStyle(.plain)
             }
         }
+    }
+
+    // MARK: - Join Requests List
+
+    private var joinRequestsListView: some View {
+        Group {
+            if viewModel.isLoadingJoinRequests {
+                ProgressView()
+                    .tint(AppColors.brandPrimary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.joinRequests.isEmpty {
+                VStack(spacing: AppSpacing.md) {
+                    Image(systemName: "person.badge.clock")
+                        .font(.system(size: 48))
+                        .foregroundColor(AppColors.textTertiary)
+                    Text("No pending requests")
+                        .appFont(AppTypography.body)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(viewModel.joinRequests) { request in
+                        joinRequestRow(request)
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+
+    private func joinRequestRow(_ request: OrganizationJoinRequestDTO) -> some View {
+        HStack(spacing: AppSpacing.md) {
+            ZStack {
+                Circle()
+                    .fill(AppColors.statusWarning.opacity(0.15))
+                    .frame(width: 42, height: 42)
+                Text(String(request.userDisplayName.prefix(1)).uppercased())
+                    .appFont(AppTypography.headline)
+                    .foregroundColor(AppColors.statusWarning)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(request.userDisplayName)
+                    .appFont(AppTypography.body)
+                    .foregroundColor(AppColors.textPrimary)
+                Text(request.userEmail)
+                    .appFont(AppTypography.caption1)
+                    .foregroundColor(AppColors.textTertiary)
+            }
+
+            Spacer()
+
+            HStack(spacing: AppSpacing.sm) {
+                Button {
+                    Task { await viewModel.respondToJoinRequest(request, action: "reject") }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(AppColors.statusError)
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    Task { await viewModel.respondToJoinRequest(request, action: "accept") }
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(AppColors.statusSuccess)
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     private func inviteRow(_ invite: OrganizationInviteDTO) -> some View {

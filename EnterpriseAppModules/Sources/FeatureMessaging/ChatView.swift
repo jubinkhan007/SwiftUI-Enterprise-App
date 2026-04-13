@@ -150,6 +150,8 @@ public struct ChatView: View {
         MessageBubbleView(
             message: message,
             isCurrentUser: message.senderId == currentUserId,
+            currentUserId: currentUserId,
+            participantNames: viewModel.memberDirectory,
             onDelete: deleteAction(for: message),
             onEdit: editAction(for: message),
             onOpenThread: {

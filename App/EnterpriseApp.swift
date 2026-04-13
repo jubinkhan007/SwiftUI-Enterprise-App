@@ -131,7 +131,14 @@ struct AuthenticatedRootView: View {
     
     var body: some View {
         NavigationSplitView {
-            SidebarView(viewModel: sidebarViewModel, syncManager: syncManager)
+            SidebarView(
+                viewModel: sidebarViewModel,
+                syncManager: syncManager,
+                session: session,
+                authManager: authManager,
+                selectedOrg: selectedOrg,
+                showTeamManagement: $showTeamManagement
+            )
         } detail: {
             NavigationStack {
                 VStack(spacing: 0) {

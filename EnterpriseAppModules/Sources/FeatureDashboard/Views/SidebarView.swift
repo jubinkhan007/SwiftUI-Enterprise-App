@@ -2,16 +2,34 @@ import SwiftUI
 import DesignSystem
 import SharedModels
 import AppData
+import Domain
+import AppNetwork
 
 public struct SidebarView: View {
     @ObservedObject var viewModel: SidebarViewModel
     @ObservedObject var syncManager: SyncEngineManager
+    let session: Domain.AuthSession
+    let authManager: AppData.AuthManager
+    let selectedOrg: SharedModels.OrganizationDTO
+    @Binding var showTeamManagement: Bool
+    
     @State private var showingCreateSheet = false
     @State private var showingSyncCenter = false
     
-    public init(viewModel: SidebarViewModel, syncManager: SyncEngineManager) {
+    public init(
+        viewModel: SidebarViewModel,
+        syncManager: SyncEngineManager,
+        session: Domain.AuthSession,
+        authManager: AppData.AuthManager,
+        selectedOrg: SharedModels.OrganizationDTO,
+        showTeamManagement: Binding<Bool>
+    ) {
         self.viewModel = viewModel
         self.syncManager = syncManager
+        self.session = session
+        self.authManager = authManager
+        self.selectedOrg = selectedOrg
+        self._showTeamManagement = showTeamManagement
     }
     
     public var body: some View {
@@ -23,6 +41,9 @@ public struct SidebarView: View {
         .listStyle(.sidebar)
         .navigationTitle("Workspace")
         .toolbar {
+            ToolbarItem(placement: .automatic) {
+                personMenu
+            }
             createToolbarItem
             syncToolbarItem
         }
@@ -129,6 +150,36 @@ public struct SidebarView: View {
     }
 
     // MARK: - Helpers
+
+    private var personMenu: some View {
+        Menu {
+            Section {
+                Text("Signed in as \(session.user.displayName)")
+                    .font(.caption)
+                Text("Workspace: \(selectedOrg.name)")
+                    .font(.caption)
+            }
+            
+            Divider()
+            
+            Button {
+                showTeamManagement = true
+            } label: {
+                Label("Team Management", systemImage: "person.3")
+            }
+            
+            Divider()
+            
+            Button("Sign Out", role: .destructive) {
+                OrganizationContext.shared.clear()
+                authManager.signOut()
+            }
+        } label: {
+            Image(systemName: "person.circle")
+                .appFont(AppTypography.headline)
+                .foregroundColor(AppColors.textPrimary)
+        }
+    }
 
     private var syncIconName: String {
         switch syncManager.state {
