@@ -54,8 +54,10 @@ struct ReactionDetailView: View {
                 if didCurrentUserReact {
                     Section {
                         Button("Remove my \(emoji) reaction", role: .destructive) {
-                            interactionStore.toggleReaction(emoji, for: messageId, userId: currentUserId)
-                            dismiss()
+                            Task {
+                                await interactionStore.toggleReaction(emoji, for: messageId)
+                                dismiss()
+                            }
                         }
                     }
                 }

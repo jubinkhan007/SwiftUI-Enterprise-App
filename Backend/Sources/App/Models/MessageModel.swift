@@ -23,6 +23,9 @@ final class MessageModel: Model, Content, @unchecked Sendable {
     @OptionalParent(key: "parent_id")
     var parent: MessageModel?  // threading support (Phase 3)
 
+    @OptionalParent(key: "linked_task_id")
+    var linkedTask: TaskItemModel?  // Phase 3: message -> task linkage
+
     @OptionalField(key: "edited_at")
     var editedAt: Date?
 

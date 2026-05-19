@@ -10,6 +10,9 @@ public final class ConversationListViewModel: ObservableObject {
     @Published public private(set) var isLoading: Bool = false
     @Published public var error: Error?
     @Published public var searchQuery: String = ""
+    /// Set this to deep-link into a specific conversation (e.g. from Inbox).
+    /// ConversationListView observes this and pushes the channel onto its navigation stack.
+    @Published public var pendingChannelId: UUID? = nil
     
     private let messagingRepository: MessagingRepositoryProtocol
     private let realtimeProvider: RealTimeProvider

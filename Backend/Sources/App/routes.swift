@@ -54,6 +54,9 @@ func routes(_ app: Application) throws {
     let messageController = MessageController()
     try orgScopedAPI.register(collection: messageController)
 
+    let presenceController = PresenceController()
+    try orgScopedAPI.register(collection: presenceController)
+
     let analyticsController = AnalyticsController()
     try authenticatedAPI.register(collection: analyticsController)
 

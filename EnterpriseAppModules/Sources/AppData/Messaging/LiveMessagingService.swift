@@ -101,4 +101,91 @@ public final class LiveMessagingService: MessagingRepositoryProtocol {
         let endpoint = MessagingEndpoint.approveMember(conversationId: conversationId, memberId: memberId, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<ConversationMemberDTO>.self)
     }
+
+    // MARK: - Phase 3
+
+    public func addReaction(messageId: UUID, emoji: String) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.addReaction(messageId: messageId, payload: ReactionRequest(emoji: emoji), configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+
+    public func removeReaction(messageId: UUID, emoji: String) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.removeReaction(messageId: messageId, emoji: emoji, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+
+    public func pinMessage(messageId: UUID) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.pinMessage(messageId: messageId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+
+    public func unpinMessage(messageId: UUID) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.unpinMessage(messageId: messageId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+
+    public func listPins(conversationId: UUID) async throws -> APIResponse<[MessageDTO]> {
+        let endpoint = MessagingEndpoint.listPins(conversationId: conversationId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[MessageDTO]>.self)
+    }
+
+    public func bookmarkMessage(messageId: UUID) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.bookmarkMessage(messageId: messageId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+
+    public func unbookmarkMessage(messageId: UUID) async throws -> APIResponse<MessageDTO> {
+        let endpoint = MessagingEndpoint.unbookmarkMessage(messageId: messageId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<MessageDTO>.self)
+    }
+
+    public func listBookmarks() async throws -> APIResponse<[BookmarkDTO]> {
+        let endpoint = MessagingEndpoint.listBookmarks(configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[BookmarkDTO]>.self)
+    }
+
+    public func convertMessageToTask(messageId: UUID, request: ConvertMessageToTaskRequest) async throws -> APIResponse<ConvertMessageToTaskResponse> {
+        let endpoint = MessagingEndpoint.convertToTask(messageId: messageId, payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<ConvertMessageToTaskResponse>.self)
+    }
+}
+
+public final class LivePresenceService: PresenceRepositoryProtocol {
+    private let apiClient: APIClientProtocol
+    private let apiConfiguration: APIConfiguration
+
+    public init(apiClient: APIClientProtocol, configuration: APIConfiguration = .current) {
+        self.apiClient = apiClient
+        self.apiConfiguration = configuration
+    }
+
+    public func heartbeat(state: PresenceState?) async throws -> APIResponse<UserPresenceDTO> {
+        let endpoint = PresenceEndpoint.heartbeat(payload: PresenceHeartbeatRequest(state: state), configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<UserPresenceDTO>.self)
+    }
+
+    public func setCustomStatus(_ request: SetCustomStatusRequest) async throws -> APIResponse<UserPresenceDTO> {
+        let endpoint = PresenceEndpoint.setStatus(payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<UserPresenceDTO>.self)
+    }
+
+    public func clearCustomStatus() async throws -> APIResponse<UserPresenceDTO> {
+        let endpoint = PresenceEndpoint.clearStatus(configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<UserPresenceDTO>.self)
+    }
+
+    public func getMyPresence() async throws -> APIResponse<UserPresenceDTO> {
+        let endpoint = PresenceEndpoint.getMyPresence(configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<UserPresenceDTO>.self)
+    }
+
+    public func getUserPresence(userId: UUID) async throws -> APIResponse<UserPresenceDTO> {
+        let endpoint = PresenceEndpoint.getUserPresence(userId: userId, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<UserPresenceDTO>.self)
+    }
+
+    public func getBulkPresence(userIds: [UUID]) async throws -> APIResponse<BulkPresenceResponse> {
+        let endpoint = PresenceEndpoint.getBulkPresence(userIds: userIds, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<BulkPresenceResponse>.self)
+    }
 }

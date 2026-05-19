@@ -67,6 +67,41 @@ public final class TaskRepository: TaskRepositoryProtocol {
         }
     }
     
+    public func getTask(id: UUID) async throws -> TaskItemDTO {
+        do {
+            let endpoint = TaskEndpoint.getTask(id: id, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<TaskItemDTO>.self)
+            
+            guard let dto = response.data else {
+                throw NetworkError.underlying("No data returned from server")
+            }
+            
+            let localItem = LocalTaskItem(
+                id: dto.id,
+                title: dto.title,
+                taskDescription: dto.description,
+                statusId: dto.statusId,
+                status: dto.status,
+                priority: dto.priority,
+                dueDate: dto.dueDate,
+                assigneeId: dto.assigneeId,
+                version: dto.version,
+                createdAt: dto.createdAt,
+                updatedAt: dto.updatedAt
+            )
+            try await localStore.save(task: localItem)
+            return dto
+            
+        } catch let error as NetworkError {
+            if error == .offline {
+                if let cached = try await localStore.getTask(id: id) {
+                    return cached.toDTO()
+                }
+            }
+            throw error
+        }
+    }
+    
     public func getAssignedTasks(query: TaskQuery) async throws -> APIResponse<[TaskItemDTO]> {
         do {
             let endpoint = TaskEndpoint.getAssignedTasks(query: query, configuration: apiConfiguration)

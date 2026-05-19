@@ -112,3 +112,14 @@ extension WebhookTestResponse: Content {}
 extension UpdateChannelMemberRoleRequest: Content {}
 extension OrganizationJoinRequestDTO: Content {}
 extension RespondToJoinRequestRequest: Content {}
+
+// Phase 3 (Messaging Phase 3): reactions / pins / bookmarks / convert-to-task / presence
+extension MessageReactionGroupDTO: Content {}
+extension ReactionRequest: Content {}
+extension BookmarkDTO: Content {}
+extension ConvertMessageToTaskRequest: Content {}
+extension ConvertMessageToTaskResponse: Content {}
+extension UserPresenceDTO: Content {}
+extension PresenceHeartbeatRequest: Content {}
+extension SetCustomStatusRequest: Content {}
+extension BulkPresenceResponse: Content {}

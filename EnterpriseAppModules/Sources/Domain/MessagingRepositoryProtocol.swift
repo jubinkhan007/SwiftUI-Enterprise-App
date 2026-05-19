@@ -20,4 +20,24 @@ public protocol MessagingRepositoryProtocol: Sendable {
     func sendTypingIndicator(conversationId: UUID, request: TypingIndicatorRequest) async throws -> APIResponse<EmptyResponse>
     func updateMemberRole(conversationId: UUID, memberId: UUID, request: UpdateChannelMemberRoleRequest) async throws -> APIResponse<ConversationMemberDTO>
     func approveMember(conversationId: UUID, memberId: UUID) async throws -> APIResponse<ConversationMemberDTO>
+
+    // Phase 3
+    func addReaction(messageId: UUID, emoji: String) async throws -> APIResponse<MessageDTO>
+    func removeReaction(messageId: UUID, emoji: String) async throws -> APIResponse<MessageDTO>
+    func pinMessage(messageId: UUID) async throws -> APIResponse<MessageDTO>
+    func unpinMessage(messageId: UUID) async throws -> APIResponse<MessageDTO>
+    func listPins(conversationId: UUID) async throws -> APIResponse<[MessageDTO]>
+    func bookmarkMessage(messageId: UUID) async throws -> APIResponse<MessageDTO>
+    func unbookmarkMessage(messageId: UUID) async throws -> APIResponse<MessageDTO>
+    func listBookmarks() async throws -> APIResponse<[BookmarkDTO]>
+    func convertMessageToTask(messageId: UUID, request: ConvertMessageToTaskRequest) async throws -> APIResponse<ConvertMessageToTaskResponse>
+}
+
+public protocol PresenceRepositoryProtocol: Sendable {
+    func heartbeat(state: PresenceState?) async throws -> APIResponse<UserPresenceDTO>
+    func setCustomStatus(_ request: SetCustomStatusRequest) async throws -> APIResponse<UserPresenceDTO>
+    func clearCustomStatus() async throws -> APIResponse<UserPresenceDTO>
+    func getMyPresence() async throws -> APIResponse<UserPresenceDTO>
+    func getUserPresence(userId: UUID) async throws -> APIResponse<UserPresenceDTO>
+    func getBulkPresence(userIds: [UUID]) async throws -> APIResponse<BulkPresenceResponse>
 }

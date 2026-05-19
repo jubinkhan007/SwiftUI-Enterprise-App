@@ -245,6 +245,11 @@ public struct MessageDTO: Codable, Sendable, Identifiable, Hashable {
     public let replyCount: Int
     public let threadPreviewText: String?
     public let linkedTask: TaskPreviewDTO?
+    public let reactions: [MessageReactionGroupDTO]
+    public let isPinned: Bool
+    public let pinnedBy: UUID?
+    public let pinnedAt: Date?
+    public let isBookmarkedByMe: Bool
     public let editedAt: Date?
     public let deletedAt: Date?
     public let createdAt: Date?
@@ -260,6 +265,11 @@ public struct MessageDTO: Codable, Sendable, Identifiable, Hashable {
         replyCount: Int = 0,
         threadPreviewText: String? = nil,
         linkedTask: TaskPreviewDTO? = nil,
+        reactions: [MessageReactionGroupDTO] = [],
+        isPinned: Bool = false,
+        pinnedBy: UUID? = nil,
+        pinnedAt: Date? = nil,
+        isBookmarkedByMe: Bool = false,
         editedAt: Date?,
         deletedAt: Date?,
         createdAt: Date?
@@ -274,9 +284,93 @@ public struct MessageDTO: Codable, Sendable, Identifiable, Hashable {
         self.replyCount = replyCount
         self.threadPreviewText = threadPreviewText
         self.linkedTask = linkedTask
+        self.reactions = reactions
+        self.isPinned = isPinned
+        self.pinnedBy = pinnedBy
+        self.pinnedAt = pinnedAt
+        self.isBookmarkedByMe = isBookmarkedByMe
         self.editedAt = editedAt
         self.deletedAt = deletedAt
         self.createdAt = createdAt
+    }
+}
+
+public struct MessageReactionGroupDTO: Codable, Sendable, Hashable {
+    public let emoji: String
+    public let count: Int
+    public let userIds: [UUID]
+    public let didReact: Bool
+
+    public init(emoji: String, count: Int, userIds: [UUID], didReact: Bool) {
+        self.emoji = emoji
+        self.count = count
+        self.userIds = userIds
+        self.didReact = didReact
+    }
+}
+
+public struct ReactionRequest: Codable, Sendable, Hashable {
+    public let emoji: String
+
+    public init(emoji: String) {
+        self.emoji = emoji
+    }
+}
+
+public struct BookmarkDTO: Codable, Sendable, Identifiable, Hashable {
+    public let id: UUID
+    public let messageId: UUID
+    public let conversationId: UUID
+    public let conversationName: String?
+    public let message: MessageDTO
+    public let createdAt: Date?
+
+    public init(
+        id: UUID,
+        messageId: UUID,
+        conversationId: UUID,
+        conversationName: String? = nil,
+        message: MessageDTO,
+        createdAt: Date?
+    ) {
+        self.id = id
+        self.messageId = messageId
+        self.conversationId = conversationId
+        self.conversationName = conversationName
+        self.message = message
+        self.createdAt = createdAt
+    }
+}
+
+public struct ConvertMessageToTaskRequest: Codable, Sendable, Hashable {
+    public let listId: UUID
+    public let title: String?
+    public let description: String?
+    public let assigneeId: UUID?
+    public let dueDate: Date?
+
+    public init(
+        listId: UUID,
+        title: String? = nil,
+        description: String? = nil,
+        assigneeId: UUID? = nil,
+        dueDate: Date? = nil
+    ) {
+        self.listId = listId
+        self.title = title
+        self.description = description
+        self.assigneeId = assigneeId
+        self.dueDate = dueDate
+    }
+}
+
+public struct ConvertMessageToTaskResponse: Codable, Sendable, Hashable {
+    public let task: TaskPreviewDTO
+    public let message: MessageDTO
+
+    public init(task: TaskPreviewDTO, message: MessageDTO) {
+        self.task = task
+        self.message = message
     }
 }
 

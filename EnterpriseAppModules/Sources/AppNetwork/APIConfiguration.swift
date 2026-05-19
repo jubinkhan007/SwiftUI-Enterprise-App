@@ -30,6 +30,8 @@ public extension APIConfiguration {
             return APIConfiguration(baseURL: url)
         }
 
-        return .production
+        // DEV: using local Vapor server — swap back to .production before release.
+        return .localVapor
+        // return .production
     }
 }

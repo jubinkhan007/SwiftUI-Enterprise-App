@@ -5,6 +5,9 @@ public protocol TaskRepositoryProtocol: Sendable {
     /// Fetch tasks using the provided query. Returns from local cache if offline.
     func getTasks(query: TaskQuery) async throws -> APIResponse<[TaskItemDTO]>
     
+    /// Fetch a single task by ID.
+    func getTask(id: UUID) async throws -> TaskItemDTO
+    
     /// Fetch tasks assigned to the current user globally.
     func getAssignedTasks(query: TaskQuery) async throws -> APIResponse<[TaskItemDTO]>
     

@@ -48,7 +48,7 @@ public struct MessageActionSheet: View {
                         HStack(spacing: AppSpacing.sm) {
                             ForEach(quickReactions, id: \.self) { emoji in
                                 Button(emoji) {
-                                    interactionStore.toggleReaction(emoji, for: message.id, userId: currentUserId)
+                                    Task { await interactionStore.toggleReaction(emoji, for: message.id) }
                                 }
                                 .buttonStyle(.bordered)
                             }
@@ -82,13 +82,13 @@ public struct MessageActionSheet: View {
                         interactionStore.pinnedMessages.contains(message.id) ? "Unpin Message" : "Pin Message",
                         systemImage: "pin"
                     ) {
-                        interactionStore.togglePinned(message.id)
+                        Task { await interactionStore.togglePinned(message.id) }
                     }
                     actionRow(
                         interactionStore.bookmarkedMessages.contains(message.id) ? "Remove Bookmark" : "Save / Bookmark",
                         systemImage: "bookmark"
                     ) {
-                        interactionStore.toggleBookmarked(message.id)
+                        Task { await interactionStore.toggleBookmarked(message.id) }
                     }
 
                     ShareLink(
@@ -125,7 +125,7 @@ public struct MessageActionSheet: View {
             .navigationTitle("Message Actions")
             .sheet(isPresented: $showingEmojiPicker) {
                 EmojiPickerSheet { emoji in
-                    interactionStore.toggleReaction(emoji, for: message.id, userId: currentUserId)
+                    Task { await interactionStore.toggleReaction(emoji, for: message.id) }
                 }
             }
         }

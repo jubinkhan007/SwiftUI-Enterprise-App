@@ -15,7 +15,9 @@ public struct ConversationListView: View {
 
     @State private var showingNewSheet = false
     @State private var showingGlobalSearch = false
+    @State private var showingStatusSheet = false
     @State private var navigationPath = NavigationPath()
+    @ObservedObject private var presenceStore = PresenceStore.shared
 
     public init(
         viewModel: ConversationListViewModel,
@@ -47,6 +49,13 @@ public struct ConversationListView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: AppSpacing.sm) {
+                        Button {
+                            showingStatusSheet = true
+                        } label: {
+                            statusButtonLabel
+                        }
+                        .accessibilityLabel("Set status")
+
                         Button {
                             showingGlobalSearch = true
                         } label: {
@@ -111,6 +120,10 @@ public struct ConversationListView: View {
             .sheet(isPresented: $showingGlobalSearch) {
                 GlobalSearchView(messagingRepository: messagingRepository)
             }
+            .sheet(isPresented: $showingStatusSheet) {
+                CustomStatusSheet()
+                    .presentationDetents([.medium, .large])
+            }
             .task {
                 if viewModel.conversations.isEmpty {
                     if let orgId = OrganizationContext.shared.orgId {
@@ -118,9 +131,32 @@ public struct ConversationListView: View {
                     }
                     await viewModel.fetchConversations()
                 }
+                presenceStore.startHeartbeat()
+                await presenceStore.refreshMyPresence()
             }
             .refreshable {
                 await viewModel.fetchConversations()
+            }
+            .onChange(of: viewModel.pendingChannelId) { oldValue, newValue in
+                if let channelId = newValue {
+                    if let existing = viewModel.conversations.first(where: { $0.id == channelId }) {
+                        navigationPath.append(existing)
+                    } else {
+                        // Dummy DTO to satisfy the navigation destination
+                        let dummy = ConversationDTO(
+                            id: channelId,
+                            type: "channel",
+                            name: "Loading...",
+                            isArchived: false,
+                            isPrivate: false,
+                            lastMessageAt: nil,
+                            createdAt: nil,
+                            members: nil
+                        )
+                        navigationPath.append(dummy)
+                    }
+                    viewModel.pendingChannelId = nil
+                }
             }
         }
     }
@@ -219,6 +255,19 @@ public struct ConversationListView: View {
         .padding(.horizontal, AppSpacing.xl)
         .frame(maxWidth: .infinity)
         .background(AppColors.backgroundPrimary)
+    }
+
+    // MARK: - Status Button
+
+    @ViewBuilder
+    private var statusButtonLabel: some View {
+        if let emoji = presenceStore.myPresence?.customStatusEmoji, !emoji.isEmpty {
+            Text(emoji)
+                .font(.system(size: 18))
+        } else {
+            Image(systemName: "face.smiling")
+                .foregroundColor(AppColors.brandPrimary)
+        }
     }
 
     // MARK: - Row

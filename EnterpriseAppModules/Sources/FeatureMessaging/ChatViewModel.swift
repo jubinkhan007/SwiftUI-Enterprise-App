@@ -30,7 +30,12 @@ public final class ChatViewModel: ObservableObject {
         self.currentUserId = currentUserId
         self.messagingRepository = messagingRepository
         self.realtimeProvider = realtimeProvider
-        
+
+        MessageInteractionStore.shared.configure(
+            messagingRepository: messagingRepository,
+            currentUserId: currentUserId
+        )
+
         realtimeListenerID = realtimeProvider.addEventListener { [weak self] event in
             Task { @MainActor [weak self] in
                 self?.handleRealtimeEvent(event)
@@ -70,6 +75,7 @@ public final class ChatViewModel: ObservableObject {
             let fetched = response.data ?? []
             self.messages = Array(fetched.reversed())
             mergeMemberDirectory(from: self.messages)
+            MessageInteractionStore.shared.ingest(self.messages)
             self.hasMoreMessages = fetched.count == 50
             await refreshMemberDirectory()
 
@@ -93,6 +99,7 @@ public final class ChatViewModel: ObservableObject {
             let fetched = response.data ?? []
             self.messages = Array(fetched.reversed()) + self.messages
             mergeMemberDirectory(from: self.messages)
+            MessageInteractionStore.shared.ingest(self.messages)
             self.hasMoreMessages = fetched.count == 50
         } catch {
             self.error = error
@@ -115,6 +122,7 @@ public final class ChatViewModel: ObservableObject {
                 if let newMsg = response.data, let idx = messages.firstIndex(where: { $0.id == editId }) {
                     messages[idx] = newMsg
                     memberDirectory[newMsg.senderId] = newMsg.senderName
+                    MessageInteractionStore.shared.ingest(newMsg)
                 }
             } catch {
                 self.error = error
@@ -129,6 +137,7 @@ public final class ChatViewModel: ObservableObject {
                         messages.append(newMsg)
                     }
                     memberDirectory[newMsg.senderId] = newMsg.senderName
+                    MessageInteractionStore.shared.ingest(newMsg)
                 }
             } catch {
                 self.error = error
@@ -136,14 +145,40 @@ public final class ChatViewModel: ObservableObject {
             }
         }
     }
+
+    public func applyConvertedToTask(_ updated: MessageDTO) {
+        if let idx = messages.firstIndex(where: { $0.id == updated.id }) {
+            messages[idx] = updated
+        }
+        MessageInteractionStore.shared.ingest(updated)
+    }
     
     public func deleteMessage(id: UUID) async {
         do {
             _ = try await messagingRepository.deleteMessage(messageId: id)
             if let idx = messages.firstIndex(where: { $0.id == id }) {
-                // optimistic
+                // optimistic — keep all Phase 3 metadata on the tombstone
                 let old = messages[idx]
-                messages[idx] = MessageDTO(id: old.id, conversationId: old.conversationId, senderId: old.senderId, senderName: old.senderName, body: old.body, messageType: old.messageType, editedAt: old.editedAt, deletedAt: Date(), createdAt: old.createdAt)
+                messages[idx] = MessageDTO(
+                    id: old.id,
+                    conversationId: old.conversationId,
+                    senderId: old.senderId,
+                    senderName: old.senderName,
+                    body: old.body,
+                    messageType: old.messageType,
+                    parentId: old.parentId,
+                    replyCount: old.replyCount,
+                    threadPreviewText: old.threadPreviewText,
+                    linkedTask: old.linkedTask,
+                    reactions: old.reactions,
+                    isPinned: old.isPinned,
+                    pinnedBy: old.pinnedBy,
+                    pinnedAt: old.pinnedAt,
+                    isBookmarkedByMe: old.isBookmarkedByMe,
+                    editedAt: old.editedAt,
+                    deletedAt: Date(),
+                    createdAt: old.createdAt
+                )
             }
         } catch {
             self.error = error
@@ -172,7 +207,14 @@ public final class ChatViewModel: ObservableObject {
         
         Task { @MainActor in
             switch event.type {
-            case "message.new", "message.updated", "message.deleted":
+            case "message.new",
+                 "message.updated",
+                 "message.deleted",
+                 "message.reaction_added",
+                 "message.reaction_removed",
+                 "message.pinned",
+                 "message.unpinned",
+                 "message.task_linked":
                 await fetchMessages()
             case "conversation.typing_started":
                 if let typingIdStr = payload["userId"], typingIdStr != currentUserId.uuidString {

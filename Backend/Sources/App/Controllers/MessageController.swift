@@ -7,12 +7,34 @@ struct MessageController: RouteCollection {
         let conversations = routes.grouped("conversations")
         conversations.get(":conversationID", "messages", use: listMessages)
         conversations.post(":conversationID", "messages", use: sendMessage)
+        conversations.get(":conversationID", "pins", use: listPins)
 
         let messages = routes.grouped("messages")
         messages.get(":messageID", "thread", use: getThread)
         messages.put(":messageID", use: editMessage)
         messages.delete(":messageID", use: deleteMessage)
+
+        // Reactions
+        messages.post(":messageID", "reactions", use: addReaction)
+        messages.delete(":messageID", "reactions", ":emoji", use: removeReaction)
+
+        // Pins
+        messages.post(":messageID", "pin", use: pinMessage)
+        messages.delete(":messageID", "pin", use: unpinMessage)
+
+        // Bookmarks
+        messages.post(":messageID", "bookmark", use: bookmarkMessage)
+        messages.delete(":messageID", "bookmark", use: unbookmarkMessage)
+
+        // Message -> task
+        messages.post(":messageID", "convert-to-task", use: convertToTask)
+
+        // Per-user bookmark list (org-scoped)
+        let me = routes.grouped("me")
+        me.get("bookmarks", use: listMyBookmarks)
     }
+
+    // MARK: - Read
 
     @Sendable
     func listMessages(req: Request) async throws -> APIResponse<[MessageDTO]> {
@@ -39,7 +61,7 @@ struct MessageController: RouteCollection {
 
         let messages = try await query.all()
         let dtos = try await messages.asyncMap { message in
-            try await buildMessageDTO(message: message, orgId: ctx.orgId, on: req.db)
+            try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
         }
         return .success(dtos)
     }
@@ -66,13 +88,15 @@ struct MessageController: RouteCollection {
             .all()
 
         let bundle = ThreadMessageBundleDTO(
-            rootMessage: try await buildMessageDTO(message: rootMessage, orgId: ctx.orgId, on: req.db),
+            rootMessage: try await buildMessageDTO(message: rootMessage, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db),
             replies: try await replies.asyncMap { reply in
-                try await buildMessageDTO(message: reply, orgId: ctx.orgId, on: req.db)
+                try await buildMessageDTO(message: reply, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
             }
         )
         return .success(bundle)
     }
+
+    // MARK: - Write
 
     @Sendable
     func sendMessage(req: Request) async throws -> APIResponse<MessageDTO> {
@@ -121,7 +145,7 @@ struct MessageController: RouteCollection {
         }
 
         try await message.$sender.load(on: req.db)
-        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
 
         RealtimeBroadcaster.broadcast(
             app: req.application,
@@ -166,7 +190,7 @@ struct MessageController: RouteCollection {
         message.editedAt = Date()
         try await message.save(on: req.db)
 
-        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
         RealtimeBroadcaster.broadcast(
             app: req.application,
             orgId: ctx.orgId,
@@ -216,6 +240,327 @@ struct MessageController: RouteCollection {
         return .success(EmptyResponse())
     }
 
+    // MARK: - Reactions
+
+    @Sendable
+    func addReaction(req: Request) async throws -> APIResponse<MessageDTO> {
+        let ctx = try req.orgContext
+        let messageID = try req.parameters.require("messageID", as: UUID.self)
+        let payload = try req.content.decode(ReactionRequest.self)
+
+        let emoji = payload.emoji.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !emoji.isEmpty, emoji.count <= 16 else {
+            throw Abort(.badRequest, reason: "Invalid emoji.")
+        }
+
+        guard let message = try await MessageModel.find(messageID, on: req.db) else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        _ = try await requireMembership(conversationID: message.$conversation.id, userId: ctx.userId, on: req.db)
+
+        // Idempotent: only insert if not already there.
+        let existing = try await MessageReactionModel.query(on: req.db)
+            .filter(\.$message.$id == messageID)
+            .filter(\.$user.$id == ctx.userId)
+            .filter(\.$emoji == emoji)
+            .first()
+
+        if existing == nil {
+            let reaction = MessageReactionModel(messageId: messageID, userId: ctx.userId, emoji: emoji)
+            try await reaction.save(on: req.db)
+        }
+
+        try await message.$sender.load(on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+
+        broadcastMessageUpdated(req: req, orgId: ctx.orgId, message: message, eventType: "message.reaction_added", extra: ["emoji": emoji])
+
+        return .success(dto)
+    }
+
+    @Sendable
+    func removeReaction(req: Request) async throws -> APIResponse<MessageDTO> {
+        let ctx = try req.orgContext
+        let messageID = try req.parameters.require("messageID", as: UUID.self)
+        guard let emojiRaw = req.parameters.get("emoji"),
+              let emoji = emojiRaw.removingPercentEncoding?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !emoji.isEmpty else {
+            throw Abort(.badRequest, reason: "Missing emoji.")
+        }
+
+        guard let message = try await MessageModel.find(messageID, on: req.db) else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        _ = try await requireMembership(conversationID: message.$conversation.id, userId: ctx.userId, on: req.db)
+
+        try await MessageReactionModel.query(on: req.db)
+            .filter(\.$message.$id == messageID)
+            .filter(\.$user.$id == ctx.userId)
+            .filter(\.$emoji == emoji)
+            .delete()
+
+        try await message.$sender.load(on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+
+        broadcastMessageUpdated(req: req, orgId: ctx.orgId, message: message, eventType: "message.reaction_removed", extra: ["emoji": emoji])
+
+        return .success(dto)
+    }
+
+    // MARK: - Pins
+
+    @Sendable
+    func pinMessage(req: Request) async throws -> APIResponse<MessageDTO> {
+        let ctx = try req.orgContext
+        let messageID = try req.parameters.require("messageID", as: UUID.self)
+
+        guard let message = try await MessageModel.find(messageID, on: req.db) else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        _ = try await requireMembership(conversationID: message.$conversation.id, userId: ctx.userId, on: req.db)
+
+        let existing = try await MessagePinModel.query(on: req.db)
+            .filter(\.$message.$id == messageID)
+            .first()
+
+        if existing == nil {
+            let pin = MessagePinModel(
+                messageId: messageID,
+                conversationId: message.$conversation.id,
+                pinnedBy: ctx.userId
+            )
+            try await pin.save(on: req.db)
+        }
+
+        try await message.$sender.load(on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+        broadcastMessageUpdated(req: req, orgId: ctx.orgId, message: message, eventType: "message.pinned")
+        return .success(dto)
+    }
+
+    @Sendable
+    func unpinMessage(req: Request) async throws -> APIResponse<MessageDTO> {
+        let ctx = try req.orgContext
+        let messageID = try req.parameters.require("messageID", as: UUID.self)
+
+        guard let message = try await MessageModel.find(messageID, on: req.db) else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        _ = try await requireMembership(conversationID: message.$conversation.id, userId: ctx.userId, on: req.db)
+
+        try await MessagePinModel.query(on: req.db)
+            .filter(\.$message.$id == messageID)
+            .delete()
+
+        try await message.$sender.load(on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+        broadcastMessageUpdated(req: req, orgId: ctx.orgId, message: message, eventType: "message.unpinned")
+        return .success(dto)
+    }
+
+    @Sendable
+    func listPins(req: Request) async throws -> APIResponse<[MessageDTO]> {
+        let ctx = try req.orgContext
+        let conversationID = try req.parameters.require("conversationID", as: UUID.self)
+        _ = try await requireMembership(conversationID: conversationID, userId: ctx.userId, on: req.db)
+
+        let pins = try await MessagePinModel.query(on: req.db)
+            .filter(\.$conversation.$id == conversationID)
+            .sort(\.$createdAt, .descending)
+            .all()
+
+        let messageIds = pins.map { $0.$message.id }
+        let messages = try await MessageModel.query(on: req.db)
+            .filter(\.$id ~~ messageIds)
+            .filter(\.$deletedAt == nil)
+            .with(\.$sender)
+            .all()
+
+        let orderedMessages: [MessageModel] = messageIds.compactMap { id in
+            messages.first { $0.id == id }
+        }
+
+        let dtos = try await orderedMessages.asyncMap { msg in
+            try await buildMessageDTO(message: msg, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+        }
+        return .success(dtos)
+    }
+
+    // MARK: - Bookmarks
+
+    @Sendable
+    func bookmarkMessage(req: Request) async throws -> APIResponse<MessageDTO> {
+        let ctx = try req.orgContext
+        let messageID = try req.parameters.require("messageID", as: UUID.self)
+
+        guard let message = try await MessageModel.find(messageID, on: req.db) else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        _ = try await requireMembership(conversationID: message.$conversation.id, userId: ctx.userId, on: req.db)
+
+        let existing = try await MessageBookmarkModel.query(on: req.db)
+            .filter(\.$message.$id == messageID)
+            .filter(\.$user.$id == ctx.userId)
+            .first()
+
+        if existing == nil {
+            let bookmark = MessageBookmarkModel(messageId: messageID, userId: ctx.userId)
+            try await bookmark.save(on: req.db)
+        }
+
+        try await message.$sender.load(on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+        return .success(dto)
+    }
+
+    @Sendable
+    func unbookmarkMessage(req: Request) async throws -> APIResponse<MessageDTO> {
+        let ctx = try req.orgContext
+        let messageID = try req.parameters.require("messageID", as: UUID.self)
+
+        guard let message = try await MessageModel.find(messageID, on: req.db) else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        _ = try await requireMembership(conversationID: message.$conversation.id, userId: ctx.userId, on: req.db)
+
+        try await MessageBookmarkModel.query(on: req.db)
+            .filter(\.$message.$id == messageID)
+            .filter(\.$user.$id == ctx.userId)
+            .delete()
+
+        try await message.$sender.load(on: req.db)
+        let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+        return .success(dto)
+    }
+
+    @Sendable
+    func listMyBookmarks(req: Request) async throws -> APIResponse<[BookmarkDTO]> {
+        let ctx = try req.orgContext
+
+        let bookmarks = try await MessageBookmarkModel.query(on: req.db)
+            .filter(\.$user.$id == ctx.userId)
+            .sort(\.$createdAt, .descending)
+            .all()
+
+        let messageIds = bookmarks.map { $0.$message.id }
+        let messages = try await MessageModel.query(on: req.db)
+            .filter(\.$id ~~ messageIds)
+            .with(\.$sender)
+            .with(\.$conversation)
+            .all()
+
+        var dtos: [BookmarkDTO] = []
+        dtos.reserveCapacity(bookmarks.count)
+        for bookmark in bookmarks {
+            guard let message = messages.first(where: { $0.id == bookmark.$message.id }) else { continue }
+            // Only include messages from conversations in this org
+            if message.conversation.$organization.id != ctx.orgId { continue }
+            let messageDTO = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+            dtos.append(BookmarkDTO(
+                id: try bookmark.requireID(),
+                messageId: messageDTO.id,
+                conversationId: message.$conversation.id,
+                conversationName: message.conversation.name,
+                message: messageDTO,
+                createdAt: bookmark.createdAt
+            ))
+        }
+        return .success(dtos)
+    }
+
+    // MARK: - Convert message -> task
+
+    @Sendable
+    func convertToTask(req: Request) async throws -> APIResponse<ConvertMessageToTaskResponse> {
+        let ctx = try req.orgContext
+        let messageID = try req.parameters.require("messageID", as: UUID.self)
+        let payload = try req.content.decode(ConvertMessageToTaskRequest.self)
+
+        guard let message = try await MessageModel.query(on: req.db)
+            .filter(\.$id == messageID)
+            .with(\.$sender)
+            .first() else {
+            throw Abort(.notFound, reason: "Message not found.")
+        }
+        _ = try await requireMembership(conversationID: message.$conversation.id, userId: ctx.userId, on: req.db)
+
+        // Validate the destination list belongs to this org via its project/space.
+        let listQuery = TaskListModel.query(on: req.db)
+            .filter(\.$id == payload.listId)
+            .with(\.$project) { project in project.with(\.$space) }
+        guard let list = try await listQuery.first(),
+              list.project.space.$organization.id == ctx.orgId else {
+            throw Abort(.notFound, reason: "Target list not found.")
+        }
+
+        // Default title is first line of body, capped to 140 chars.
+        let trimmedBody = message.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let defaultTitle = trimmedBody.split(separator: "\n").first.map(String.init) ?? "Follow up on message"
+        let title = payload.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? String(defaultTitle.prefix(140))
+        let description = payload.description ?? trimmedBody
+
+        let task = TaskItemModel(
+            orgId: ctx.orgId,
+            listId: payload.listId,
+            projectId: list.$project.id,
+            title: title,
+            description: description,
+            assigneeId: payload.assigneeId
+        )
+        task.dueDate = payload.dueDate
+
+        try await req.db.transaction { db in
+            task.issueKey = try await IssueKeyService.nextIssueKey(project: list.project, db: db)
+            try await task.save(on: db)
+
+            // Link the message back to the new task
+            message.$linkedTask.id = task.id
+            try await message.save(on: db)
+        }
+
+        try await task.$assignee.load(on: req.db)
+        let messageDTO = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+        let taskPreview = TaskPreviewDTO(
+            taskId: try task.requireID(),
+            issueKey: task.issueKey,
+            title: task.title,
+            status: task.status.displayName,
+            assigneeDisplayName: task.assignee?.displayName,
+            dueDate: task.dueDate
+        )
+
+        broadcastMessageUpdated(req: req, orgId: ctx.orgId, message: message, eventType: "message.task_linked",
+                                 extra: ["taskId": (try? task.requireID().uuidString) ?? ""])
+
+        return .success(ConvertMessageToTaskResponse(task: taskPreview, message: messageDTO))
+    }
+
+    // MARK: - Helpers
+
+    private func broadcastMessageUpdated(
+        req: Request,
+        orgId: UUID,
+        message: MessageModel,
+        eventType: String,
+        extra: [String: String] = [:]
+    ) {
+        guard let messageId = try? message.requireID() else { return }
+        var payload: [String: String] = [
+            "conversationId": message.$conversation.id.uuidString,
+            "messageId": messageId.uuidString
+        ]
+        for (k, v) in extra { payload[k] = v }
+        RealtimeBroadcaster.broadcast(
+            app: req.application,
+            orgId: orgId,
+            channels: ["conversation:\(message.$conversation.id.uuidString)"],
+            type: eventType,
+            entityId: messageId,
+            payload: payload
+        )
+    }
+
     private func requireMembership(conversationID: UUID, userId: UUID, on db: Database) async throws -> ConversationMemberModel {
         guard let membership = try await ConversationMemberModel.query(on: db)
             .filter(\.$conversation.$id == conversationID)
@@ -226,8 +571,14 @@ struct MessageController: RouteCollection {
         return membership
     }
 
-    private func buildMessageDTO(message: MessageModel, orgId: UUID, on db: Database) async throws -> MessageDTO {
+    private func buildMessageDTO(
+        message: MessageModel,
+        orgId: UUID,
+        viewerId: UUID,
+        on db: Database
+    ) async throws -> MessageDTO {
         let messageID = try message.requireID()
+
         let replyCount = try await MessageModel.query(on: db)
             .filter(\.$parent.$id == messageID)
             .filter(\.$deletedAt == nil)
@@ -239,6 +590,42 @@ struct MessageController: RouteCollection {
             .sort(\.$createdAt, .descending)
             .first()
 
+        // Reactions
+        let reactionRows = try await MessageReactionModel.query(on: db)
+            .filter(\.$message.$id == messageID)
+            .all()
+        var grouped: [String: [UUID]] = [:]
+        for row in reactionRows {
+            grouped[row.emoji, default: []].append(row.$user.id)
+        }
+        let reactions: [MessageReactionGroupDTO] = grouped
+            .map { emoji, userIds in
+                MessageReactionGroupDTO(
+                    emoji: emoji,
+                    count: userIds.count,
+                    userIds: userIds,
+                    didReact: userIds.contains(viewerId)
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.count == rhs.count { return lhs.emoji < rhs.emoji }
+                return lhs.count > rhs.count
+            }
+
+        // Pin
+        let pin = try await MessagePinModel.query(on: db)
+            .filter(\.$message.$id == messageID)
+            .first()
+
+        // Bookmark (viewer-scoped)
+        let bookmarkExists = try await MessageBookmarkModel.query(on: db)
+            .filter(\.$message.$id == messageID)
+            .filter(\.$user.$id == viewerId)
+            .count() > 0
+
+        // Linked task — prefer explicit FK, else regex-resolved issue key
+        let linkedTask = try await resolveLinkedTaskPreview(message: message, orgId: orgId, on: db)
+
         return MessageDTO(
             id: messageID,
             conversationId: message.$conversation.id,
@@ -249,16 +636,44 @@ struct MessageController: RouteCollection {
             parentId: message.$parent.id,
             replyCount: replyCount,
             threadPreviewText: threadPreview?.body,
-            linkedTask: try await resolveTaskPreview(from: message.body, orgId: orgId, on: db),
+            linkedTask: linkedTask,
+            reactions: reactions,
+            isPinned: pin != nil,
+            pinnedBy: pin?.$pinnedBy.id,
+            pinnedAt: pin?.createdAt,
+            isBookmarkedByMe: bookmarkExists,
             editedAt: message.editedAt,
             deletedAt: message.deletedAt,
             createdAt: message.createdAt
         )
     }
 
-    private func resolveTaskPreview(from body: String, orgId: UUID, on db: Database) async throws -> TaskPreviewDTO? {
-        guard let issueKey = firstIssueKey(in: body) else { return nil }
+    private func resolveLinkedTaskPreview(
+        message: MessageModel,
+        orgId: UUID,
+        on db: Database
+    ) async throws -> TaskPreviewDTO? {
+        // 1. Explicit FK takes precedence
+        if let linkedTaskId = message.$linkedTask.id {
+            if let task = try await TaskItemModel.query(on: db)
+                .filter(\.$id == linkedTaskId)
+                .filter(\.$organization.$id == orgId)
+                .with(\.$assignee)
+                .first(),
+               let taskID = task.id {
+                return TaskPreviewDTO(
+                    taskId: taskID,
+                    issueKey: task.issueKey,
+                    title: task.title,
+                    status: task.status.displayName,
+                    assigneeDisplayName: task.assignee?.displayName,
+                    dueDate: task.dueDate
+                )
+            }
+        }
 
+        // 2. Fallback: detect first issue key in body
+        guard let issueKey = firstIssueKey(in: message.body) else { return nil }
         guard let task = try await TaskItemModel.query(on: db)
             .filter(\.$organization.$id == orgId)
             .filter(\.$issueKey == issueKey)
@@ -287,6 +702,12 @@ struct MessageController: RouteCollection {
             return nil
         }
         return String(body[matchRange])
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
 

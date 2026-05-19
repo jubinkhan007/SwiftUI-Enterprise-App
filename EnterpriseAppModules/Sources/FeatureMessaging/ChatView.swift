@@ -3,7 +3,6 @@ import SharedModels
 import DesignSystem
 import Domain
 import AppNetwork
-import FeatureDashboard
 
 public struct ChatView: View {
     @StateObject private var viewModel: ChatViewModel
@@ -206,15 +205,13 @@ public struct ChatView: View {
     }
 
     private func createTaskSheet(message: MessageDTO) -> some View {
-        CreateTaskSheet(
-            viewModel: CreateTaskViewModel(
-                taskRepository: taskRepository,
-                listId: hierarchy.first?.projects.first?.lists.first?.id,
-                initialTitle: message.body.split(separator: "\n").first.map(String.init) ?? "Follow up on message",
-                initialDescription: message.body
-            ),
-            hierarchy: hierarchy
-        ) {}
+        ConvertMessageToTaskSheet(
+            message: message,
+            hierarchy: hierarchy,
+            messagingRepository: messagingRepository
+        ) { response in
+            viewModel.applyConvertedToTask(response.message)
+        }
         .presentationDetents([.medium, .large])
     }
 

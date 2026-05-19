@@ -157,7 +157,7 @@ public struct MessageBubbleView: View {
                             .buttonStyle(.plain)
                             .contextMenu {
                                 Button("Remove my reaction", role: .destructive) {
-                                    store.toggleReaction(reaction.emoji, for: message.id, userId: currentUserId)
+                                    Task { await store.toggleReaction(reaction.emoji, for: message.id) }
                                 }
                             }
                         }

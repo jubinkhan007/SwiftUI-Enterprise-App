@@ -75,6 +75,8 @@ struct AuthenticatedRootView: View {
     @State private var showingCreateTask = false
     @State private var viewType: DashboardViewType = .list
     @State private var projectSettingsSheet: ProjectSettingsSheetItem? = nil
+    @State private var selectedNotificationTask: TaskItemDTO? = nil
+    @State private var isLoadingTask: Bool = false
 
     private struct ProjectSettingsSheetItem: Identifiable {
         let id: UUID
@@ -102,8 +104,14 @@ struct AuthenticatedRootView: View {
         let analyticsRepo = AnalyticsRepository(apiClient: apiClient)
         let integrationRepo = IntegrationRepository(apiClient: apiClient)
         let messagingRepo = LiveMessagingService(apiClient: apiClient)
+        let presenceRepo = LivePresenceService(apiClient: apiClient)
         let notificationRepo = LiveNotificationService(apiClient: apiClient)
         let rtProvider = RealTimeProvider()
+
+        // Configure presence store once at app startup so any view can use it.
+        Task { @MainActor in
+            PresenceStore.shared.configure(presenceRepository: presenceRepo, currentUserId: session.user.id)
+        }
         
         self.viewModel = DashboardViewModel(
             taskRepository: taskRepository,
@@ -143,7 +151,7 @@ struct AuthenticatedRootView: View {
             NavigationStack {
                 VStack(spacing: 0) {
                     if sidebarViewModel.selectedArea == .inbox {
-                        InboxView(viewModel: inboxViewModel)
+                        InboxView(viewModel: inboxViewModel, onNotificationTap: handleNotificationTap)
                     } else if sidebarViewModel.selectedArea == .messages {
                         ConversationListView(
                             viewModel: conversationListViewModel,
@@ -231,6 +239,31 @@ struct AuthenticatedRootView: View {
                 .sheet(item: $projectSettingsSheet) { item in
                     ProjectSettingsView(projectId: item.id, workflowRepository: viewModel.workflowRepository, integrationRepository: integrationRepository)
                 }
+                .sheet(item: $selectedNotificationTask) { task in
+                    NavigationStack {
+                        TaskDetailView(
+                            viewModel: TaskDetailViewModel(
+                                task: task,
+                                taskRepository: viewModel.taskRepository,
+                                activityRepository: viewModel.activityRepository,
+                                hierarchyRepository: viewModel.hierarchyRepository,
+                                workflowRepository: viewModel.workflowRepository,
+                                attachmentRepository: viewModel.attachmentRepository
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        .overlay {
+            if isLoadingTask {
+                ZStack {
+                    Color.black.opacity(0.3).ignoresSafeArea()
+                    ProgressView()
+                        .padding()
+                        .background(AppColors.surfacePrimary)
+                        .cornerRadius(8)
+                }
             }
         }
         .onChange(of: sidebarViewModel.selectedArea) { oldValue, newValue in
@@ -264,6 +297,35 @@ struct AuthenticatedRootView: View {
         } label: {
             Image(systemName: "person.circle")
                 .font(.title3)
+        }
+    }
+
+    private func handleNotificationTap(_ notification: NotificationDTO) {
+        if notification.type == "mention" || notification.type.starts(with: "task.") {
+            var taskIdString: String? = nil
+            if notification.entityType == "task" {
+                taskIdString = notification.entityId.uuidString
+            } else if let payloadStr = notification.payloadJson,
+                      let data = payloadStr.data(using: .utf8),
+                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+                taskIdString = dict["taskId"]
+            }
+            
+            if let idString = taskIdString, let taskId = UUID(uuidString: idString) {
+                Task {
+                    isLoadingTask = true
+                    do {
+                        let taskItem = try await viewModel.taskRepository.getTask(id: taskId)
+                        selectedNotificationTask = taskItem
+                    } catch {
+                        print("Failed to fetch task from notification: \(error)")
+                    }
+                    isLoadingTask = false
+                }
+            }
+        } else if notification.type == "message.mention" || notification.entityType == "conversation" {
+            sidebarViewModel.selectedArea = .messages
+            conversationListViewModel.pendingChannelId = notification.entityId
         }
     }
 

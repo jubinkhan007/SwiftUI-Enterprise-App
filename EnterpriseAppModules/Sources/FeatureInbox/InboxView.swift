@@ -4,9 +4,11 @@ import DesignSystem
 
 public struct InboxView: View {
     @StateObject private var viewModel: InboxViewModel
+    public var onNotificationTap: ((NotificationDTO) -> Void)?
 
-    public init(viewModel: InboxViewModel) {
+    public init(viewModel: InboxViewModel, onNotificationTap: ((NotificationDTO) -> Void)? = nil) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.onNotificationTap = onNotificationTap
     }
 
     public var body: some View {
@@ -93,9 +95,14 @@ public struct InboxView: View {
         } else {
             List {
                 ForEach(viewModel.filteredNotifications) { notification in
-                    InboxRowView(notification: notification) {
-                        Task { await viewModel.markAsRead(notification) }
+                    Button {
+                        onNotificationTap?(notification)
+                    } label: {
+                        InboxRowView(notification: notification) {
+                            Task { await viewModel.markAsRead(notification) }
+                        }
                     }
+                    .buttonStyle(.plain)
                     .listRowBackground(AppColors.backgroundPrimary)
                     .listRowSeparatorTint(AppColors.borderDefault)
                 }
