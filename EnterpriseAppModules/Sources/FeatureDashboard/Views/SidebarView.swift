@@ -89,6 +89,9 @@ public struct SidebarView: View {
             NavigationLink(value: SidebarViewModel.SidebarItem.messages) {
                 Label("Messages", systemImage: "bubble.left.and.bubble.right.fill")
             }
+            NavigationLink(value: SidebarViewModel.SidebarItem.meetings) {
+                Label("Meetings", systemImage: "video.fill")
+            }
         }
     }
 

@@ -82,6 +82,9 @@ func configure(_ app: Application) throws {
     // Messaging Phase 3: reactions, pins, bookmarks, presence, message->task link
     app.migrations.add(AddMessagingPhase3Features())
 
+    // Phase 4 (Meetings slice): scheduling, waiting room, notes, summaries
+    app.migrations.add(CreateMeetings())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 
@@ -106,6 +109,16 @@ func configure(_ app: Application) throws {
 
     // MARK: - Routes
     try routes(app)
+
+    // MARK: - Background runners
+    Task { await app.meetingReminderRunner.start() }
+    app.lifecycle.use(MeetingReminderLifecycle())
+}
+
+private struct MeetingReminderLifecycle: LifecycleHandler {
+    func shutdownAsync(_ application: Application) async {
+        await application.meetingReminderRunner.stop()
+    }
 }
 
 private func resolveSQLiteDatabasePath(app: Application) -> String {

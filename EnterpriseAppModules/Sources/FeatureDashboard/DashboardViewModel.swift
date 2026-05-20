@@ -272,7 +272,7 @@ public final class DashboardViewModel: ObservableObject {
         }
         
         switch selection {
-        case .allTasks, .inbox, .messages:
+        case .allTasks, .inbox, .messages, .meetings:
             isMyTasksMode = false
         case .myTasks:
             isMyTasksMode = true

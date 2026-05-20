@@ -123,3 +123,24 @@ extension UserPresenceDTO: Content {}
 extension PresenceHeartbeatRequest: Content {}
 extension SetCustomStatusRequest: Content {}
 extension BulkPresenceResponse: Content {}
+
+// Phase 4 (Meetings)
+extension MeetingDTO: Content {}
+extension MeetingListItemDTO: Content {}
+extension MeetingParticipantDTO: Content {}
+extension MeetingJoinTicketDTO: Content {}
+extension MeetingNotesDTO: Content {}
+extension MeetingSummaryDTO: Content {}
+extension MeetingActionItemDTO: Content {}
+extension MeetingShareLinkDTO: Content {}
+extension MeetingRecurrenceDTO: Content {}
+extension CreateMeetingRequest: Content {}
+extension UpdateMeetingRequest: Content {}
+extension CancelMeetingRequest: Content {}
+extension MeetingRSVPRequest: Content {}
+extension AddMeetingParticipantsRequest: Content {}
+extension ChangeMeetingRoleRequest: Content {}
+extension UpdateMeetingNotesRequest: Content {}
+extension GenerateMeetingSummaryRequest: Content {}
+extension CreateMeetingActionItemRequest: Content {}
+extension MeetingHeartbeatRequest: Content {}

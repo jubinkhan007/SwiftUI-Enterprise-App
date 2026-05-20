@@ -5,6 +5,7 @@ import FeatureOrganization
 import FeatureDashboard
 import FeatureInbox
 import FeatureMessaging
+import FeatureMeetings
 import DesignSystem
 import AppNetwork
 import AppData
@@ -65,6 +66,7 @@ struct AuthenticatedRootView: View {
     let apiClient: APIClientProtocol
     let integrationRepository: IntegrationRepositoryProtocol
     let messagingRepository: MessagingRepositoryProtocol
+    let meetingRepository: MeetingRepositoryProtocol
     let realtimeProvider: RealTimeProvider
     @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
@@ -77,6 +79,7 @@ struct AuthenticatedRootView: View {
     @State private var projectSettingsSheet: ProjectSettingsSheetItem? = nil
     @State private var selectedNotificationTask: TaskItemDTO? = nil
     @State private var isLoadingTask: Bool = false
+    @State private var meetingMembers: [MeetingPickableMember] = []
 
     private struct ProjectSettingsSheetItem: Identifiable {
         let id: UUID
@@ -104,13 +107,15 @@ struct AuthenticatedRootView: View {
         let analyticsRepo = AnalyticsRepository(apiClient: apiClient)
         let integrationRepo = IntegrationRepository(apiClient: apiClient)
         let messagingRepo = LiveMessagingService(apiClient: apiClient)
+        let meetingRepo = LiveMeetingService(apiClient: apiClient)
         let presenceRepo = LivePresenceService(apiClient: apiClient)
         let notificationRepo = LiveNotificationService(apiClient: apiClient)
         let rtProvider = RealTimeProvider()
 
-        // Configure presence store once at app startup so any view can use it.
+        // Configure shared stores once at app startup so any view can use them.
         Task { @MainActor in
             PresenceStore.shared.configure(presenceRepository: presenceRepo, currentUserId: session.user.id)
+            MeetingsStore.shared.configure(repository: meetingRepo, currentUserId: session.user.id)
         }
         
         self.viewModel = DashboardViewModel(
@@ -124,6 +129,7 @@ struct AuthenticatedRootView: View {
         self.apiClient = apiClient
         self.integrationRepository = integrationRepo
         self.messagingRepository = messagingRepo
+        self.meetingRepository = meetingRepo
         self.realtimeProvider = rtProvider
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
@@ -162,6 +168,13 @@ struct AuthenticatedRootView: View {
                             taskRepository: viewModel.taskRepository,
                             hierarchy: sidebarViewModel.areas
                         )
+                    } else if sidebarViewModel.selectedArea == .meetings {
+                        MeetingsHomeView(
+                            currentUserId: session.user.id,
+                            repository: meetingRepository,
+                            realtimeProvider: realtimeProvider,
+                            availableMembers: meetingMembers
+                        )
                     } else {
                         if horizontalSizeClass == .compact {
                             compactHeaderControls
@@ -190,7 +203,7 @@ struct AuthenticatedRootView: View {
                         }
                     }
 
-                    if sidebarViewModel.selectedArea != .inbox && sidebarViewModel.selectedArea != .messages {
+                    if sidebarViewModel.selectedArea != .inbox && sidebarViewModel.selectedArea != .messages && sidebarViewModel.selectedArea != .meetings {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
                                 showingCreateTask = true
@@ -274,6 +287,9 @@ struct AuthenticatedRootView: View {
             if sidebarViewModel.areas.isEmpty {
                 await sidebarViewModel.fetchHierarchy()
             }
+            if meetingMembers.isEmpty {
+                await loadMeetingMembers()
+            }
             await syncManager.refresh()
             syncManager.syncNow()
         }
@@ -326,6 +342,23 @@ struct AuthenticatedRootView: View {
         } else if notification.type == "message.mention" || notification.entityType == "conversation" {
             sidebarViewModel.selectedArea = .messages
             conversationListViewModel.pendingChannelId = notification.entityId
+        } else if notification.type.starts(with: "meeting.") || notification.entityType == "meeting" {
+            sidebarViewModel.selectedArea = .meetings
+            // MeetingsHomeView observes MeetingsStore; tap-to-open requires the user
+            // to pick the meeting from the list. Direct nav lands in 4-A polish.
+        }
+    }
+
+    private func loadMeetingMembers() async {
+        let endpoint = OrganizationEndpoint.listMembers(orgId: selectedOrg.id, configuration: .current)
+        do {
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<[OrganizationMemberDTO]>.self)
+            let mapped: [MeetingPickableMember] = (response.data ?? [])
+                .filter { $0.userId != session.user.id }
+                .map { MeetingPickableMember(id: $0.userId, displayName: $0.displayName, email: $0.email) }
+            meetingMembers = mapped
+        } catch {
+            // Non-fatal — sheet just shows "No org members available."
         }
     }
 

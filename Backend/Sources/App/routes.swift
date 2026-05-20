@@ -57,6 +57,12 @@ func routes(_ app: Application) throws {
     let presenceController = PresenceController()
     try orgScopedAPI.register(collection: presenceController)
 
+    let meetingController = MeetingController()
+    try orgScopedAPI.register(collection: meetingController)
+
+    let meetingNotesController = MeetingNotesController()
+    try orgScopedAPI.register(collection: meetingNotesController)
+
     let analyticsController = AnalyticsController()
     try authenticatedAPI.register(collection: analyticsController)
 

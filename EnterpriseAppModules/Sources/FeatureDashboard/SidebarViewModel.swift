@@ -21,16 +21,18 @@ public final class SidebarViewModel: ObservableObject {
         case myTasks
         case inbox
         case messages
+        case meetings
         case space(UUID)
         case project(UUID)
         case list(UUID)
-        
+
         public var id: String {
             switch self {
             case .allTasks: return "all"
             case .myTasks: return "my-tasks"
             case .inbox: return "inbox"
             case .messages: return "messages"
+            case .meetings: return "meetings"
             case .space(let id): return "space-\(id.uuidString)"
             case .project(let id): return "project-\(id.uuidString)"
             case .list(let id): return "list-\(id.uuidString)"

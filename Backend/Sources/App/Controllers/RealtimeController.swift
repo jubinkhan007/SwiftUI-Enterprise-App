@@ -101,7 +101,7 @@ enum RealtimeController {
     }
 
     private static func isValidChannel(_ channel: String) -> Bool {
-        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:") || channel.hasPrefix("conversation:")
+        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:") || channel.hasPrefix("conversation:") || channel.hasPrefix("meeting:")
     }
 
     private static func filterAllowedChannels(_ channels: [String], userId: UUID, orgId: UUID, db: Database) async -> [String] {
@@ -173,6 +173,24 @@ enum RealtimeController {
                 if ok { allowed.append(ch) }
                 continue
             }
+
+            if ch.hasPrefix("meeting:") {
+                let idStr = String(ch.dropFirst("meeting:".count))
+                guard let meetingId = UUID(uuidString: idStr) else { continue }
+                let ok: Bool
+                do {
+                    ok = try await MeetingParticipantModel.query(on: db)
+                        .join(MeetingModel.self, on: \MeetingParticipantModel.$meeting.$id == \MeetingModel.$id)
+                        .filter(\MeetingParticipantModel.$user.$id == userId)
+                        .filter(\MeetingParticipantModel.$meeting.$id == meetingId)
+                        .filter(MeetingModel.self, \.$organization.$id == orgId)
+                        .count() > 0
+                } catch {
+                    ok = false
+                }
+                if ok { allowed.append(ch) }
+                continue
+            }
         }
 
         return allowed
@@ -188,6 +206,19 @@ enum RealtimeController {
             .map(\.$conversation.id)
 
         channels.append(contentsOf: conversationIds.map { "conversation:\($0.uuidString)" })
+
+        // Auto-subscribe to active meeting channels the user is a participant of.
+        let now = Date()
+        let meetingIds = try await MeetingParticipantModel.query(on: db)
+            .join(MeetingModel.self, on: \MeetingParticipantModel.$meeting.$id == \MeetingModel.$id)
+            .filter(\MeetingParticipantModel.$user.$id == userId)
+            .filter(MeetingModel.self, \.$organization.$id == orgId)
+            .filter(MeetingModel.self, \.$status !~ ["ended", "cancelled"])
+            .filter(MeetingModel.self, \.$scheduledEndAt >= now.addingTimeInterval(-3600))
+            .all()
+            .map(\.$meeting.id)
+        channels.append(contentsOf: meetingIds.map { "meeting:\($0.uuidString)" })
+
         return channels
     }
 }
