@@ -144,6 +144,14 @@ struct MessageController: RouteCollection {
             try await membership.save(on: req.db)
         }
 
+        // Clear the matching draft (best-effort, post-write).
+        await DraftController.clearAfterSend(
+            userId: ctx.userId,
+            conversationId: conversationID,
+            parentId: payload.parentId,
+            on: req.db
+        )
+
         try await message.$sender.load(on: req.db)
         let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
 

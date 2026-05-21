@@ -101,7 +101,7 @@ enum RealtimeController {
     }
 
     private static func isValidChannel(_ channel: String) -> Bool {
-        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:") || channel.hasPrefix("conversation:") || channel.hasPrefix("meeting:")
+        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:") || channel.hasPrefix("conversation:") || channel.hasPrefix("meeting:") || channel.hasPrefix("user:")
     }
 
     private static func filterAllowedChannels(_ channels: [String], userId: UUID, orgId: UUID, db: Database) async -> [String] {
@@ -174,6 +174,12 @@ enum RealtimeController {
                 continue
             }
 
+            if ch.hasPrefix("user:") {
+                // Only the user themselves may subscribe to their own user channel.
+                if ch == "user:\(userId.uuidString)" { allowed.append(ch) }
+                continue
+            }
+
             if ch.hasPrefix("meeting:") {
                 let idStr = String(ch.dropFirst("meeting:".count))
                 guard let meetingId = UUID(uuidString: idStr) else { continue }
@@ -197,7 +203,7 @@ enum RealtimeController {
     }
 
     private static func initialChannels(userId: UUID, orgId: UUID, db: Database) async throws -> [String] {
-        var channels = ["org:\(orgId.uuidString)"]
+        var channels = ["org:\(orgId.uuidString)", "user:\(userId.uuidString)"]
         let conversationIds = try await ConversationMemberModel.query(on: db)
             .join(ConversationModel.self, on: \ConversationMemberModel.$conversation.$id == \ConversationModel.$id)
             .filter(\ConversationMemberModel.$user.$id == userId)

@@ -10,6 +10,9 @@ public struct ChatView: View {
     @State private var actionSheetMessage: MessageDTO?
     @State private var createTaskMessage: MessageDTO?
     @State private var showChannelSettings = false
+    @State private var showTemplatePicker = false
+    @State private var showScheduleSend = false
+    @State private var commandError: String?
 
     let conversationName: String
     let currentUserId: UUID
@@ -58,6 +61,24 @@ public struct ChatView: View {
             .sheet(item: $actionSheetMessage, content: actionsSheet)
             .sheet(item: $createTaskMessage, content: createTaskSheet)
             .sheet(isPresented: $showChannelSettings, content: channelSettingsSheet)
+            .sheet(isPresented: $showTemplatePicker) {
+                TemplatePickerSheet(conversationId: viewModel.conversationId) { rendered in
+                    viewModel.inputText = rendered
+                }
+            }
+            .sheet(isPresented: $showScheduleSend) {
+                ScheduleSendSheet(
+                    messageBody: viewModel.inputText,
+                    conversationId: viewModel.conversationId
+                ) { _ in
+                    viewModel.inputText = ""
+                }
+            }
+            .alert("Command", isPresented: Binding(get: { commandError != nil }, set: { if !$0 { commandError = nil } })) {
+                Button("OK") { commandError = nil }
+            } message: {
+                Text(commandError ?? "")
+            }
     }
 
     private var chatLayout: some View {
@@ -140,9 +161,102 @@ public struct ChatView: View {
                 viewModel.inputText = ""
             },
             onSend: {
+                if handleSlashCommandIfPresent() { return }
                 Task { await viewModel.sendMessage() }
+            },
+            conversationId: viewModel.conversationId,
+            parentId: nil,
+            onPickTemplate: { showTemplatePicker = true },
+            onScheduleSend: { showScheduleSend = true },
+            onCommandPicked: { spec in
+                viewModel.inputText = "/\(spec.name) "
             }
         )
+    }
+
+    /// Returns true if input was a slash command and was handled (so the regular
+    /// send should be skipped). Built-in commands not handled here just fall through.
+    private func handleSlashCommandIfPresent() -> Bool {
+        guard let (spec, rest) = SlashCommandRegistry.shared.parse(viewModel.inputText) else {
+            return false
+        }
+        switch spec.name {
+        case "me":
+            let trimmed = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                viewModel.inputText = "_\(trimmed)_"
+                Task { await viewModel.sendMessage() }
+            }
+            return true
+        case "schedule":
+            let trimmed = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                viewModel.inputText = trimmed
+            }
+            showScheduleSend = true
+            return true
+        case "template":
+            let shortcut = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+            if shortcut.isEmpty {
+                showTemplatePicker = true
+            } else if let tpl = TemplateStore.shared.findByShortcut(shortcut) {
+                Task {
+                    let rendered = await TemplateStore.shared.render(tpl, conversationId: viewModel.conversationId)
+                    viewModel.inputText = rendered
+                }
+            } else {
+                showTemplatePicker = true
+            }
+            return true
+        case "remind":
+            if let (when, body) = SlashCommandRegistry.parseRemind(rest) {
+                Task {
+                    _ = await ReminderStore.shared.create(body: body, remindAt: when)
+                    viewModel.inputText = ""
+                }
+            } else {
+                commandError = "Usage: /remind me in 2h <text>"
+            }
+            return true
+        case "status":
+            // Form: /status [emoji] text
+            let trimmed = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { commandError = "Usage: /status [emoji] <text>"; return true }
+            let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).map(String.init)
+            let emoji: String?
+            let text: String
+            if parts.count == 2, parts[0].count <= 4 {
+                emoji = parts[0]; text = parts[1]
+            } else {
+                emoji = nil; text = trimmed
+            }
+            Task {
+                _ = await PresenceStore.shared.setCustomStatus(emoji: emoji, text: text, expiresAt: nil)
+                viewModel.inputText = ""
+            }
+            return true
+        case "task":
+            // Pre-fill: title comes from rest of input; open the convert sheet against
+            // a placeholder message wrapping the text so the existing flow can be reused.
+            let title = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty { commandError = "Usage: /task <title>"; return true }
+            let synthetic = MessageDTO(
+                id: UUID(), conversationId: viewModel.conversationId, senderId: currentUserId,
+                senderName: "you", body: title, messageType: "text",
+                editedAt: nil, deletedAt: nil, createdAt: Date()
+            )
+            createTaskMessage = synthetic
+            viewModel.inputText = ""
+            return true
+        case "help":
+            commandError = SlashCommandRegistry.shared.catalog
+                .map { "/\($0.name) — \($0.summary)" }
+                .joined(separator: "\n")
+            viewModel.inputText = ""
+            return true
+        default:
+            return false
+        }
     }
 
     private func messageRow(for message: MessageDTO) -> some View {

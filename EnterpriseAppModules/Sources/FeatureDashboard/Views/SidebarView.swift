@@ -92,6 +92,9 @@ public struct SidebarView: View {
             NavigationLink(value: SidebarViewModel.SidebarItem.meetings) {
                 Label("Meetings", systemImage: "video.fill")
             }
+            NavigationLink(value: SidebarViewModel.SidebarItem.productivity) {
+                Label("Productivity", systemImage: "bolt.fill")
+            }
         }
     }
 

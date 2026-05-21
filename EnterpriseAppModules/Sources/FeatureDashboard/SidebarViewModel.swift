@@ -22,6 +22,7 @@ public final class SidebarViewModel: ObservableObject {
         case inbox
         case messages
         case meetings
+        case productivity
         case space(UUID)
         case project(UUID)
         case list(UUID)
@@ -33,6 +34,7 @@ public final class SidebarViewModel: ObservableObject {
             case .inbox: return "inbox"
             case .messages: return "messages"
             case .meetings: return "meetings"
+            case .productivity: return "productivity"
             case .space(let id): return "space-\(id.uuidString)"
             case .project(let id): return "project-\(id.uuidString)"
             case .list(let id): return "list-\(id.uuidString)"

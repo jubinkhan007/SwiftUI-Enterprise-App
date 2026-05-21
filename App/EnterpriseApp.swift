@@ -108,6 +108,7 @@ struct AuthenticatedRootView: View {
         let integrationRepo = IntegrationRepository(apiClient: apiClient)
         let messagingRepo = LiveMessagingService(apiClient: apiClient)
         let meetingRepo = LiveMeetingService(apiClient: apiClient)
+        let productivityRepo = LiveProductivityService(apiClient: apiClient)
         let presenceRepo = LivePresenceService(apiClient: apiClient)
         let notificationRepo = LiveNotificationService(apiClient: apiClient)
         let rtProvider = RealTimeProvider()
@@ -116,6 +117,15 @@ struct AuthenticatedRootView: View {
         Task { @MainActor in
             PresenceStore.shared.configure(presenceRepository: presenceRepo, currentUserId: session.user.id)
             MeetingsStore.shared.configure(repository: meetingRepo, currentUserId: session.user.id)
+            DraftStore.shared.configure(repository: productivityRepo, currentUserId: session.user.id, realtimeProvider: rtProvider)
+            ScheduledMessageStore.shared.configure(repository: productivityRepo, realtimeProvider: rtProvider)
+            ReminderStore.shared.configure(repository: productivityRepo, realtimeProvider: rtProvider)
+            TemplateStore.shared.configure(
+                repository: productivityRepo,
+                currentUserName: session.user.displayName,
+                currentUserEmail: session.user.email,
+                currentOrgName: selectedOrg.name
+            )
         }
         
         self.viewModel = DashboardViewModel(
@@ -175,6 +185,8 @@ struct AuthenticatedRootView: View {
                             realtimeProvider: realtimeProvider,
                             availableMembers: meetingMembers
                         )
+                    } else if sidebarViewModel.selectedArea == .productivity {
+                        ProductivityHubView(canManageOrgTemplates: isOrgAdmin)
                     } else {
                         if horizontalSizeClass == .compact {
                             compactHeaderControls
@@ -203,7 +215,7 @@ struct AuthenticatedRootView: View {
                         }
                     }
 
-                    if sidebarViewModel.selectedArea != .inbox && sidebarViewModel.selectedArea != .messages && sidebarViewModel.selectedArea != .meetings {
+                    if sidebarViewModel.selectedArea != .inbox && sidebarViewModel.selectedArea != .messages && sidebarViewModel.selectedArea != .meetings && sidebarViewModel.selectedArea != .productivity {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
                                 showingCreateTask = true
@@ -346,7 +358,17 @@ struct AuthenticatedRootView: View {
             sidebarViewModel.selectedArea = .meetings
             // MeetingsHomeView observes MeetingsStore; tap-to-open requires the user
             // to pick the meeting from the list. Direct nav lands in 4-A polish.
+        } else if notification.type.starts(with: "reminder.") || notification.entityType == "reminder"
+                  || notification.type.starts(with: "scheduled_message.") {
+            sidebarViewModel.selectedArea = .productivity
         }
+    }
+
+    /// Whether the current user can create/edit org-wide templates.
+    /// Currently derived from org ownership; broader admin-role detection lands
+    /// when we surface OrganizationMemberDTO.role on the session.
+    private var isOrgAdmin: Bool {
+        selectedOrg.ownerId == session.user.id
     }
 
     private func loadMeetingMembers() async {

@@ -124,6 +124,23 @@ extension PresenceHeartbeatRequest: Content {}
 extension SetCustomStatusRequest: Content {}
 extension BulkPresenceResponse: Content {}
 
+// Phase 4 (Productivity)
+extension MessageDraftDTO: Content {}
+extension UpsertDraftRequest: Content {}
+extension ScheduledMessageDTO: Content {}
+extension CreateScheduledMessageRequest: Content {}
+extension UpdateScheduledMessageRequest: Content {}
+extension MessageTemplateDTO: Content {}
+extension CreateTemplateRequest: Content {}
+extension UpdateTemplateRequest: Content {}
+extension RenderTemplateRequest: Content {}
+extension RenderedTemplateDTO: Content {}
+extension ReminderDTO: Content {}
+extension CreateReminderRequest: Content {}
+extension UpdateReminderRequest: Content {}
+extension SnoozeReminderRequest: Content {}
+extension CreateMessageReminderRequest: Content {}
+
 // Phase 4 (Meetings)
 extension MeetingDTO: Content {}
 extension MeetingListItemDTO: Content {}

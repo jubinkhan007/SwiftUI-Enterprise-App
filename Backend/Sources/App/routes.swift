@@ -63,6 +63,18 @@ func routes(_ app: Application) throws {
     let meetingNotesController = MeetingNotesController()
     try orgScopedAPI.register(collection: meetingNotesController)
 
+    let draftController = DraftController()
+    try orgScopedAPI.register(collection: draftController)
+
+    let scheduledMessageController = ScheduledMessageController()
+    try orgScopedAPI.register(collection: scheduledMessageController)
+
+    let templateController = TemplateController()
+    try orgScopedAPI.register(collection: templateController)
+
+    let reminderController = ReminderController()
+    try orgScopedAPI.register(collection: reminderController)
+
     let analyticsController = AnalyticsController()
     try authenticatedAPI.register(collection: analyticsController)
 

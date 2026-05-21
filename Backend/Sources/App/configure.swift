@@ -85,6 +85,9 @@ func configure(_ app: Application) throws {
     // Phase 4 (Meetings slice): scheduling, waiting room, notes, summaries
     app.migrations.add(CreateMeetings())
 
+    // Phase 4 (Productivity slice): drafts, scheduled send, templates, reminders
+    app.migrations.add(CreateProductivityFeatures())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 
@@ -112,12 +115,20 @@ func configure(_ app: Application) throws {
 
     // MARK: - Background runners
     Task { await app.meetingReminderRunner.start() }
+    Task { await app.productivityRunner.start() }
     app.lifecycle.use(MeetingReminderLifecycle())
+    app.lifecycle.use(ProductivityRunnerLifecycle())
 }
 
 private struct MeetingReminderLifecycle: LifecycleHandler {
     func shutdownAsync(_ application: Application) async {
         await application.meetingReminderRunner.stop()
+    }
+}
+
+private struct ProductivityRunnerLifecycle: LifecycleHandler {
+    func shutdownAsync(_ application: Application) async {
+        await application.productivityRunner.stop()
     }
 }
 
