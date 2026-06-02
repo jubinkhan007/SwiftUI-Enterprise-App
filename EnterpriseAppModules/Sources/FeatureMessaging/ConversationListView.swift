@@ -3,6 +3,7 @@ import SharedModels
 import DesignSystem
 import AppNetwork
 import Domain
+import FeatureCalls
 
 public struct ConversationListView: View {
     @StateObject private var viewModel: ConversationListViewModel
@@ -12,6 +13,7 @@ public struct ConversationListView: View {
     let currentUserId: UUID
     let taskRepository: TaskRepositoryProtocol
     let hierarchy: [HierarchyTreeDTO.SpaceNode]
+    let callRepository: CallRepositoryProtocol
 
     @State private var showingNewSheet = false
     @State private var showingGlobalSearch = false
@@ -26,7 +28,8 @@ public struct ConversationListView: View {
         realtimeProvider: RealTimeProvider,
         currentUserId: UUID,
         taskRepository: TaskRepositoryProtocol,
-        hierarchy: [HierarchyTreeDTO.SpaceNode]
+        hierarchy: [HierarchyTreeDTO.SpaceNode],
+        callRepository: CallRepositoryProtocol
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.messagingRepository = messagingRepository
@@ -35,6 +38,7 @@ public struct ConversationListView: View {
         self.currentUserId = currentUserId
         self.taskRepository = taskRepository
         self.hierarchy = hierarchy
+        self.callRepository = callRepository
     }
     
     public var body: some View {
@@ -86,7 +90,9 @@ public struct ConversationListView: View {
                     messagingRepository: messagingRepository,
                     taskRepository: taskRepository,
                     hierarchy: hierarchy,
-                    apiClient: apiClient
+                    apiClient: apiClient,
+                    realtimeProvider: realtimeProvider,
+                    callRepository: callRepository
                 )
             }
             .navigationDestination(for: ConversationDTO.self) { conv in
@@ -103,7 +109,9 @@ public struct ConversationListView: View {
                     messagingRepository: messagingRepository,
                     taskRepository: taskRepository,
                     hierarchy: hierarchy,
-                    apiClient: apiClient
+                    apiClient: apiClient,
+                    realtimeProvider: realtimeProvider,
+                    callRepository: callRepository
                 )
             }
             .sheet(isPresented: $showingNewSheet) {

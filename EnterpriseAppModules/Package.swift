@@ -21,6 +21,7 @@ let package = Package(
         .library(name: "FeatureInbox", targets: ["FeatureInbox"]),
         .library(name: "FeatureMessaging", targets: ["FeatureMessaging"]),
         .library(name: "FeatureMeetings", targets: ["FeatureMeetings"]),
+        .library(name: "FeatureCalls", targets: ["FeatureCalls"]),
     ],
     dependencies: [
         .package(path: "../SharedModels"),
@@ -78,11 +79,15 @@ let package = Package(
         ),
         .target(
             name: "FeatureMessaging",
-            dependencies: ["Core", "Domain", "AppData", "AppNetwork", "DesignSystem", "FeatureInbox", "FeatureDashboard", .product(name: "SharedModels", package: "SharedModels")]
+            dependencies: ["Core", "Domain", "AppData", "AppNetwork", "DesignSystem", "FeatureInbox", "FeatureDashboard", "FeatureCalls", .product(name: "SharedModels", package: "SharedModels")]
         ),
         .target(
             name: "FeatureMeetings",
             dependencies: ["Core", "Domain", "AppData", "AppNetwork", "DesignSystem", "FeatureMessaging", .product(name: "SharedModels", package: "SharedModels")]
+        ),
+        .target(
+            name: "FeatureCalls",
+            dependencies: ["Core", "Domain", "AppData", "AppNetwork", "DesignSystem", .product(name: "SharedModels", package: "SharedModels")]
         ),
         .testTarget(
             name: "EnterpriseAppModulesTests",

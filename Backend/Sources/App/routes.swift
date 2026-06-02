@@ -75,6 +75,9 @@ func routes(_ app: Application) throws {
     let reminderController = ReminderController()
     try orgScopedAPI.register(collection: reminderController)
 
+    let callController = CallController()
+    try orgScopedAPI.register(collection: callController)
+
     let analyticsController = AnalyticsController()
     try authenticatedAPI.register(collection: analyticsController)
 

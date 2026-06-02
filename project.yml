@@ -30,6 +30,10 @@ targets:
         product: FeatureInbox
       - package: EnterpriseAppModules
         product: FeatureMessaging
+      - package: EnterpriseAppModules
+        product: FeatureMeetings
+      - package: EnterpriseAppModules
+        product: FeatureCalls
 packages:
   EnterpriseAppModules:
     path: EnterpriseAppModules

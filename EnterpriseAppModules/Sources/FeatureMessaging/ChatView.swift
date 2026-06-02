@@ -3,6 +3,7 @@ import SharedModels
 import DesignSystem
 import Domain
 import AppNetwork
+import FeatureCalls
 
 public struct ChatView: View {
     @StateObject private var viewModel: ChatViewModel
@@ -13,6 +14,8 @@ public struct ChatView: View {
     @State private var showTemplatePicker = false
     @State private var showScheduleSend = false
     @State private var commandError: String?
+    @State private var activeCall: ActiveCallPresentation?
+    @State private var isStartingCall = false
 
     let conversationName: String
     let currentUserId: UUID
@@ -20,6 +23,13 @@ public struct ChatView: View {
     let taskRepository: TaskRepositoryProtocol
     let hierarchy: [HierarchyTreeDTO.SpaceNode]
     let apiClient: APIClientProtocol
+    let realtimeProvider: RealTimeProvider
+    let callRepository: CallRepositoryProtocol
+
+    private struct ActiveCallPresentation: Identifiable {
+        let id: UUID
+        let store: CallSessionStore
+    }
 
     public init(
         viewModel: ChatViewModel,
@@ -28,7 +38,9 @@ public struct ChatView: View {
         messagingRepository: MessagingRepositoryProtocol,
         taskRepository: TaskRepositoryProtocol,
         hierarchy: [HierarchyTreeDTO.SpaceNode],
-        apiClient: APIClientProtocol
+        apiClient: APIClientProtocol,
+        realtimeProvider: RealTimeProvider,
+        callRepository: CallRepositoryProtocol
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.conversationName = conversationName
@@ -37,6 +49,8 @@ public struct ChatView: View {
         self.taskRepository = taskRepository
         self.hierarchy = hierarchy
         self.apiClient = apiClient
+        self.realtimeProvider = realtimeProvider
+        self.callRepository = callRepository
     }
 
     public var body: some View {
@@ -45,10 +59,23 @@ public struct ChatView: View {
             .navigationTitle(conversationName)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showChannelSettings = true
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
+                    HStack(spacing: AppSpacing.sm) {
+                        Button {
+                            Task { await startCall() }
+                        } label: {
+                            if isStartingCall {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "video.fill")
+                            }
+                        }
+                        .disabled(isStartingCall)
+
+                        Button {
+                            showChannelSettings = true
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                        }
                     }
                 }
             }
@@ -74,11 +101,40 @@ public struct ChatView: View {
                     viewModel.inputText = ""
                 }
             }
+            .sheet(item: $activeCall) { item in
+                InCallView(store: item.store, currentUserId: currentUserId)
+            }
             .alert("Command", isPresented: Binding(get: { commandError != nil }, set: { if !$0 { commandError = nil } })) {
                 Button("OK") { commandError = nil }
             } message: {
                 Text(commandError ?? "")
             }
+    }
+
+    private func startCall() async {
+        guard !isStartingCall else { return }
+        isStartingCall = true
+        defer { isStartingCall = false }
+
+        do {
+            let response = try await callRepository.initiateCall(
+                InitiateCallRequest(conversationId: viewModel.conversationId, hasVideo: true)
+            )
+            guard let ticket = response.data else {
+                commandError = response.error?.message ?? "Could not start the call."
+                return
+            }
+            let store = CallSessionStore(
+                callId: ticket.session.id,
+                currentUserId: currentUserId,
+                repository: callRepository,
+                realtimeProvider: realtimeProvider
+            )
+            activeCall = ActiveCallPresentation(id: ticket.session.id, store: store)
+            await store.applyJoinTicket(ticket)
+        } catch {
+            commandError = error.localizedDescription
+        }
     }
 
     private var chatLayout: some View {

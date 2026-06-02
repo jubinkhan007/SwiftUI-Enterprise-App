@@ -6,6 +6,7 @@ import FeatureDashboard
 import FeatureInbox
 import FeatureMessaging
 import FeatureMeetings
+import FeatureCalls
 import DesignSystem
 import AppNetwork
 import AppData
@@ -67,6 +68,7 @@ struct AuthenticatedRootView: View {
     let integrationRepository: IntegrationRepositoryProtocol
     let messagingRepository: MessagingRepositoryProtocol
     let meetingRepository: MeetingRepositoryProtocol
+    let callRepository: CallRepositoryProtocol
     let realtimeProvider: RealTimeProvider
     @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
@@ -80,9 +82,23 @@ struct AuthenticatedRootView: View {
     @State private var selectedNotificationTask: TaskItemDTO? = nil
     @State private var isLoadingTask: Bool = false
     @State private var meetingMembers: [MeetingPickableMember] = []
+    @State private var incomingCall: IncomingCallPresentation? = nil
+    @State private var activeCall: ActiveCallPresentation? = nil
+    @State private var realtimeListenerId: UUID? = nil
 
     private struct ProjectSettingsSheetItem: Identifiable {
         let id: UUID
+    }
+
+    private struct IncomingCallPresentation: Identifiable {
+        let id: UUID
+        let store: CallSessionStore
+        let callerDisplayName: String
+    }
+
+    private struct ActiveCallPresentation: Identifiable {
+        let id: UUID
+        let store: CallSessionStore
     }
     
     init(session: Domain.AuthSession, authManager: AppData.AuthManager, selectedOrg: OrganizationDTO, modelContainer: ModelContainer) {
@@ -108,6 +124,7 @@ struct AuthenticatedRootView: View {
         let integrationRepo = IntegrationRepository(apiClient: apiClient)
         let messagingRepo = LiveMessagingService(apiClient: apiClient)
         let meetingRepo = LiveMeetingService(apiClient: apiClient)
+        let callRepo = LiveCallService(apiClient: apiClient)
         let productivityRepo = LiveProductivityService(apiClient: apiClient)
         let presenceRepo = LivePresenceService(apiClient: apiClient)
         let notificationRepo = LiveNotificationService(apiClient: apiClient)
@@ -140,6 +157,7 @@ struct AuthenticatedRootView: View {
         self.integrationRepository = integrationRepo
         self.messagingRepository = messagingRepo
         self.meetingRepository = meetingRepo
+        self.callRepository = callRepo
         self.realtimeProvider = rtProvider
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
@@ -151,6 +169,10 @@ struct AuthenticatedRootView: View {
         self._orgGateViewModel = StateObject(wrappedValue: gateVM)
         self._inboxViewModel = StateObject(wrappedValue: InboxViewModel(notificationRepository: notificationRepo))
         self._conversationListViewModel = StateObject(wrappedValue: ConversationListViewModel(messagingRepository: messagingRepo, realtimeProvider: rtProvider))
+
+        Task { @MainActor in
+            CallKitBridge.shared.start(repository: callRepo)
+        }
     }
     
     var body: some View {
@@ -176,7 +198,8 @@ struct AuthenticatedRootView: View {
                             realtimeProvider: realtimeProvider,
                             currentUserId: session.user.id,
                             taskRepository: viewModel.taskRepository,
-                            hierarchy: sidebarViewModel.areas
+                            hierarchy: sidebarViewModel.areas,
+                            callRepository: callRepository
                         )
                     } else if sidebarViewModel.selectedArea == .meetings {
                         MeetingsHomeView(
@@ -278,6 +301,17 @@ struct AuthenticatedRootView: View {
                         )
                     }
                 }
+                .sheet(item: $incomingCall) { item in
+                    IncomingCallSheet(
+                        store: item.store,
+                        callerDisplayName: item.callerDisplayName
+                    ) {
+                        activeCall = ActiveCallPresentation(id: item.id, store: item.store)
+                    }
+                }
+                .fullScreenCover(item: $activeCall) { item in
+                    InCallView(store: item.store, currentUserId: session.user.id)
+                }
             }
         }
         .overlay {
@@ -295,6 +329,8 @@ struct AuthenticatedRootView: View {
             viewModel.handleSidebarSelection(newValue, viewType: viewType)
         }
         .task {
+            await realtimeProvider.connect(orgId: selectedOrg.id)
+            installCallRealtimeListenerIfNeeded()
             await orgGateViewModel.fetchOrganizations()
             if sidebarViewModel.areas.isEmpty {
                 await sidebarViewModel.fetchHierarchy()
@@ -304,6 +340,12 @@ struct AuthenticatedRootView: View {
             }
             await syncManager.refresh()
             syncManager.syncNow()
+        }
+        .onDisappear {
+            if let realtimeListenerId {
+                realtimeProvider.removeEventListener(realtimeListenerId)
+                self.realtimeListenerId = nil
+            }
         }
     }
     
@@ -358,10 +400,42 @@ struct AuthenticatedRootView: View {
             sidebarViewModel.selectedArea = .meetings
             // MeetingsHomeView observes MeetingsStore; tap-to-open requires the user
             // to pick the meeting from the list. Direct nav lands in 4-A polish.
+        } else if notification.type.starts(with: "call.") || notification.entityType == "call" {
+            Task { await presentIncomingCallIfNeeded(callId: notification.entityId) }
         } else if notification.type.starts(with: "reminder.") || notification.entityType == "reminder"
                   || notification.type.starts(with: "scheduled_message.") {
             sidebarViewModel.selectedArea = .productivity
         }
+    }
+
+    private func installCallRealtimeListenerIfNeeded() {
+        guard realtimeListenerId == nil else { return }
+        realtimeListenerId = realtimeProvider.addEventListener { event in
+            guard event.type == "call.initiated" || event.type == "call.incoming" else { return }
+            let idString = event.payload?["callSessionId"] ?? event.entityId.uuidString
+            guard let callId = UUID(uuidString: idString) else { return }
+            Task { @MainActor in
+                await presentIncomingCallIfNeeded(callId: callId)
+            }
+        }
+    }
+
+    private func presentIncomingCallIfNeeded(callId: UUID) async {
+        guard incomingCall?.id != callId, activeCall?.id != callId else { return }
+        let store = CallSessionStore(
+            callId: callId,
+            currentUserId: session.user.id,
+            repository: callRepository,
+            realtimeProvider: realtimeProvider
+        )
+        await store.refresh()
+        guard let call = store.session,
+              call.myParticipant?.status == .ringing
+        else { return }
+
+        let callerName = call.participants.first { $0.userId == call.hostId }?.displayName ?? "Teammate"
+        CallKitBridge.shared.reportIncoming(callId: callId, callerDisplayName: callerName, hasVideo: call.hasVideo) { _ in }
+        incomingCall = IncomingCallPresentation(id: callId, store: store, callerDisplayName: callerName)
     }
 
     /// Whether the current user can create/edit org-wide templates.

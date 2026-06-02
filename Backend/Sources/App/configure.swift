@@ -88,6 +88,9 @@ func configure(_ app: Application) throws {
     // Phase 4 (Productivity slice): drafts, scheduled send, templates, reminders
     app.migrations.add(CreateProductivityFeatures())
 
+    // Phase 4-B (Calls): SFU sessions, participants, records, VoIP tokens
+    app.migrations.add(CreateCalls())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

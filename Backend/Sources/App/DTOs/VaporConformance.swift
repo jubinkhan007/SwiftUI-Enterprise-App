@@ -124,6 +124,18 @@ extension PresenceHeartbeatRequest: Content {}
 extension SetCustomStatusRequest: Content {}
 extension BulkPresenceResponse: Content {}
 
+// Phase 4-B (Calls)
+extension CallSessionDTO: Content {}
+extension CallParticipantDTO: Content {}
+extension CallTokenDTO: Content {}
+extension CallJoinTicketDTO: Content {}
+extension CallRecordDTO: Content {}
+extension InitiateCallRequest: Content {}
+extension CallAdminEventRequest: Content {}
+extension UpdateParticipantStateRequest: Content {}
+extension RegisterVoIPTokenRequest: Content {}
+extension CreateCallRecordRequest: Content {}
+
 // Phase 4 (Productivity)
 extension MessageDraftDTO: Content {}
 extension UpsertDraftRequest: Content {}

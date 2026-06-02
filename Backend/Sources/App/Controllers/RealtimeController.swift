@@ -101,7 +101,7 @@ enum RealtimeController {
     }
 
     private static func isValidChannel(_ channel: String) -> Bool {
-        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:") || channel.hasPrefix("conversation:") || channel.hasPrefix("meeting:") || channel.hasPrefix("user:")
+        channel.hasPrefix("org:") || channel.hasPrefix("project:") || channel.hasPrefix("list:") || channel.hasPrefix("conversation:") || channel.hasPrefix("meeting:") || channel.hasPrefix("user:") || channel.hasPrefix("call:")
     }
 
     private static func filterAllowedChannels(_ channels: [String], userId: UUID, orgId: UUID, db: Database) async -> [String] {
@@ -177,6 +177,24 @@ enum RealtimeController {
             if ch.hasPrefix("user:") {
                 // Only the user themselves may subscribe to their own user channel.
                 if ch == "user:\(userId.uuidString)" { allowed.append(ch) }
+                continue
+            }
+
+            if ch.hasPrefix("call:") {
+                let idStr = String(ch.dropFirst("call:".count))
+                guard let callId = UUID(uuidString: idStr) else { continue }
+                let ok: Bool
+                do {
+                    ok = try await CallParticipantModel.query(on: db)
+                        .join(CallSessionModel.self, on: \CallParticipantModel.$callSession.$id == \CallSessionModel.$id)
+                        .filter(\CallParticipantModel.$user.$id == userId)
+                        .filter(\CallParticipantModel.$callSession.$id == callId)
+                        .filter(CallSessionModel.self, \.$organization.$id == orgId)
+                        .count() > 0
+                } catch {
+                    ok = false
+                }
+                if ok { allowed.append(ch) }
                 continue
             }
 
