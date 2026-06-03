@@ -16,6 +16,27 @@ func routes(_ app: Application) throws {
     let authController = AuthController()
     try api.register(collection: authController)
 
+    // Web Admin Panel: cookie-session auth (login/refresh/logout/me)
+    let adminAuthController = AdminAuthController()
+    try api.register(collection: adminAuthController)
+
+    // Web Admin Panel: super-admin platform routes (cookie auth + super-admin guard)
+    let superAdminAPI = api
+        .grouped("admin")
+        .grouped(CookieAuthMiddleware())
+        .grouped(SuperAdminMiddleware())
+    let adminController = AdminController()
+    try superAdminAPI.register(collection: adminController)
+
+    // Web Admin Panel: org-admin tenant routes (cookie auth + org membership + admin role)
+    let orgAdminAPI = api
+        .grouped("admin", "org")
+        .grouped(CookieAuthMiddleware())
+        .grouped(OrgTenantMiddleware())
+        .grouped(RequireOrgAdminMiddleware())
+    let orgAdminController = OrgAdminController()
+    try orgAdminAPI.register(collection: orgAdminController)
+
     // Setup authenticated API routes
     let authenticatedAPI = api.grouped(AnyAuthMiddleware())
     // Org-scoped routes (require X-Org-Id header)

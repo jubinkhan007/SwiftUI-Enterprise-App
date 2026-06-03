@@ -14,10 +14,14 @@ func configure(_ app: Application) throws {
     app.middleware.use(ErrorMiddleware.default(environment: app.environment))
 
     // MARK: - CORS Middleware
+    // The web admin panel sends HttpOnly cookies, which requires credentialed CORS:
+    // browsers reject `Access-Control-Allow-Origin: *` together with credentials, so
+    // we echo the request Origin (`.originBased`) and enable `allowCredentials`.
     let corsConfiguration = CORSMiddleware.Configuration(
-        allowedOrigin: .all,
+        allowedOrigin: .originBased,
         allowedMethods: [.GET, .POST, .PUT, .DELETE, .PATCH, .OPTIONS],
-        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith, .init("X-Org-Id")]
+        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith, .init("X-Org-Id")],
+        allowCredentials: true
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfiguration))
 
@@ -36,6 +40,9 @@ func configure(_ app: Application) throws {
     app.migrations.add(CreateOrganization())
     app.migrations.add(CreateOrganizationMember())
     app.migrations.add(CreateOrganizationInvite())
+    // Admin Panel: super-admin flag + org status/retention columns must exist before
+    // later backfill migrations query the User/Organization models.
+    app.migrations.add(AddAdminUserOrgFields())
     app.migrations.add(AddOrgIdToTaskItem())
     app.migrations.add(CreateAuditLog())
     app.migrations.add(AddTaskListHierarchy())
@@ -91,6 +98,9 @@ func configure(_ app: Application) throws {
     // Phase 4-B (Calls): SFU sessions, participants, records, VoIP tokens
     app.migrations.add(CreateCalls())
 
+    // Phase 5 (Admin Panel): super-admin flag, org status + retention
+    app.migrations.add(AddAdminPanelFields())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 
@@ -113,14 +123,25 @@ func configure(_ app: Application) throws {
     // MARK: - Commands
     app.asyncCommands.use(AggregateStatsCommand(), as: "aggregate-stats")
 
+    // Record process boot time for the admin server-health uptime metric.
+    app.storage[BootDateKey.self] = Date()
+
     // MARK: - Routes
     try routes(app)
 
     // MARK: - Background runners
     Task { await app.meetingReminderRunner.start() }
     Task { await app.productivityRunner.start() }
+    Task { await app.retentionPurgeRunner.start() }
     app.lifecycle.use(MeetingReminderLifecycle())
     app.lifecycle.use(ProductivityRunnerLifecycle())
+    app.lifecycle.use(RetentionPurgeRunnerLifecycle())
+}
+
+private struct RetentionPurgeRunnerLifecycle: LifecycleHandler {
+    func shutdownAsync(_ application: Application) async {
+        await application.retentionPurgeRunner.stop()
+    }
 }
 
 private struct MeetingReminderLifecycle: LifecycleHandler {

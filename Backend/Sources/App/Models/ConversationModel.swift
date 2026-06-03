@@ -26,6 +26,10 @@ final class ConversationModel: Model, Content, @unchecked Sendable {
     @Field(key: "is_private")
     var isPrivate: Bool
 
+    /// When locked, members cannot post new messages (moderation control).
+    @Field(key: "is_locked")
+    var isLocked: Bool
+
     @OptionalParent(key: "created_by")
     var createdBy: UserModel?
 
@@ -60,6 +64,7 @@ final class ConversationModel: Model, Content, @unchecked Sendable {
         topic: String? = nil,
         isArchived: Bool = false,
         isPrivate: Bool = true,
+        isLocked: Bool = false,
         createdBy: UUID? = nil,
         ownerId: UUID? = nil,
         orgId: UUID
@@ -71,6 +76,7 @@ final class ConversationModel: Model, Content, @unchecked Sendable {
         self.topic = topic
         self.isArchived = isArchived
         self.isPrivate = isPrivate
+        self.isLocked = isLocked
         if let createdBy { self.$createdBy.id = createdBy }
         if let ownerId { self.$owner.id = ownerId }
         self.$organization.id = orgId

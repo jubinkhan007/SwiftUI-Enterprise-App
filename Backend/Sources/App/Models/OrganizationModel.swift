@@ -21,6 +21,14 @@ final class OrganizationModel: Model, Content, @unchecked Sendable {
     @Parent(key: "owner_id")
     var owner: UserModel
 
+    /// Lifecycle status: "active" or "suspended".
+    @Field(key: "status")
+    var status: String
+
+    /// Message retention window in days. `nil` means retain indefinitely.
+    @OptionalField(key: "retention_days")
+    var retentionDays: Int?
+
     @Children(for: \.$organization)
     var members: [OrganizationMemberModel]
 
@@ -40,13 +48,17 @@ final class OrganizationModel: Model, Content, @unchecked Sendable {
         name: String,
         slug: String,
         description: String? = nil,
-        ownerId: UUID
+        ownerId: UUID,
+        status: String = "active",
+        retentionDays: Int? = nil
     ) {
         self.id = id
         self.name = name
         self.slug = slug
         self.description = description
         self.$owner.id = ownerId
+        self.status = status
+        self.retentionDays = retentionDays
     }
 
     /// Convert to the shared DTO for API responses.
@@ -59,7 +71,9 @@ final class OrganizationModel: Model, Content, @unchecked Sendable {
             ownerId: $owner.id,
             memberCount: memberCount,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            status: status,
+            retentionDays: retentionDays
         )
     }
 }

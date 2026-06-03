@@ -25,21 +25,27 @@ struct OrgTenantMiddleware: AsyncMiddleware {
             throw Abort(.badRequest, reason: "Missing X-Org-Id header.")
         }
 
-        // Verify user is a member of this organization
-        guard let membership = try await OrganizationMemberModel.query(on: request.db)
+        // Verify user is a member of this organization, or a Super Admin
+        let user = try await UserModel.find(auth.userId, on: request.db)
+        let isSuperAdmin = user?.isSuperAdmin ?? false
+
+        let membership = try await OrganizationMemberModel.query(on: request.db)
             .filter(\.$organization.$id == resolvedOrgId)
             .filter(\.$user.$id == auth.userId)
             .first()
-        else {
+
+        guard membership != nil || isSuperAdmin else {
             throw Abort(.forbidden, reason: "You do not have access to this workspace.")
         }
+
+        let resolvedRole = membership?.role ?? .owner
 
         // Store the resolved context for downstream use
         request.storage[OrgContextKey.self] = OrgContext(
             orgId: resolvedOrgId,
             userId: auth.userId,
-            role: membership.role,
-            permissions: PermissionSet.defaultPermissions(for: membership.role)
+            role: resolvedRole,
+            permissions: PermissionSet.defaultPermissions(for: resolvedRole)
         )
 
         return try await next.respond(to: request)

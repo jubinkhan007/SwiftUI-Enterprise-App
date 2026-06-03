@@ -12,6 +12,10 @@ public struct OrganizationDTO: Codable, Identifiable, Sendable, Equatable {
     public let memberCount: Int?
     public let createdAt: Date?
     public let updatedAt: Date?
+    /// Lifecycle status: "active" or "suspended". Optional for backward compatibility.
+    public let status: String?
+    /// Message retention window in days; `nil` (with `retentionConfigured == false`) means indefinite.
+    public let retentionDays: Int?
 
     public init(
         id: UUID = UUID(),
@@ -21,7 +25,9 @@ public struct OrganizationDTO: Codable, Identifiable, Sendable, Equatable {
         ownerId: UUID,
         memberCount: Int? = nil,
         createdAt: Date? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        status: String? = nil,
+        retentionDays: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -31,6 +37,8 @@ public struct OrganizationDTO: Codable, Identifiable, Sendable, Equatable {
         self.memberCount = memberCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.status = status
+        self.retentionDays = retentionDays
     }
 }
 

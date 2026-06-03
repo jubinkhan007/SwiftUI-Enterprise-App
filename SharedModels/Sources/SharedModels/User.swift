@@ -11,6 +11,9 @@ public struct UserDTO: Codable, Identifiable, Sendable, Equatable {
     public let role: UserRole
     public let createdAt: Date?
     public let updatedAt: Date?
+    /// Platform-level super-admin flag. Optional for backward compatibility with
+    /// older clients; `nil` is treated as `false`.
+    public let isSuperAdmin: Bool?
 
     public init(
         id: UUID = UUID(),
@@ -18,7 +21,8 @@ public struct UserDTO: Codable, Identifiable, Sendable, Equatable {
         displayName: String,
         role: UserRole = .member,
         createdAt: Date? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        isSuperAdmin: Bool? = nil
     ) {
         self.id = id
         self.email = email
@@ -26,5 +30,6 @@ public struct UserDTO: Codable, Identifiable, Sendable, Equatable {
         self.role = role
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.isSuperAdmin = isSuperAdmin
     }
 }

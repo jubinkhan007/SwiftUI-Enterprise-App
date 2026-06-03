@@ -21,6 +21,10 @@ final class UserModel: Model, Content, @unchecked Sendable {
     @Enum(key: "role")
     var role: UserRole
 
+    /// Platform-level super-admin flag (global admin panel access).
+    @Field(key: "is_super_admin")
+    var isSuperAdmin: Bool
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -37,13 +41,15 @@ final class UserModel: Model, Content, @unchecked Sendable {
         email: String,
         displayName: String,
         passwordHash: String,
-        role: UserRole = .member
+        role: UserRole = .member,
+        isSuperAdmin: Bool = false
     ) {
         self.id = id
         self.email = email
         self.displayName = displayName
         self.passwordHash = passwordHash
         self.role = role
+        self.isSuperAdmin = isSuperAdmin
     }
 
     /// Convert to the shared DTO for API responses.
@@ -54,7 +60,8 @@ final class UserModel: Model, Content, @unchecked Sendable {
             displayName: displayName,
             role: role,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            isSuperAdmin: isSuperAdmin
         )
     }
 }

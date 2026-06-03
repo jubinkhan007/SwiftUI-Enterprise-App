@@ -66,6 +66,23 @@ final class RealtimeHub {
         }
     }
 
+    /// Live connection metrics for the admin server-health dashboard.
+    struct Stats: Sendable {
+        let totalConnections: Int
+        let uniqueUsers: Int
+        let activeChannels: Int
+    }
+
+    func stats() -> Stats {
+        lock.withLock {
+            Stats(
+                totalConnections: connections.count,
+                uniqueUsers: Set(connections.values.map { $0.userId }).count,
+                activeChannels: channelMembers.count
+            )
+        }
+    }
+
     func broadcast(channel: String, text: String) {
         let sockets: [WebSocket] = lock.withLock {
             guard let members = channelMembers[channel], !members.isEmpty else { return [] }
