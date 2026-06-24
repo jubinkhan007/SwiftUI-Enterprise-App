@@ -107,8 +107,7 @@ export function OrgsPage() {
                     <button
                       className="text-left group/btn focus:outline-none"
                       onClick={() => {
-                        setActiveOrgId(o.id);
-                        navigate("/org/members");
+                        navigate(`/platform/orgs/${o.id}`);
                       }}
                     >
                       <div className="font-medium text-primary group-hover/btn:underline">{o.name}</div>

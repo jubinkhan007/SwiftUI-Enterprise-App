@@ -9,6 +9,9 @@ func configure(_ app: Application) throws {
     // Allow larger bodies for multipart uploads (attachments). We still enforce per-file limits in controllers.
     app.routes.defaultMaxBodySize = "64mb"
 
+    // MARK: - Metrics Tracking
+    app.middleware.use(MetricsMiddleware())
+
     // MARK: - Error Handling
     // Ensure `Abort` and other thrown errors become valid HTTP responses instead of closing the connection.
     app.middleware.use(ErrorMiddleware.default(environment: app.environment))

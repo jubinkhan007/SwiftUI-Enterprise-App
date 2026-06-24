@@ -9,6 +9,7 @@ import {
   FileArchive,
   ShieldAlert,
   ShieldCheck,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -25,6 +26,7 @@ const platformNav: NavItem[] = [
   { to: "/platform/users", label: "Users", icon: Users },
   { to: "/platform/health", label: "Server Health", icon: Activity },
   { to: "/platform/audit", label: "Audit Trail", icon: ScrollText },
+  { to: "/platform/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 const orgNav: NavItem[] = [

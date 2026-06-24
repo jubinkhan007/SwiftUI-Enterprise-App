@@ -6,9 +6,11 @@ import { LoginPage } from "./pages/LoginPage";
 import { LoadingState } from "./components/ui";
 
 import { OrgsPage } from "./pages/platform/OrgsPage";
+import { OrgDetailsPage } from "./pages/platform/OrgDetailsPage";
 import { UsersPage } from "./pages/platform/UsersPage";
 import { HealthPage } from "./pages/platform/HealthPage";
 import { AuditPage } from "./pages/platform/AuditPage";
+import { AnalyticsPage } from "./pages/platform/AnalyticsPage";
 
 import { MembersPage } from "./pages/org/MembersPage";
 import { RetentionPage } from "./pages/org/RetentionPage";
@@ -74,9 +76,11 @@ export default function App() {
           <Route index element={<HomeRedirect />} />
 
           <Route path="platform/orgs" element={<SuperAdminOnly><OrgsPage /></SuperAdminOnly>} />
+          <Route path="platform/orgs/:id" element={<SuperAdminOnly><OrgDetailsPage /></SuperAdminOnly>} />
           <Route path="platform/users" element={<SuperAdminOnly><UsersPage /></SuperAdminOnly>} />
           <Route path="platform/health" element={<SuperAdminOnly><HealthPage /></SuperAdminOnly>} />
           <Route path="platform/audit" element={<SuperAdminOnly><AuditPage /></SuperAdminOnly>} />
+          <Route path="platform/analytics" element={<SuperAdminOnly><AnalyticsPage /></SuperAdminOnly>} />
 
           <Route path="org/members" element={<OrgAdminOnly><MembersPage /></OrgAdminOnly>} />
           <Route path="org/retention" element={<OrgAdminOnly><RetentionPage /></OrgAdminOnly>} />
