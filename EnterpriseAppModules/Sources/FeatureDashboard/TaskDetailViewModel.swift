@@ -149,6 +149,25 @@ public final class TaskDetailViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Time Tracking
+
+    @Published public private(set) var timeLogs: [TimeLogDTO] = []
+    @Published public var isLoadingTimeLogs = false
+    @Published public var totalHoursLogged: Double = 0.0
+
+    public func fetchTimeLogs() async {
+        guard !isLoadingTimeLogs else { return }
+        isLoadingTimeLogs = true
+        do {
+            let logs = try await taskRepository.getTimeLogs(taskId: task.id)
+            self.timeLogs = logs
+            self.totalHoursLogged = logs.reduce(0.0) { $0 + $1.hoursLogged }
+        } catch {
+            self.error = error
+        }
+        isLoadingTimeLogs = false
+    }
+
     public func addPendingMention(userId: UUID) {
         if !pendingMentionIds.contains(userId) {
             pendingMentionIds.append(userId)

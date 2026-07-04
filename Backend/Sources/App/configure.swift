@@ -104,6 +104,9 @@ func configure(_ app: Application) throws {
     // Phase 5 (Admin Panel): super-admin flag, org status + retention
     app.migrations.add(AddAdminPanelFields())
 
+    // Phase 14: Agile Time Tracking
+    app.migrations.add(CreateTimeLogsTable())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

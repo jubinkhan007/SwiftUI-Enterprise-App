@@ -228,6 +228,33 @@ public final class DashboardViewModel: ObservableObject {
         }
     }
 
+    public func updateTaskDates(taskId: UUID, startDate: Date?, dueDate: Date?) async {
+        do {
+            let existing = try await taskRepository.getTask(id: taskId)
+            let payload = UpdateTaskRequest(
+                title: existing.title,
+                description: existing.description,
+                statusId: existing.statusId,
+                status: existing.status,
+                priority: existing.priority,
+                taskType: existing.taskType,
+                storyPoints: existing.storyPoints,
+                labels: existing.labels,
+                startDate: startDate,
+                dueDate: dueDate,
+                assigneeId: existing.assigneeId,
+                listId: existing.listId,
+                position: existing.position,
+                expectedVersion: existing.version
+            )
+            let updated = try await taskRepository.updateTask(id: taskId, payload: payload)
+            updateTaskLocally(updated)
+            await fetchTimeline()
+        } catch {
+            self.error = error
+        }
+    }
+
     // MARK: - Private helpers
 
     private func taskMatchesCurrentQuery(_ task: TaskItemDTO) -> Bool {

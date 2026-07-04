@@ -33,4 +33,9 @@ public protocol TaskRepositoryProtocol: Sendable {
     // Phase 13: Agile / Jira
     func getBacklog(projectId: UUID) async throws -> [TaskItemDTO]
     func getSprintIssues(sprintId: UUID) async throws -> [TaskItemDTO]
+
+    // Time Tracking
+    func logTime(taskId: UUID, payload: LogTimeRequest) async throws -> TimeLogDTO
+    func getTimeLogs(taskId: UUID) async throws -> [TimeLogDTO]
+    func getProjectTimeReport(projectId: UUID) async throws -> ProjectTimeReportDTO
 }

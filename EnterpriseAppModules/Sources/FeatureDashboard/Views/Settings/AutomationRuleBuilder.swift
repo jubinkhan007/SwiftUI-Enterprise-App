@@ -11,6 +11,7 @@ public struct AutomationRuleBuilder: View {
         case statusChanged = "task.status_changed"
         case priorityChanged = "task.priority_changed"
         case typeChanged = "task.type_changed"
+        case sprintCompleted = "sprint.completed"
 
         public var id: String { rawValue }
         public var title: String {
@@ -20,6 +21,7 @@ public struct AutomationRuleBuilder: View {
             case .statusChanged: return "Status Changed"
             case .priorityChanged: return "Priority Changed"
             case .typeChanged: return "Type Changed"
+            case .sprintCompleted: return "Sprint Completed"
             }
         }
     }
@@ -30,6 +32,7 @@ public struct AutomationRuleBuilder: View {
         case assignUserId = "assignUserId"
         case addLabel = "addLabel"
         case removeLabel = "removeLabel"
+        case moveUncompletedToNextSprint = "moveUncompletedToNextSprint"
 
         public var id: String { rawValue }
         public var title: String {
@@ -39,6 +42,7 @@ public struct AutomationRuleBuilder: View {
             case .assignUserId: return "Assign User"
             case .addLabel: return "Add Label"
             case .removeLabel: return "Remove Label"
+            case .moveUncompletedToNextSprint: return "Move Uncompleted to Next Sprint"
             }
         }
     }
@@ -202,6 +206,11 @@ public struct AutomationRuleBuilder: View {
                 .autocorrectionDisabled()
         case .addLabel, .removeLabel:
             TextField("Label", text: $actionLabel)
+        case .moveUncompletedToNextSprint:
+            Text("Remaining open tasks in the sprint will automatically migrate to the next planned sprint.")
+                .appFont(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+                .padding(.vertical, 4)
         }
     }
 
@@ -228,6 +237,8 @@ public struct AutomationRuleBuilder: View {
             let label = actionLabel.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !label.isEmpty else { return nil }
             return #"[{"type":"removeLabel","value":"\#(label)"}]"#
+        case .moveUncompletedToNextSprint:
+            return #"[{"type":"moveUncompletedToNextSprint"}]"#
         }
     }
 }

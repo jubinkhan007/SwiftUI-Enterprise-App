@@ -57,6 +57,9 @@ func routes(_ app: Application) throws {
     let workflowController = WorkflowController()
     try orgScopedAPI.register(collection: workflowController)
 
+    let timeLogController = TimeLogController()
+    try authenticatedAPI.register(collection: timeLogController)
+
     let attachmentController = AttachmentController()
     try orgScopedAPI.register(collection: attachmentController)
 

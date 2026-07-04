@@ -377,5 +377,92 @@ struct AutomationService {
             return .cancelled
         }
     }
+
+    static func triggerSprintCompleted(
+        sprintId: UUID,
+        projectId: UUID,
+        db: Database,
+        logger: Logger
+    ) async {
+        let rules: [AutomationRuleModel]
+        do {
+            rules = try await AutomationRuleModel.query(on: db)
+                .filter(\.$project.$id == projectId)
+                .filter(\.$isEnabled == true)
+                .filter(\.$triggerType == "sprint.completed")
+                .all()
+        } catch {
+            logger.warning("AutomationService: failed to load sprint rules: \(error)")
+            return
+        }
+
+        if rules.isEmpty { return }
+
+        let uncompletedTasks: [TaskItemModel]
+        do {
+            uncompletedTasks = try await TaskItemModel.query(on: db)
+                .filter(\.$sprint.$id == sprintId)
+                .join(CustomStatusModel.self, on: \TaskItemModel.$customStatus.$id == \CustomStatusModel.$id)
+                .filter(CustomStatusModel.self, \CustomStatusModel.$isFinal == false)
+                .all()
+        } catch {
+            logger.warning("AutomationService: failed to load sprint tasks: \(error)")
+            return
+        }
+
+        if uncompletedTasks.isEmpty { return }
+
+        let nextSprint: SprintModel?
+        do {
+            nextSprint = try await SprintModel.query(on: db)
+                .filter(\.$project.$id == projectId)
+                .filter(\.$status ~~ [.active, .planned])
+                .filter(\.$id != sprintId)
+                .sort(\.$startDate, .ascending)
+                .first()
+        } catch {
+            logger.warning("AutomationService: failed to load next sprint: \(error)")
+            return
+        }
+
+        guard let targetSprint = nextSprint, let targetSprintId = targetSprint.id else {
+            logger.warning("AutomationService: no next active/planned sprint found to move tasks to.")
+            return
+        }
+
+        for rule in rules {
+            guard let actionsJson = rule.actionsJson else { continue }
+            let actions: [Action]
+            do {
+                actions = try decodeActions(json: actionsJson)
+            } catch {
+                continue
+            }
+
+            let hasMoveAction = actions.contains { $0.type == "moveUncompletedToNextSprint" }
+            if !hasMoveAction { continue }
+
+            for task in uncompletedTasks {
+                task.$sprint.id = targetSprintId
+                task.version += 1
+                do {
+                    try await task.save(on: db)
+                    let activity = TaskActivityModel(
+                        taskId: try task.requireID(),
+                        userId: UUID(),
+                        type: .moved,
+                        content: "Moved to sprint \(targetSprint.name) by automation rule '\(rule.name)'",
+                        metadata: [
+                            "to_sprint": targetSprintId.uuidString,
+                            "automation_rule_id": rule.id?.uuidString ?? ""
+                        ]
+                    )
+                    try await activity.save(on: db)
+                } catch {
+                    logger.warning("AutomationService: failed to move task \(task.id ?? UUID()): \(error)")
+                }
+            }
+        }
+    }
 }
 

@@ -490,6 +490,32 @@ public final class TaskRepository: TaskRepositoryProtocol {
         let response = try await apiClient.request(endpoint, responseType: APIResponse<[TaskItemDTO]>.self)
         return response.data ?? []
     }
+
+    // MARK: - Time Tracking
+
+    public func logTime(taskId: UUID, payload: LogTimeRequest) async throws -> TimeLogDTO {
+        let endpoint = TaskEndpoint.logTime(taskId: taskId, payload: payload, configuration: apiConfiguration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<TimeLogDTO>.self)
+        guard let data = response.data else {
+            throw NetworkError.underlying("No data returned from server")
+        }
+        return data
+    }
+
+    public func getTimeLogs(taskId: UUID) async throws -> [TimeLogDTO] {
+        let endpoint = TaskEndpoint.getTimeLogs(taskId: taskId, configuration: apiConfiguration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<[TimeLogDTO]>.self)
+        return response.data ?? []
+    }
+
+    public func getProjectTimeReport(projectId: UUID) async throws -> ProjectTimeReportDTO {
+        let endpoint = TaskEndpoint.getProjectTimeReport(projectId: projectId, configuration: apiConfiguration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<ProjectTimeReportDTO>.self)
+        guard let data = response.data else {
+            throw NetworkError.underlying("No data returned from server")
+        }
+        return data
+    }
     
     // MARK: - Helpers
     

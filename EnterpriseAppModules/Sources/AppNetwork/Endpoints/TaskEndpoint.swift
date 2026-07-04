@@ -31,6 +31,9 @@ public enum TaskEndpoint {
     case updateChecklistItem(taskId: UUID, itemId: UUID, payload: UpdateChecklistItemRequest, configuration: APIConfiguration)
     case deleteChecklistItem(taskId: UUID, itemId: UUID, configuration: APIConfiguration)
     case reorderChecklist(taskId: UUID, payload: ReorderChecklistRequest, configuration: APIConfiguration)
+    case logTime(taskId: UUID, payload: LogTimeRequest, configuration: APIConfiguration)
+    case getTimeLogs(taskId: UUID, configuration: APIConfiguration)
+    case getProjectTimeReport(projectId: UUID, configuration: APIConfiguration)
 }
 
 extension TaskEndpoint: APIEndpoint {
@@ -48,7 +51,8 @@ extension TaskEndpoint: APIEndpoint {
              .getRelations(_, let c), .createRelation(_, _, let c), .deleteRelation(_, _, let c),
              .getChecklist(_, let c), .createChecklistItem(_, _, let c),
              .updateChecklistItem(_, _, _, let c), .deleteChecklistItem(_, _, let c),
-             .reorderChecklist(_, _, let c):
+             .reorderChecklist(_, _, let c),
+             .logTime(_, _, let c), .getTimeLogs(_, let c), .getProjectTimeReport(_, let c):
             return c
         }
     }
@@ -85,14 +89,18 @@ extension TaskEndpoint: APIEndpoint {
         case .updateChecklistItem(let taskId, let itemId, _, _),
              .deleteChecklistItem(let taskId, let itemId, _):
             return "/api/tasks/\(taskId.uuidString)/checklist/\(itemId.uuidString)"
+        case .logTime(let taskId, _, _), .getTimeLogs(let taskId, _):
+            return "/api/tasks/\(taskId.uuidString)/time-logs"
+        case .getProjectTimeReport(let projectId, _):
+            return "/api/projects/\(projectId.uuidString)/time-logs/report"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .getTasks, .getAssignedTasks, .getCalendarTasks, .getTimeline, .getTask, .getActivity, .getSubtasks, .getRelations, .getChecklist:
+        case .getTasks, .getAssignedTasks, .getCalendarTasks, .getTimeline, .getTask, .getActivity, .getSubtasks, .getRelations, .getChecklist, .getTimeLogs, .getProjectTimeReport:
             return .get
-        case .createTask, .createComment, .createRelation, .createChecklistItem, .moveMultiple:
+        case .createTask, .createComment, .createRelation, .createChecklistItem, .moveMultiple, .logTime:
             return .post
         case .updateTask:
             return .put
@@ -170,6 +178,8 @@ extension TaskEndpoint: APIEndpoint {
         case .updateChecklistItem(_, _, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .reorderChecklist(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .logTime(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         default:
             return nil

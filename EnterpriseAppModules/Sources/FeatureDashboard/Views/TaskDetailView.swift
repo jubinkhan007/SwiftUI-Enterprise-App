@@ -21,6 +21,7 @@ public struct TaskDetailView: View {
     @State private var showAssigneePicker = false
     @State private var showFilePicker = false
     @State private var previewItem: AttachmentPreviewItem? = nil
+    @State private var showLogTimeSheet = false
     
     public init(viewModel: TaskDetailViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -40,6 +41,8 @@ public struct TaskDetailView: View {
                         taskHeader
                         Divider()
                         taskDescription
+                        Divider()
+                        timeTrackingSection
                         Divider()
                         attachmentsSection
                         Divider()
@@ -88,7 +91,8 @@ public struct TaskDetailView: View {
             async let _workflow: Void = viewModel.loadWorkflowIfNeeded()
             async let _attachments: Void = viewModel.fetchAttachments()
             async let _members: Void = viewModel.loadOrgMembersIfNeeded()
-            _ = await (_activities, _workflow, _attachments, _members)
+            async let _timeLogs: Void = viewModel.fetchTimeLogs()
+            _ = await (_activities, _workflow, _attachments, _members, _timeLogs)
             // startRealtime uses workflowProjectId set by loadWorkflowIfNeeded, so run after.
             await viewModel.startRealtime()
         }
@@ -113,6 +117,18 @@ public struct TaskDetailView: View {
         }
         .background(previewPresenter)
         .toast($toast)
+        .sheet(isPresented: $showLogTimeSheet) {
+            LogTimeSheet(
+                taskId: viewModel.task.id,
+                taskRepository: viewModel.taskRepository,
+                onLogSuccess: {
+                    Task {
+                        await viewModel.fetchTimeLogs()
+                        await viewModel.fetchActivities()
+                    }
+                }
+            )
+        }
         .sheet(isPresented: $showAssigneePicker) {
             MemberPickerSheet(
                 title: "Assign to",
@@ -301,6 +317,102 @@ public struct TaskDetailView: View {
                     ActivityRow(activity: activity)
                 }
             }
+        }
+    }
+
+    private var timeTrackingSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            HStack {
+                Text("Time Tracking")
+                    .appFont(AppTypography.title3)
+                    .foregroundColor(AppColors.textPrimary)
+                Spacer()
+                Button {
+                    showLogTimeSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Log Time")
+                    }
+                    .foregroundColor(AppColors.brandPrimary)
+                }
+                .buttonStyle(.borderless)
+            }
+
+            let estHours = Double(viewModel.task.storyPoints ?? 0) * 8.0
+            let hasEstimate = estHours > 0
+            let logged = viewModel.totalHoursLogged
+            let progress = hasEstimate ? min(1.0, logged / estHours) : 0.0
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(String(format: "Logged: %.2f hrs", logged), systemImage: "clock.fill")
+                        .appFont(AppTypography.body)
+                        .foregroundColor(AppColors.textPrimary)
+
+                    Spacer()
+
+                    if hasEstimate {
+                        Text(String(format: "Estimate: %.2f hrs", estHours))
+                            .appFont(AppTypography.body)
+                            .foregroundColor(AppColors.textSecondary)
+                    } else {
+                        Text("No estimate")
+                            .appFont(AppTypography.body)
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+                }
+
+                if hasEstimate {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(AppColors.borderDefault.opacity(0.3))
+                                .frame(height: 8)
+                            
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(logged > estHours ? AppColors.statusError : AppColors.brandPrimary)
+                                .frame(width: geo.size.width * CGFloat(progress), height: 8)
+                        }
+                    }
+                    .frame(height: 8)
+                }
+
+                if !viewModel.timeLogs.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("History")
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.textSecondary)
+                            .padding(.top, 4)
+
+                        ForEach(viewModel.timeLogs) { log in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(log.description ?? "Worked on task")
+                                        .appFont(AppTypography.body)
+                                        .foregroundColor(AppColors.textPrimary)
+                                    Text("\(log.userDisplayName) • \(log.loggedAt.formatted(date: .abbreviated, time: .omitted))")
+                                        .appFont(AppTypography.caption2)
+                                        .foregroundColor(AppColors.textSecondary)
+                                }
+                                Spacer()
+                                Text(String(format: "+%.2f h", log.hoursLogged))
+                                    .appFont(AppTypography.body)
+                                    .bold()
+                                    .foregroundColor(AppColors.brandPrimary)
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .background(AppColors.backgroundSecondary.opacity(0.5))
+                            .cornerRadius(6)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .background(AppColors.surfacePrimary)
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 1)
         }
     }
 

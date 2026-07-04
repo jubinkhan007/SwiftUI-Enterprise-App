@@ -9,6 +9,7 @@ public enum ActivityType: String, Codable, Sendable {
     case moved
     case typeChanged
     case parentChanged
+    case timeLogged = "time_logged"
 }
 
 /// Represents an activity item in the task's timeline.

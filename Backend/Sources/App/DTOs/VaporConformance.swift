@@ -174,3 +174,6 @@ extension GenerateMeetingSummaryRequest: Content {}
 extension CreateMeetingActionItemRequest: Content {}
 extension MeetingHeartbeatRequest: Content {}
 extension MessageSearchResultDTO: Content {}
+extension TimeLogDTO: Content {}
+extension LogTimeRequest: Content {}
+extension ProjectTimeReportDTO: Content {}

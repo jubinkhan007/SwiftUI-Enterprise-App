@@ -91,6 +91,7 @@ struct SprintController: RouteCollection {
         }
 
         let payload = try req.content.decode(UpdateSprintRequest.self)
+        let oldStatus = sprint.status
         if let status = payload.status {
             sprint.status = status
         }
@@ -99,6 +100,17 @@ struct SprintController: RouteCollection {
         }
 
         try await sprint.save(on: req.db)
+
+        if oldStatus != .completed && sprint.status == .completed {
+            let sprintID = try sprint.requireID()
+            await AutomationService.triggerSprintCompleted(
+                sprintId: sprintID,
+                projectId: sprint.$project.id,
+                db: req.db,
+                logger: req.logger
+            )
+        }
+
         return .success(sprint.toDTO())
     }
 

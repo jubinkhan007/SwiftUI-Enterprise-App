@@ -32,12 +32,24 @@ public struct BoardColumnView: View {
     }
     
     public var body: some View {
+        let isOverWip = column.wipLimit.map { column.items.count > $0 } ?? false
+
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
                 Text(column.title)
                     .font(.headline)
-                    .foregroundColor(AppColors.textPrimary)
+                    .foregroundColor(isOverWip ? AppColors.statusError : AppColors.textPrimary)
+
+                if let limit = column.wipLimit {
+                    Text("WIP: \(limit)")
+                        .font(.caption2)
+                        .foregroundColor(isOverWip ? .white : AppColors.textSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(isOverWip ? AppColors.statusError : AppColors.surfaceElevated)
+                        .cornerRadius(4)
+                }
                 
                 Spacer()
                 
@@ -46,9 +58,9 @@ public struct BoardColumnView: View {
                     .bold()
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(AppColors.surfaceElevated)
+                    .background(isOverWip ? AppColors.statusError : AppColors.surfaceElevated)
                     .clipShape(Capsule())
-                    .foregroundColor(AppColors.textSecondary)
+                    .foregroundColor(isOverWip ? .white : AppColors.textSecondary)
             }
             .padding(.horizontal)
             .padding(.top)
@@ -113,7 +125,11 @@ public struct BoardColumnView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isColumnDropTargeted ? AppColors.brandPrimary.opacity(0.6) : Color.clear, lineWidth: 2)
+                .stroke(
+                    isOverWip ? AppColors.statusError.opacity(0.8) :
+                    (isColumnDropTargeted ? AppColors.brandPrimary.opacity(0.6) : Color.clear),
+                    lineWidth: 2
+                )
         )
     }
 }

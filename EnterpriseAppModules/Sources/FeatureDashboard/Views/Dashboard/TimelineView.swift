@@ -46,7 +46,12 @@ struct TimelineView: View {
                                     TimelineTaskBar(
                                         task: task,
                                         timelineStart: viewModel.startDate,
-                                        dayWidth: dayWidth
+                                        dayWidth: dayWidth,
+                                        onDateChange: { taskId, start, due in
+                                            Task {
+                                                await viewModel.updateTaskDates(taskId: taskId, startDate: start, dueDate: due)
+                                            }
+                                        }
                                     )
                                     .frame(height: rowHeight)
                                 }
@@ -164,29 +169,83 @@ struct TimelineTaskBar: View {
     let task: TaskItemDTO
     let timelineStart: Date
     let dayWidth: CGFloat
+    let onDateChange: @MainActor @Sendable (UUID, Date?, Date?) -> Void
+
+    @State private var dragAccumulator: CGFloat = 0
 
     var body: some View {
         let (offset, width) = calculatePosition()
 
         return ZStack(alignment: .leading) {
             if width > 0 {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.blue.opacity(0.3))
-                    .frame(width: width, height: 24)
-                    .offset(x: offset)
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(AppColors.brandPrimary.opacity(0.15))
                     .overlay(
-                        Text(task.title)
-                            .appFont(.system(size: 10))
-                            .foregroundColor(.blue)
-                            .padding(.leading, offset + 4)
-                            .lineLimit(1),
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(AppColors.brandPrimary, lineWidth: 1.5)
+                    )
+                    .frame(width: width, height: 24)
+                    .offset(x: offset + dragAccumulator)
+                    .overlay(
+                        HStack(spacing: 4) {
+                            Text(task.title)
+                                .appFont(.system(size: 10, weight: .medium))
+                                .foregroundColor(AppColors.brandPrimary)
+                                .padding(.leading, 8)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            Image(systemName: "line.3.horizontal")
+                                .font(.system(size: 8))
+                                .foregroundColor(AppColors.brandPrimary.opacity(0.6))
+                                .padding(.trailing, 6)
+                        }
+                        .frame(width: width)
+                        .offset(x: offset + dragAccumulator),
                         alignment: .leading
                     )
-            } else if task.dueDate != nil {
+                    .gesture(
+                        DragGesture(minimumDistance: 10)
+                            .onChanged { value in
+                                dragAccumulator = value.translation.width
+                            }
+                            .onEnded { value in
+                                let daysShifted = Int(round(value.translation.width / dayWidth))
+                                dragAccumulator = 0
+                                guard daysShifted != 0 else { return }
+                                
+                                let calendar = Calendar.current
+                                let currentStart = task.startDate ?? task.dueDate ?? Date()
+                                let currentDue = task.dueDate ?? task.startDate ?? Date()
+                                
+                                let newStart = calendar.date(byAdding: .day, value: daysShifted, to: currentStart)
+                                let newDue = calendar.date(byAdding: .day, value: daysShifted, to: currentDue)
+                                
+                                onDateChange(task.id, newStart, newDue)
+                            }
+                    )
+            } else if let due = task.dueDate {
                 // Milestone marker
                 Image(systemName: "rhombus.fill")
+                    .font(.system(size: 14))
                     .foregroundColor(.orange)
-                    .offset(x: offset - 8)
+                    .offset(x: offset - 8 + dragAccumulator)
+                    .gesture(
+                        DragGesture(minimumDistance: 10)
+                            .onChanged { value in
+                                dragAccumulator = value.translation.width
+                            }
+                            .onEnded { value in
+                                let daysShifted = Int(round(value.translation.width / dayWidth))
+                                dragAccumulator = 0
+                                guard daysShifted != 0 else { return }
+                                
+                                let calendar = Calendar.current
+                                let newDue = calendar.date(byAdding: .day, value: daysShifted, to: due)
+                                onDateChange(task.id, nil, newDue)
+                            }
+                    )
             }
         }
     }
