@@ -2,6 +2,7 @@ import SwiftUI
 import SharedModels
 import DesignSystem
 import Domain
+import AppNetwork
 
 @MainActor
 final class ThreadDetailViewModel: ObservableObject {
@@ -14,11 +15,47 @@ final class ThreadDetailViewModel: ObservableObject {
     let rootMessageId: UUID
     let currentUserId: UUID
     private let messagingRepository: MessagingRepositoryProtocol
+    private let realtimeProvider: RealTimeProvider
+    private var realtimeListenerID: UUID?
 
-    init(rootMessageId: UUID, currentUserId: UUID, messagingRepository: MessagingRepositoryProtocol) {
+    init(rootMessageId: UUID, currentUserId: UUID, messagingRepository: MessagingRepositoryProtocol, realtimeProvider: RealTimeProvider) {
         self.rootMessageId = rootMessageId
         self.currentUserId = currentUserId
         self.messagingRepository = messagingRepository
+        self.realtimeProvider = realtimeProvider
+
+        self.realtimeListenerID = realtimeProvider.addEventListener { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleRealtimeEvent(event)
+            }
+        }
+    }
+
+    deinit {
+        if let id = realtimeListenerID {
+            let provider = realtimeProvider
+            Task { @MainActor in
+                provider.removeEventListener(id)
+            }
+        }
+    }
+
+    private func handleRealtimeEvent(_ event: RealTimeProvider.ServerEvent) {
+        guard let payload = event.payload,
+              let convIdStr = payload["conversationId"],
+              let root = rootMessage,
+              convIdStr == root.conversationId.uuidString else {
+            return
+        }
+
+        switch event.type {
+        case "message.new", "message.updated", "message.deleted":
+            Task {
+                await load()
+            }
+        default:
+            break
+        }
     }
 
     func load() async {
@@ -58,8 +95,8 @@ public struct ThreadDetailView: View {
     @StateObject private var viewModel: ThreadDetailViewModel
     let currentUserId: UUID
 
-    public init(rootMessageId: UUID, currentUserId: UUID, messagingRepository: MessagingRepositoryProtocol) {
-        _viewModel = StateObject(wrappedValue: ThreadDetailViewModel(rootMessageId: rootMessageId, currentUserId: currentUserId, messagingRepository: messagingRepository))
+    public init(rootMessageId: UUID, currentUserId: UUID, messagingRepository: MessagingRepositoryProtocol, realtimeProvider: RealTimeProvider) {
+        _viewModel = StateObject(wrappedValue: ThreadDetailViewModel(rootMessageId: rootMessageId, currentUserId: currentUserId, messagingRepository: messagingRepository, realtimeProvider: realtimeProvider))
         self.currentUserId = currentUserId
     }
 

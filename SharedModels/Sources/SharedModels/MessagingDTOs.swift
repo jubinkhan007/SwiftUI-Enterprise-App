@@ -157,6 +157,7 @@ public struct ConversationListItemDTO: Codable, Sendable, Identifiable, Hashable
     public let lastMessage: MessageDTO?
     public let unreadCount: Int
     public let lastMessageAt: Date?
+    public let partnerId: UUID?
 
     public init(
         id: UUID,
@@ -164,7 +165,8 @@ public struct ConversationListItemDTO: Codable, Sendable, Identifiable, Hashable
         name: String?,
         lastMessage: MessageDTO?,
         unreadCount: Int,
-        lastMessageAt: Date?
+        lastMessageAt: Date?,
+        partnerId: UUID? = nil
     ) {
         self.id = id
         self.type = type
@@ -172,6 +174,7 @@ public struct ConversationListItemDTO: Codable, Sendable, Identifiable, Hashable
         self.lastMessage = lastMessage
         self.unreadCount = unreadCount
         self.lastMessageAt = lastMessageAt
+        self.partnerId = partnerId
     }
 }
 
@@ -381,5 +384,15 @@ public struct ThreadMessageBundleDTO: Codable, Sendable, Hashable {
     public init(rootMessage: MessageDTO, replies: [MessageDTO]) {
         self.rootMessage = rootMessage
         self.replies = replies
+    }
+}
+
+public struct MessageSearchResultDTO: Codable, Sendable, Hashable {
+    public let message: MessageDTO
+    public let conversationName: String
+
+    public init(message: MessageDTO, conversationName: String) {
+        self.message = message
+        self.conversationName = conversationName
     }
 }

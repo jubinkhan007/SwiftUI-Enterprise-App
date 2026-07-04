@@ -110,6 +110,7 @@ struct ConversationController: RouteCollection {
             let membership = memberships.first(where: { $0.$conversation.id == conversationID })
 
             var displayName = conversation.name
+            var partnerId: UUID? = nil
             if conversation.type == "direct" {
                 let otherMember = try await ConversationMemberModel.query(on: req.db)
                     .filter(\.$conversation.$id == conversationID)
@@ -117,6 +118,7 @@ struct ConversationController: RouteCollection {
                     .with(\.$user)
                     .first()
                 displayName = otherMember?.user.displayName
+                partnerId = otherMember?.$user.id
             }
 
             if let search = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines), !search.isEmpty {
@@ -161,7 +163,8 @@ struct ConversationController: RouteCollection {
                     name: displayName,
                     lastMessage: lastMessageDTO,
                     unreadCount: unreadCount,
-                    lastMessageAt: conversation.lastMessageAt
+                    lastMessageAt: conversation.lastMessageAt,
+                    partnerId: partnerId
                 )
             )
         }
@@ -213,6 +216,19 @@ struct ConversationController: RouteCollection {
             membership.lastReadMessageId = lastReadMessageID
         }
         try await membership.save(on: req.db)
+
+        RealtimeBroadcaster.broadcast(
+            app: req.application,
+            orgId: ctx.orgId,
+            channels: ["conversation:\(conversationID.uuidString)"],
+            type: "conversation.read",
+            entityId: ctx.userId,
+            payload: [
+                "conversationId": conversationID.uuidString,
+                "userId": ctx.userId.uuidString,
+                "lastReadMessageId": payload?.lastReadMessageId?.uuidString ?? ""
+            ]
+        )
 
         return .success(EmptyResponse())
     }

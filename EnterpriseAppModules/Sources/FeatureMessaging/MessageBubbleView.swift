@@ -7,6 +7,7 @@ public struct MessageBubbleView: View {
     let isCurrentUser: Bool
     let currentUserId: UUID
     let participantNames: [UUID: String]
+    let readers: [UUID]
     let onDelete: (() -> Void)?
     let onEdit: (() -> Void)?
     let onOpenThread: (() -> Void)?
@@ -20,6 +21,7 @@ public struct MessageBubbleView: View {
         isCurrentUser: Bool,
         currentUserId: UUID = UUID(),
         participantNames: [UUID: String] = [:],
+        readers: [UUID] = [],
         onDelete: (() -> Void)? = nil,
         onEdit: (() -> Void)? = nil,
         onOpenThread: (() -> Void)? = nil,
@@ -29,6 +31,7 @@ public struct MessageBubbleView: View {
         self.isCurrentUser = isCurrentUser
         self.currentUserId = currentUserId
         self.participantNames = participantNames
+        self.readers = readers
         self.onDelete = onDelete
         self.onEdit = onEdit
         self.onOpenThread = onOpenThread
@@ -119,9 +122,14 @@ public struct MessageBubbleView: View {
                     .italic()
                     .foregroundColor(AppColors.textSecondary)
             } else {
-                Text(message.body)
+                Text(LocalizedStringKey(message.body))
                     .appFont(AppTypography.body)
                     .foregroundColor(isCurrentUser ? .white : AppColors.textPrimary)
+
+                if let url = firstURL(in: message.body) {
+                    LinkPreviewCard(url: url)
+                        .padding(.top, 4)
+                }
 
                 if let linkedTask = message.linkedTask {
                     TaskPreviewCard(task: linkedTask)
@@ -184,7 +192,23 @@ public struct MessageBubbleView: View {
                     .appFont(AppTypography.caption2)
                     .foregroundColor(AppColors.textSecondary)
             }
+            if isCurrentUser && message.deletedAt == nil {
+                HStack(spacing: -5) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .foregroundColor(readers.isEmpty ? AppColors.textSecondary : Color(.systemGreen))
+            }
         }
+    }
+
+    private func firstURL(in text: String) -> URL? {
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = detector?.firstMatch(in: text, options: [], range: range) else { return nil }
+        return match.url
     }
 
     private var threadPreviewText: String {

@@ -138,12 +138,20 @@ public struct ConversationListView: View {
                         viewModel.setOrgId(orgId)
                     }
                     await viewModel.fetchConversations()
+                    let partnerIds = viewModel.conversations.compactMap(\.partnerId)
+                    if !partnerIds.isEmpty {
+                        await presenceStore.loadPresences(for: partnerIds)
+                    }
                 }
                 presenceStore.startHeartbeat()
                 await presenceStore.refreshMyPresence()
             }
             .refreshable {
                 await viewModel.fetchConversations()
+                let partnerIds = viewModel.conversations.compactMap(\.partnerId)
+                if !partnerIds.isEmpty {
+                    await presenceStore.loadPresences(for: partnerIds)
+                }
             }
             .onChange(of: viewModel.pendingChannelId) { oldValue, newValue in
                 if let channelId = newValue {
@@ -283,20 +291,40 @@ public struct ConversationListView: View {
     private func conversationRow(_ conv: ConversationListItemDTO) -> some View {
         HStack(spacing: AppSpacing.md) {
             // Avatar
-            ZStack {
+            ZStack(alignment: .bottomTrailing) {
                 Circle()
                     .fill(AppColors.brandPrimary.opacity(0.15))
                     .frame(width: 44, height: 44)
                 Text(String((conv.name ?? "U").prefix(1)).uppercased())
                     .appFont(AppTypography.headline)
                     .foregroundStyle(AppColors.brandGradient)
+
+                if let partnerId = conv.partnerId {
+                    let presence = presenceStore.presence(for: partnerId)
+                    if presence.state == .online || presence.state == .away {
+                        Circle()
+                            .fill(presence.state == .online ? Color(.systemGreen) : Color(.systemOrange))
+                            .frame(width: 12, height: 12)
+                            .overlay(Circle().stroke(AppColors.backgroundPrimary, lineWidth: 2))
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(conv.name ?? "Unknown")
-                    .appFont(AppTypography.body)
-                    .fontWeight(conv.unreadCount > 0 ? .semibold : .regular)
-                    .foregroundColor(AppColors.textPrimary)
+                HStack(spacing: 4) {
+                    Text(conv.name ?? "Unknown")
+                        .appFont(AppTypography.body)
+                        .fontWeight(conv.unreadCount > 0 ? .semibold : .regular)
+                        .foregroundColor(AppColors.textPrimary)
+
+                    if let partnerId = conv.partnerId {
+                        let presence = presenceStore.presence(for: partnerId)
+                        if let emoji = presence.customStatusEmoji, !emoji.isEmpty {
+                            Text(emoji)
+                                .font(.system(size: 14))
+                        }
+                    }
+                }
 
                 if let msg = conv.lastMessage {
                     Text("\(msg.senderName): \(msg.body)")

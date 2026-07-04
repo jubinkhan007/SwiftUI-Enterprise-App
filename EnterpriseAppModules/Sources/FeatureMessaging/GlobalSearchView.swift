@@ -65,26 +65,50 @@ final class GlobalSearchViewModel: ObservableObject {
             augmented += " after:\(ISO8601DateFormatter().string(from: date))"
         }
         let parsed = SearchQuery(raw: augmented)
+
+        let dateStr: String?
+        if let date = parsed.afterDate {
+            dateStr = ISO8601DateFormatter().string(from: date)
+        } else {
+            dateStr = nil
+        }
+
         do {
-            let conversationResponse = try await messagingRepository.getConversations(searchQuery: parsed.channel)
-            let fetchedConversations = conversationResponse.data ?? []
-            conversations = fetchedConversations.filter { conversation in
-                parsed.matchesConversation(conversation)
+            let response = try await messagingRepository.globalSearch(
+                q: parsed.freeText.isEmpty ? nil : parsed.freeText,
+                from: parsed.sender,
+                in: parsed.channel,
+                after: dateStr
+            )
+            let searchResults = response.data ?? []
+
+            messageResults = searchResults.map { item in
+                MessageResult(id: item.message.id, conversationName: item.conversationName, message: item.message)
             }
 
-            var gatheredMessages: [MessageResult] = []
-            var gatheredPeople: [ConversationMemberDTO] = []
-            for conversation in conversations.prefix(8) {
-                let messages = try await messagingRepository.getMessages(conversationId: conversation.id, cursor: nil, limit: 50)
-                for message in messages.data ?? [] where parsed.matchesMessage(message, in: conversation) {
-                    gatheredMessages.append(MessageResult(id: message.id, conversationName: conversation.name ?? "Unknown", message: message))
-                }
-
-                let detail = try await messagingRepository.getConversation(id: conversation.id)
-                gatheredPeople.append(contentsOf: detail.data?.members ?? [])
+            let uniqueConversations = Array(Dictionary(grouping: searchResults, by: \.message.conversationId).compactMap { $0.value.first }).map { item in
+                ConversationListItemDTO(
+                    id: item.message.conversationId,
+                    type: "channel",
+                    name: item.conversationName,
+                    lastMessage: nil,
+                    unreadCount: 0,
+                    lastMessageAt: Date(),
+                    partnerId: nil
+                )
             }
-            messageResults = gatheredMessages
-            people = Array(Dictionary(grouping: gatheredPeople, by: \.userId).compactMap { $0.value.first })
+            conversations = uniqueConversations
+
+            let uniquePeople = Array(Dictionary(grouping: searchResults, by: \.message.senderId).compactMap { $0.value.first }).map { item in
+                ConversationMemberDTO(
+                    id: UUID(),
+                    userId: item.message.senderId,
+                    displayName: item.message.senderName,
+                    role: "member",
+                    lastReadAt: nil
+                )
+            }
+            people = uniquePeople
         } catch {
             conversations = []
             messageResults = []

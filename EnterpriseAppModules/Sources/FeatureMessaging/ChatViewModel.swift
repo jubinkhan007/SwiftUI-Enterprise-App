@@ -9,6 +9,7 @@ import AppNetwork
 public final class ChatViewModel: ObservableObject {
     @Published public private(set) var messages: [MessageDTO] = []
     @Published public private(set) var memberDirectory: [UUID: String] = [:]
+    @Published public private(set) var memberReadTimes: [UUID: Date] = [:]
     @Published public var inputText: String = ""
     @Published public private(set) var isLoading: Bool = false
     @Published public private(set) var isLoadingMore: Bool = false
@@ -220,6 +221,11 @@ public final class ChatViewModel: ObservableObject {
                 if let typingIdStr = payload["userId"], typingIdStr != currentUserId.uuidString {
                     showTypingIndicator()
                 }
+            case "conversation.read":
+                if let userIdStr = payload["userId"],
+                   let userId = UUID(uuidString: userIdStr) {
+                    memberReadTimes[userId] = Date()
+                }
             default:
                 break
             }
@@ -248,12 +254,27 @@ public final class ChatViewModel: ObservableObject {
             guard let members = response.data?.members else { return }
 
             var updated = memberDirectory
+            var readTimes = memberReadTimes
             for member in members {
                 updated[member.userId] = member.displayName
+                if let lastRead = member.lastReadAt {
+                    readTimes[member.userId] = lastRead
+                }
             }
             memberDirectory = updated
+            memberReadTimes = readTimes
         } catch {
             // Message rendering can proceed with sender names if member lookup fails.
+        }
+    }
+
+    public func readersOfMessage(_ message: MessageDTO) -> [UUID] {
+        guard let messageDate = message.createdAt else { return [] }
+        return memberReadTimes.compactMap { userId, readDate in
+            if userId != currentUserId && readDate >= messageDate {
+                return userId
+            }
+            return nil
         }
     }
 }

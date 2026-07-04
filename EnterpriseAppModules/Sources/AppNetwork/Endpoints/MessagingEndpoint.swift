@@ -29,6 +29,7 @@ public enum MessagingEndpoint {
     case unbookmarkMessage(messageId: UUID, configuration: APIConfiguration)
     case listBookmarks(configuration: APIConfiguration)
     case convertToTask(messageId: UUID, payload: ConvertMessageToTaskRequest, configuration: APIConfiguration)
+    case globalSearch(q: String?, from: String?, `in`: String?, after: String?, configuration: APIConfiguration)
 }
 
 extension MessagingEndpoint: APIEndpoint {
@@ -53,7 +54,8 @@ extension MessagingEndpoint: APIEndpoint {
              .listPins(_, let c),
              .bookmarkMessage(_, let c), .unbookmarkMessage(_, let c),
              .listBookmarks(let c),
-             .convertToTask(_, _, let c):
+             .convertToTask(_, _, let c),
+             .globalSearch(_, _, _, _, let c):
             return c
         }
     }
@@ -105,13 +107,15 @@ extension MessagingEndpoint: APIEndpoint {
             return "/api/me/bookmarks"
         case .convertToTask(let id, _, _):
             return "/api/messages/\(id.uuidString)/convert-to-task"
+        case .globalSearch:
+            return "/api/search"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
         case .getConversations, .getConversation, .getMessages, .getThread,
-             .listPins, .listBookmarks:
+             .listPins, .listBookmarks, .globalSearch:
             return .get
         case .createConversation, .archiveConversation, .leaveConversation, .addMembers, .updatePreferences, .sendMessage, .markRead, .sendTypingIndicator, .approveMember,
              .addReaction, .pinMessage, .bookmarkMessage, .convertToTask:
@@ -132,6 +136,13 @@ extension MessagingEndpoint: APIEndpoint {
         case .getConversations(let search, _):
             if let s = search, !s.isEmpty { return ["search": s] }
             return nil
+        case .globalSearch(let q, let from, let `in`, let after, _):
+            var params: [String: String] = [:]
+            if let q, !q.isEmpty { params["q"] = q }
+            if let from, !from.isEmpty { params["from"] = from }
+            if let `in`, !`in`.isEmpty { params["in"] = `in` }
+            if let after, !after.isEmpty { params["after"] = after }
+            return params
         default:
             return nil
         }

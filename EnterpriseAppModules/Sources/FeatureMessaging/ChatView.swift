@@ -321,6 +321,7 @@ public struct ChatView: View {
             isCurrentUser: message.senderId == currentUserId,
             currentUserId: currentUserId,
             participantNames: viewModel.memberDirectory,
+            readers: viewModel.readersOfMessage(message),
             onDelete: deleteAction(for: message),
             onEdit: editAction(for: message),
             onOpenThread: {
@@ -353,7 +354,8 @@ public struct ChatView: View {
             ThreadDetailView(
                 rootMessageId: message.id,
                 currentUserId: currentUserId,
-                messagingRepository: messagingRepository
+                messagingRepository: messagingRepository,
+                realtimeProvider: realtimeProvider
             )
         }
     }

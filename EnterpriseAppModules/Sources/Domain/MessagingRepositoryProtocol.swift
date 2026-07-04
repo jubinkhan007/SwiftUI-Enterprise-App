@@ -31,6 +31,7 @@ public protocol MessagingRepositoryProtocol: Sendable {
     func unbookmarkMessage(messageId: UUID) async throws -> APIResponse<MessageDTO>
     func listBookmarks() async throws -> APIResponse<[BookmarkDTO]>
     func convertMessageToTask(messageId: UUID, request: ConvertMessageToTaskRequest) async throws -> APIResponse<ConvertMessageToTaskResponse>
+    func globalSearch(q: String?, from: String?, `in`: String?, after: String?) async throws -> APIResponse<[MessageSearchResultDTO]>
 }
 
 public protocol PresenceRepositoryProtocol: Sendable {

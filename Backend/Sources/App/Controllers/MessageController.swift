@@ -32,6 +32,9 @@ struct MessageController: RouteCollection {
         // Per-user bookmark list (org-scoped)
         let me = routes.grouped("me")
         me.get("bookmarks", use: listMyBookmarks)
+
+        // Global search (org-scoped)
+        routes.get("search", use: search)
     }
 
     // MARK: - Read
@@ -710,6 +713,56 @@ struct MessageController: RouteCollection {
             return nil
         }
         return String(body[matchRange])
+    }
+
+    // MARK: - Global Search
+
+    @Sendable
+    func search(req: Request) async throws -> APIResponse<[MessageSearchResultDTO]> {
+        let ctx = try req.orgContext
+        let queryStr = try? req.query.get(String.self, at: "q")
+        let fromStr = try? req.query.get(String.self, at: "from")
+        let inStr = try? req.query.get(String.self, at: "in")
+        let afterStr = try? req.query.get(String.self, at: "after")
+
+        var query = MessageModel.query(on: req.db)
+            .join(ConversationModel.self, on: \MessageModel.$conversation.$id == \ConversationModel.$id)
+            .join(UserModel.self, on: \MessageModel.$sender.$id == \UserModel.$id)
+            .filter(ConversationModel.self, \.$organization.$id == ctx.orgId)
+
+        if let queryStr, !queryStr.isEmpty {
+            query = query.filter(\.$body ~~ queryStr)
+        }
+
+        if let fromStr, !fromStr.isEmpty {
+            query = query.group(.or) { group in
+                group.filter(UserModel.self, \.$displayName ~~ fromStr)
+                     .filter(UserModel.self, \.$email ~~ fromStr)
+            }
+        }
+
+        if let inStr, !inStr.isEmpty {
+            query = query.filter(ConversationModel.self, \.$name ~~ inStr)
+        }
+
+        if let afterStr, let date = ISO8601DateFormatter().date(from: afterStr) {
+            query = query.filter(\.$createdAt >= date)
+        }
+
+        let messages = try await query
+            .with(\.$sender)
+            .sort(\.$createdAt, .descending)
+            .limit(100)
+            .all()
+
+        var results: [MessageSearchResultDTO] = []
+        for message in messages {
+            let conv = try message.joined(ConversationModel.self)
+            let dto = try await buildMessageDTO(message: message, orgId: ctx.orgId, viewerId: ctx.userId, on: req.db)
+            results.append(MessageSearchResultDTO(message: dto, conversationName: conv.name ?? "Direct Message"))
+        }
+
+        return .success(results)
     }
 }
 

@@ -148,6 +148,11 @@ public final class LiveMessagingService: MessagingRepositoryProtocol {
         let endpoint = MessagingEndpoint.convertToTask(messageId: messageId, payload: request, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<ConvertMessageToTaskResponse>.self)
     }
+
+    public func globalSearch(q: String?, from: String?, `in`: String?, after: String?) async throws -> APIResponse<[MessageSearchResultDTO]> {
+        let endpoint = MessagingEndpoint.globalSearch(q: q, from: from, `in`: `in`, after: after, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[MessageSearchResultDTO]>.self)
+    }
 }
 
 public final class LivePresenceService: PresenceRepositoryProtocol {

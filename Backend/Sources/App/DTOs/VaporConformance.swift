@@ -173,3 +173,4 @@ extension UpdateMeetingNotesRequest: Content {}
 extension GenerateMeetingSummaryRequest: Content {}
 extension CreateMeetingActionItemRequest: Content {}
 extension MeetingHeartbeatRequest: Content {}
+extension MessageSearchResultDTO: Content {}
