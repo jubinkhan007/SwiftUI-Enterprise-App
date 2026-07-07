@@ -24,6 +24,14 @@ struct BillingController: RouteCollection {
 
         let stripeKey = Environment.get("STRIPE_SECRET_KEY") ?? ""
         if stripeKey.isEmpty {
+            if let org = try await OrganizationModel.find(ctx.orgId, on: req.db) {
+                org.subscriptionTier = "pro"
+                org.subscriptionStatus = "active"
+                org.stripeCustomerId = "cus_mock_\(UUID().uuidString.prefix(8).lowercased())"
+                org.stripeSubscriptionId = "sub_mock_\(UUID().uuidString.prefix(8).lowercased())"
+                try await org.save(on: req.db)
+                req.logger.info("Mock sandbox checkout: upgraded org \(ctx.orgId) to Pro.")
+            }
             // Local fallback mock link
             let mockRedirect = "http://localhost:5173/org/billing?mock_checkout=success&org_id=\(ctx.orgId.uuidString)"
             struct CheckoutResponse: Content {
@@ -82,18 +90,25 @@ struct BillingController: RouteCollection {
             throw Abort(.notFound, reason: "Organization not found.")
         }
 
-        guard let customerId = org.stripeCustomerId, !customerId.isEmpty else {
-            throw Abort(.badRequest, reason: "No active Stripe customer profile found for this organization.")
-        }
-
         let stripeKey = Environment.get("STRIPE_SECRET_KEY") ?? ""
         if stripeKey.isEmpty {
-            // Local fallback mock link
-            let mockRedirect = "http://localhost:5173/org/billing?mock_portal=success"
+            // Local fallback mock link - downgrade to free tier for prototyping
+            org.subscriptionTier = "free"
+            org.subscriptionStatus = nil
+            org.stripeCustomerId = nil
+            org.stripeSubscriptionId = nil
+            try await org.save(on: req.db)
+            req.logger.info("Mock sandbox portal: downgraded org \(ctx.orgId) to Free.")
+
+            let mockRedirect = "http://localhost:5173/org/billing?mock_portal=downgrade"
             struct PortalResponse: Content {
                 let url: String
             }
             return try await PortalResponse(url: mockRedirect).encodeResponse(for: req)
+        }
+
+        guard let customerId = org.stripeCustomerId, !customerId.isEmpty else {
+            throw Abort(.badRequest, reason: "No active Stripe customer profile found for this organization.")
         }
 
         let headers = HTTPHeaders([
