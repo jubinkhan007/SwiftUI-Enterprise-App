@@ -10,6 +10,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   BarChart3,
+  CreditCard,
+  Palette,
+  Key,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -34,6 +37,9 @@ const orgNav: NavItem[] = [
   { to: "/org/retention", label: "Retention", icon: Clock },
   { to: "/org/compliance", label: "Compliance", icon: FileArchive },
   { to: "/org/moderation", label: "Moderation", icon: ShieldAlert },
+  { to: "/org/billing", label: "Billing", icon: CreditCard },
+  { to: "/org/branding", label: "Branding", icon: Palette },
+  { to: "/org/sso", label: "SSO Config", icon: Key },
 ];
 
 function NavSection({ title, items }: { title: string; items: NavItem[] }) {

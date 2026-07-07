@@ -9,6 +9,8 @@ import {
   MessageSquare,
   Users,
   RefreshCw,
+  Sparkles,
+  Building2,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import {
@@ -57,6 +59,9 @@ interface PlatformAnalytics {
     message_count: number;
     meeting_hours: number;
   }>;
+  mrr: number;
+  subscriber_count: number;
+  tier_breakdown: Record<string, number>;
 }
 
 export function AnalyticsPage() {
@@ -149,6 +154,38 @@ export function AnalyticsPage() {
           value={formatNumber(stats.total_requests)}
           icon={TrendingUp}
           accent="primary"
+        />
+      </div>
+
+      {/* SaaS Subscription & Revenue Metrics */}
+      <h3 className="font-display text-lg font-semibold text-ink flex items-center gap-2 mt-8">
+        <TrendingUp size={18} className="text-primary" />
+        SaaS Subscription &amp; Billing Performance
+      </h3>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <StatCard
+          label="Monthly Recurring Revenue (MRR)"
+          value={`$${(data.mrr ?? 0).toLocaleString()}`}
+          icon={TrendingUp}
+          accent="emerald"
+        />
+        <StatCard
+          label="Active Paid Subscribers"
+          value={`${data.subscriber_count ?? 0} tenants`}
+          icon={Users}
+          accent="primary"
+        />
+        <StatCard
+          label="Pro Tier Workspaces"
+          value={`${data.tier_breakdown?.pro ?? 0} active`}
+          icon={Sparkles}
+          accent="primary"
+        />
+        <StatCard
+          label="Enterprise Tier Workspaces"
+          value={`${data.tier_breakdown?.enterprise ?? 0} active`}
+          icon={Building2}
+          accent="amber"
         />
       </div>
 

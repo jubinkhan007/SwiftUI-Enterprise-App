@@ -27,6 +27,9 @@ struct OrganizationController: RouteCollection {
             org.get("audit-log", use: listAuditLog)
             org.post("join", use: requestToJoin)
             org.get("join-requests", use: listJoinRequests)
+            org.put("branding", use: updateBranding)
+            org.put("domain-settings", use: updateDomainSettings)
+            org.put("sso-settings", use: updateSSOSettings)
         }
 
         // Join request response (no specific org context in header — admin acts on a pending request)
@@ -265,6 +268,21 @@ struct OrganizationController: RouteCollection {
             throw Abort(.badRequest, reason: "Invalid email address.")
         }
 
+        // Check Free tier limit
+        guard let org = try await OrganizationModel.find(ctx.orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+        if org.subscriptionTier == "free" {
+            let memberCount = try await OrganizationMemberModel.query(on: req.db).filter(\.$organization.$id == ctx.orgId).count()
+            let inviteCount = try await OrganizationInviteModel.query(on: req.db)
+                .filter(\.$organization.$id == ctx.orgId)
+                .filter(\.$status == .pending)
+                .count()
+            if (memberCount + inviteCount) >= 5 {
+                throw Abort(.forbidden, reason: "You have reached the maximum limit of 5 members/invites for Free Tier workspaces. Please upgrade to Pro.")
+            }
+        }
+
         // Cannot invite as owner
         guard payload.role != .owner else {
             throw Abort(.badRequest, reason: "Cannot invite a user as Owner. Use ownership transfer instead.")
@@ -358,6 +376,19 @@ struct OrganizationController: RouteCollection {
         }
         guard user.email == invite.email else {
             throw Abort(.forbidden, reason: "This invite was sent to a different email address.")
+        }
+
+        // Check Free tier limit
+        guard let org = try await OrganizationModel.find(invite.$organization.id, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+        if org.subscriptionTier == "free" {
+            let memberCount = try await OrganizationMemberModel.query(on: req.db)
+                .filter(\.$organization.$id == invite.$organization.id)
+                .count()
+            if memberCount >= 5 {
+                throw Abort(.forbidden, reason: "This workspace has reached the maximum limit of 5 members. Please contact the owner to upgrade.")
+            }
         }
 
         // Create membership and mark invite accepted
@@ -541,6 +572,36 @@ struct OrganizationController: RouteCollection {
             throw Abort(.notFound, reason: "User not found.")
         }
 
+        // Domain-Based Auto-Join Provisioning Check
+        let emailDomain = user.email.split(separator: "@").last?.map(String.init).joined().lowercased() ?? ""
+        var isDomainMatch = false
+        if let allowed = org.allowedEmailDomains, !allowed.isEmpty {
+            let domains = allowed.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            if domains.contains(emailDomain) {
+                isDomainMatch = true
+            }
+        }
+
+        if isDomainMatch {
+            // Check Free tier limit before auto-approving
+            if org.subscriptionTier == "free" {
+                let memberCount = try await OrganizationMemberModel.query(on: req.db).filter(\.$organization.$id == orgId).count()
+                if memberCount >= 5 {
+                    throw Abort(.forbidden, reason: "This workspace has reached the maximum limit of 5 members. Please contact the owner to upgrade.")
+                }
+            }
+            
+            // Auto join!
+            let membership = OrganizationMemberModel(orgId: orgId, userId: userId, role: .member)
+            try await membership.save(on: req.db)
+            
+            let joinRequest = OrganizationJoinRequestModel(orgId: orgId, userId: userId)
+            joinRequest.status = "approved"
+            try await joinRequest.save(on: req.db)
+            
+            return .success(joinRequest.toDTO(orgName: org.name, userName: user.displayName, userEmail: user.email))
+        }
+
         let joinRequest = OrganizationJoinRequestModel(orgId: orgId, userId: userId)
         try await joinRequest.save(on: req.db)
 
@@ -652,5 +713,100 @@ struct OrganizationController: RouteCollection {
             .all()
 
         return .success(logs.map { $0.toDTO() })
+    }
+
+    // MARK: - PUT /api/organizations/:orgID/branding
+    struct UpdateBrandingPayload: Content {
+        let logoUrl: String?
+        let brandColorHex: String?
+    }
+
+    @Sendable
+    func updateBranding(req: Request) async throws -> APIResponse<OrganizationDTO> {
+        let ctx = try req.orgContext
+        try req.requirePermission(.orgSettings)
+        
+        let payload = try req.content.decode(UpdateBrandingPayload.self)
+        
+        guard let org = try await OrganizationModel.find(ctx.orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+        
+        // Check tier: Custom Branding is Pro/Enterprise only!
+        guard org.subscriptionTier == "pro" || org.subscriptionTier == "enterprise" else {
+            throw Abort(.forbidden, reason: "Custom branding is restricted to Pro and Enterprise tier workspaces. Please upgrade your plan.")
+        }
+        
+        org.logoUrl = payload.logoUrl
+        org.brandColorHex = payload.brandColorHex
+        try await org.save(on: req.db)
+        
+        return .success(org.toDTO())
+    }
+
+    // MARK: - PUT /api/organizations/:orgID/domain-settings
+    struct UpdateDomainPayload: Content {
+        let customDomain: String?
+        let allowedEmailDomains: String?
+    }
+
+    @Sendable
+    func updateDomainSettings(req: Request) async throws -> APIResponse<OrganizationDTO> {
+        let ctx = try req.orgContext
+        try req.requirePermission(.orgSettings)
+        
+        let payload = try req.content.decode(UpdateDomainPayload.self)
+        
+        guard let org = try await OrganizationModel.find(ctx.orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+        
+        // Check tier: Custom domain mapping is Pro/Enterprise only!
+        if let domain = payload.customDomain, !domain.trimmingCharacters(in: .whitespaces).isEmpty {
+            guard org.subscriptionTier == "pro" || org.subscriptionTier == "enterprise" else {
+                throw Abort(.forbidden, reason: "Custom domains are restricted to Pro and Enterprise tier workspaces. Please upgrade your plan.")
+            }
+            org.customDomain = domain.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            org.customDomain = nil
+        }
+        
+        org.allowedEmailDomains = payload.allowedEmailDomains?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        try await org.save(on: req.db)
+        
+        return .success(org.toDTO())
+    }
+
+    // MARK: - PUT /api/organizations/:orgID/sso-settings
+    struct UpdateSSOPayload: Content {
+        let ssoEnabled: Bool
+        let ssoIdpUrl: String?
+        let ssoEntityId: String?
+        let ssoCertificate: String?
+    }
+
+    @Sendable
+    func updateSSOSettings(req: Request) async throws -> APIResponse<OrganizationDTO> {
+        let ctx = try req.orgContext
+        try req.requirePermission(.orgSettings)
+        
+        let payload = try req.content.decode(UpdateSSOPayload.self)
+        
+        guard let org = try await OrganizationModel.find(ctx.orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+        
+        // Check tier: SSO is Enterprise only!
+        guard org.subscriptionTier == "enterprise" else {
+            throw Abort(.forbidden, reason: "Single Sign-On (SSO) is restricted to Enterprise tier workspaces. Please contact support or upgrade your plan.")
+        }
+        
+        org.ssoEnabled = payload.ssoEnabled
+        org.ssoIdpUrl = payload.ssoIdpUrl
+        org.ssoEntityId = payload.ssoEntityId
+        org.ssoCertificate = payload.ssoCertificate
+        try await org.save(on: req.db)
+        
+        return .success(org.toDTO())
     }
 }

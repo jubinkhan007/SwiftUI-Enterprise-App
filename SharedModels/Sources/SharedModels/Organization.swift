@@ -17,6 +17,20 @@ public struct OrganizationDTO: Codable, Identifiable, Sendable, Equatable {
     /// Message retention window in days; `nil` (with `retentionConfigured == false`) means indefinite.
     public let retentionDays: Int?
 
+    // SaaS fields
+    public let subscriptionTier: String?
+    public let stripeCustomerId: String?
+    public let stripeSubscriptionId: String?
+    public let subscriptionStatus: String?
+    public let logoUrl: String?
+    public let brandColorHex: String?
+    public let customDomain: String?
+    public let allowedEmailDomains: String? // Comma-separated domains e.g. "acme.com,acme.co"
+    public let ssoEnabled: Bool?
+    public let ssoIdpUrl: String?
+    public let ssoEntityId: String?
+    public let ssoCertificate: String?
+
     public init(
         id: UUID = UUID(),
         name: String,
@@ -27,7 +41,19 @@ public struct OrganizationDTO: Codable, Identifiable, Sendable, Equatable {
         createdAt: Date? = nil,
         updatedAt: Date? = nil,
         status: String? = nil,
-        retentionDays: Int? = nil
+        retentionDays: Int? = nil,
+        subscriptionTier: String? = nil,
+        stripeCustomerId: String? = nil,
+        stripeSubscriptionId: String? = nil,
+        subscriptionStatus: String? = nil,
+        logoUrl: String? = nil,
+        brandColorHex: String? = nil,
+        customDomain: String? = nil,
+        allowedEmailDomains: String? = nil,
+        ssoEnabled: Bool? = nil,
+        ssoIdpUrl: String? = nil,
+        ssoEntityId: String? = nil,
+        ssoCertificate: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -39,6 +65,18 @@ public struct OrganizationDTO: Codable, Identifiable, Sendable, Equatable {
         self.updatedAt = updatedAt
         self.status = status
         self.retentionDays = retentionDays
+        self.subscriptionTier = subscriptionTier
+        self.stripeCustomerId = stripeCustomerId
+        self.stripeSubscriptionId = stripeSubscriptionId
+        self.subscriptionStatus = subscriptionStatus
+        self.logoUrl = logoUrl
+        self.brandColorHex = brandColorHex
+        self.customDomain = customDomain
+        self.allowedEmailDomains = allowedEmailDomains
+        self.ssoEnabled = ssoEnabled
+        self.ssoIdpUrl = ssoIdpUrl
+        self.ssoEntityId = ssoEntityId
+        self.ssoCertificate = ssoCertificate
     }
 }
 

@@ -44,6 +44,18 @@ export interface AdminOrg {
   message_count: number;
   retention_days?: number | null;
   created_at?: string | null;
+  subscription_tier?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+  subscription_status?: string | null;
+  logo_url?: string | null;
+  brand_color_hex?: string | null;
+  custom_domain?: string | null;
+  allowed_email_domains?: string | null;
+  sso_enabled?: boolean | null;
+  sso_idp_url?: string | null;
+  sso_entity_id?: string | null;
+  sso_certificate?: string | null;
 }
 
 export interface AdminUser {

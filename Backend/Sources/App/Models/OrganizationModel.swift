@@ -29,6 +29,43 @@ final class OrganizationModel: Model, Content, @unchecked Sendable {
     @OptionalField(key: "retention_days")
     var retentionDays: Int?
 
+    // SaaS fields
+    @OptionalField(key: "subscription_tier")
+    var subscriptionTier: String?
+
+    @OptionalField(key: "stripe_customer_id")
+    var stripeCustomerId: String?
+
+    @OptionalField(key: "stripe_subscription_id")
+    var stripeSubscriptionId: String?
+
+    @OptionalField(key: "subscription_status")
+    var subscriptionStatus: String?
+
+    @OptionalField(key: "logo_url")
+    var logoUrl: String?
+
+    @OptionalField(key: "brand_color_hex")
+    var brandColorHex: String?
+
+    @OptionalField(key: "custom_domain")
+    var customDomain: String?
+
+    @OptionalField(key: "allowed_email_domains")
+    var allowedEmailDomains: String?
+
+    @OptionalField(key: "sso_enabled")
+    var ssoEnabled: Bool?
+
+    @OptionalField(key: "sso_idp_url")
+    var ssoIdpUrl: String?
+
+    @OptionalField(key: "sso_entity_id")
+    var ssoEntityId: String?
+
+    @OptionalField(key: "sso_certificate")
+    var ssoCertificate: String?
+
     @Children(for: \.$organization)
     var members: [OrganizationMemberModel]
 
@@ -50,7 +87,19 @@ final class OrganizationModel: Model, Content, @unchecked Sendable {
         description: String? = nil,
         ownerId: UUID,
         status: String = "active",
-        retentionDays: Int? = nil
+        retentionDays: Int? = nil,
+        subscriptionTier: String? = "free",
+        stripeCustomerId: String? = nil,
+        stripeSubscriptionId: String? = nil,
+        subscriptionStatus: String? = nil,
+        logoUrl: String? = nil,
+        brandColorHex: String? = nil,
+        customDomain: String? = nil,
+        allowedEmailDomains: String? = nil,
+        ssoEnabled: Bool? = false,
+        ssoIdpUrl: String? = nil,
+        ssoEntityId: String? = nil,
+        ssoCertificate: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -59,6 +108,18 @@ final class OrganizationModel: Model, Content, @unchecked Sendable {
         self.$owner.id = ownerId
         self.status = status
         self.retentionDays = retentionDays
+        self.subscriptionTier = subscriptionTier
+        self.stripeCustomerId = stripeCustomerId
+        self.stripeSubscriptionId = stripeSubscriptionId
+        self.subscriptionStatus = subscriptionStatus
+        self.logoUrl = logoUrl
+        self.brandColorHex = brandColorHex
+        self.customDomain = customDomain
+        self.allowedEmailDomains = allowedEmailDomains
+        self.ssoEnabled = ssoEnabled
+        self.ssoIdpUrl = ssoIdpUrl
+        self.ssoEntityId = ssoEntityId
+        self.ssoCertificate = ssoCertificate
     }
 
     /// Convert to the shared DTO for API responses.
@@ -73,7 +134,19 @@ final class OrganizationModel: Model, Content, @unchecked Sendable {
             createdAt: createdAt,
             updatedAt: updatedAt,
             status: status,
-            retentionDays: retentionDays
+            retentionDays: retentionDays,
+            subscriptionTier: subscriptionTier,
+            stripeCustomerId: stripeCustomerId,
+            stripeSubscriptionId: stripeSubscriptionId,
+            subscriptionStatus: subscriptionStatus,
+            logoUrl: logoUrl,
+            brandColorHex: brandColorHex,
+            customDomain: customDomain,
+            allowedEmailDomains: allowedEmailDomains,
+            ssoEnabled: ssoEnabled,
+            ssoIdpUrl: ssoIdpUrl,
+            ssoEntityId: ssoEntityId,
+            ssoCertificate: ssoCertificate
         )
     }
 }

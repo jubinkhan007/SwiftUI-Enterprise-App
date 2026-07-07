@@ -45,6 +45,8 @@ export function OrgDetailsPage() {
   const { setActiveOrgId } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [retentionInput, setRetentionInput] = useState<string>("");
+  const [selectedTier, setSelectedTier] = useState<string>("free");
+  const [selectedStatus, setSelectedStatus] = useState<string>("active");
 
   // 1. Fetch organization details
   const {
@@ -61,6 +63,8 @@ export function OrgDetailsPage() {
   useEffect(() => {
     if (org) {
       setRetentionInput(org.retention_days !== null && org.retention_days !== undefined ? String(org.retention_days) : "");
+      setSelectedTier(org.subscription_tier ?? "free");
+      setSelectedStatus(org.subscription_status ?? "active");
     }
   }, [org]);
 
@@ -189,6 +193,25 @@ export function OrgDetailsPage() {
     },
   });
 
+  const updateSubscription = useMutation({
+    mutationFn: async () => {
+      return api(`/admin/organizations/${id}/tier`, {
+        method: "PUT",
+        body: {
+          subscriptionTier: selectedTier,
+          subscriptionStatus: selectedStatus === "none" ? null : selectedStatus,
+        },
+      });
+    },
+    onSuccess: () => {
+      alert("Subscription details overridden successfully!");
+      invalidateOrg();
+    },
+    onError: (e) => {
+      alert(e instanceof Error ? e.message : "Failed to override subscription settings");
+    },
+  });
+
   if (loadingOrg) return <LoadingState label="Loading organization details…" />;
   if (orgError || !org) return <ErrorState message={orgError ? (orgError as Error).message : "Organization not found."} />;
 
@@ -312,10 +335,10 @@ export function OrgDetailsPage() {
 
       {/* Tab Panels */}
       {activeTab === "overview" && (
-        <div className="grid gap-6 md:grid-cols-3">
-          <GlassCard className="col-span-2 p-5 space-y-4">
+        <div className="space-y-6">
+          <GlassCard className="p-5 space-y-4">
             <h3 className="font-display text-lg font-semibold text-ink">Organization Details</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
               <div>
                 <div className="text-xs text-muted font-medium">Organization ID</div>
                 <div className="font-mono text-ink mt-1 truncate" title={org.id}>{org.id}</div>
@@ -335,37 +358,76 @@ export function OrgDetailsPage() {
             </div>
           </GlassCard>
 
-          <GlassCard className="p-5 space-y-4">
-            <h3 className="font-display text-lg font-semibold text-ink">Retention Policy Settings</h3>
-            <div className="space-y-3">
-              <Field label="Retention (days) — leave empty for indefinite">
-                <input
-                  type="number"
-                  min="1"
-                  value={retentionInput}
-                  onChange={(e) => setRetentionInput(e.target.value)}
-                  placeholder="Indefinite"
-                  className="ring-focus w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-ink placeholder:text-faint"
-                />
-              </Field>
-              <Button
-                variant="primary"
-                className="w-full"
-                loading={updateRetention.isPending}
-                onClick={() => {
-                  const val = retentionInput.trim();
-                  const days = val === "" ? null : parseInt(val, 10);
-                  if (days !== null && (Number.isNaN(days) || days < 1)) {
-                    alert("Please enter a valid number of days (min 1).");
-                    return;
-                  }
-                  updateRetention.mutate(days);
-                }}
-              >
-                <Settings size={15} /> Save Retention Policy
-              </Button>
-            </div>
-          </GlassCard>
+          <div className="grid gap-6 md:grid-cols-2">
+            <GlassCard className="p-5 space-y-4">
+              <h3 className="font-display text-lg font-semibold text-ink">Retention Policy Settings</h3>
+              <div className="space-y-3">
+                <Field label="Retention (days) — leave empty for indefinite">
+                  <input
+                    type="number"
+                    min="1"
+                    value={retentionInput}
+                    onChange={(e) => setRetentionInput(e.target.value)}
+                    placeholder="Indefinite"
+                    className="ring-focus w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-ink placeholder:text-faint"
+                  />
+                </Field>
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  loading={updateRetention.isPending}
+                  onClick={() => {
+                    const val = retentionInput.trim();
+                    const days = val === "" ? null : parseInt(val, 10);
+                    if (days !== null && (Number.isNaN(days) || days < 1)) {
+                      alert("Please enter a valid number of days (min 1).");
+                      return;
+                    }
+                    updateRetention.mutate(days);
+                  }}
+                >
+                  <Settings size={15} /> Save Retention Policy
+                </Button>
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-5 space-y-4">
+              <h3 className="font-display text-lg font-semibold text-ink">SaaS Subscription Overrides</h3>
+              <div className="space-y-3">
+                <Field label="Billing Tier Plan">
+                  <select
+                    value={selectedTier}
+                    onChange={(e) => setSelectedTier(e.target.value)}
+                    className="ring-focus w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-ink outline-none transition focus:border-primary/50"
+                  >
+                    <option value="free">Free Tier</option>
+                    <option value="pro">Pro Plan</option>
+                    <option value="enterprise">Enterprise Plan</option>
+                  </select>
+                </Field>
+                <Field label="Stripe Status Override">
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="ring-focus w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-ink outline-none transition focus:border-primary/50"
+                  >
+                    <option value="active">Active</option>
+                    <option value="unpaid">Unpaid / Delinquent</option>
+                    <option value="canceled">Canceled</option>
+                    <option value="none">None (Free Plan Default)</option>
+                  </select>
+                </Field>
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  loading={updateSubscription.isPending}
+                  onClick={() => updateSubscription.mutate()}
+                >
+                  Save Subscription Config
+                </Button>
+              </div>
+            </GlassCard>
+          </div>
         </div>
       )}
 

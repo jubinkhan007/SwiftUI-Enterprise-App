@@ -57,6 +57,9 @@ struct PlatformAnalyticsDTO: Content {
     let stats: PlatformMetricsService.Stats
     let storage: StorageMetricsDTO
     let usageTrends: [UsageTrendPointDTO]
+    let mrr: Double
+    let subscriberCount: Int
+    let tierBreakdown: [String: Int]
 }
 
 struct StorageMetricsDTO: Content {
@@ -113,6 +116,7 @@ struct AdminController: RouteCollection {
         orgs.post(":orgID", "suspend", use: suspendOrg)
         orgs.post(":orgID", "activate", use: activateOrg)
         orgs.delete(":orgID", use: deleteOrg)
+        orgs.put(":orgID", "tier", use: overrideOrgTier)
 
         let users = routes.grouped("users")
         users.get(use: listUsers)
@@ -485,10 +489,31 @@ struct AdminController: RouteCollection {
             ))
         }
 
+        let organizations = try await OrganizationModel.query(on: req.db).all()
+        var freeCount = 0
+        var proCount = 0
+        var enterpriseCount = 0
+        for org in organizations {
+            let tier = org.subscriptionTier?.lowercased() ?? "free"
+            if tier == "pro" {
+                proCount += 1
+            } else if tier == "enterprise" {
+                enterpriseCount += 1
+            } else {
+                freeCount += 1
+            }
+        }
+        let mrr = Double((proCount * 19) + (enterpriseCount * 99))
+        let subscriberCount = proCount + enterpriseCount
+        let tierBreakdown = ["free": freeCount, "pro": proCount, "enterprise": enterpriseCount]
+
         return .success(PlatformAnalyticsDTO(
             stats: stats,
             storage: storage,
-            usageTrends: usageTrends
+            usageTrends: usageTrends,
+            mrr: mrr,
+            subscriberCount: subscriberCount,
+            tierBreakdown: tierBreakdown
         ))
     }
 
@@ -536,5 +561,37 @@ struct AdminController: RouteCollection {
         let pageSize = Double(sysconf(Int32(_SC_PAGESIZE)))
         return residentPages * pageSize / 1_048_576.0
         #endif
+    }
+
+    // MARK: - PUT /api/admin/organizations/:orgID/tier
+    struct OverrideTierPayload: Content {
+        let subscriptionTier: String
+        let subscriptionStatus: String?
+    }
+
+    @Sendable
+    func overrideOrgTier(req: Request) async throws -> APIResponse<OrganizationDTO> {
+        guard let orgId = req.parameters.get("orgID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid organization ID.")
+        }
+        guard let org = try await OrganizationModel.find(orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+        
+        let payload = try req.content.decode(OverrideTierPayload.self)
+        let newTier = payload.subscriptionTier.lowercased()
+        guard ["free", "pro", "enterprise"].contains(newTier) else {
+            throw Abort(.badRequest, reason: "Invalid tier. Must be 'free', 'pro', or 'enterprise'.")
+        }
+        
+        org.subscriptionTier = newTier
+        if let status = payload.subscriptionStatus {
+            org.subscriptionStatus = status
+        } else {
+            org.subscriptionStatus = newTier == "free" ? nil : "active"
+        }
+        
+        try await org.save(on: req.db)
+        return .success(org.toDTO())
     }
 }

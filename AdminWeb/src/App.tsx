@@ -16,6 +16,9 @@ import { MembersPage } from "./pages/org/MembersPage";
 import { RetentionPage } from "./pages/org/RetentionPage";
 import { CompliancePage } from "./pages/org/CompliancePage";
 import { ModerationPage } from "./pages/org/ModerationPage";
+import { BillingPage } from "./pages/org/BillingPage";
+import { BrandingPage } from "./pages/org/BrandingPage";
+import { SSOConfigPage } from "./pages/org/SSOConfigPage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { loading, user } = useAuth();
@@ -86,6 +89,9 @@ export default function App() {
           <Route path="org/retention" element={<OrgAdminOnly><RetentionPage /></OrgAdminOnly>} />
           <Route path="org/compliance" element={<OrgAdminOnly><CompliancePage /></OrgAdminOnly>} />
           <Route path="org/moderation" element={<OrgAdminOnly><ModerationPage /></OrgAdminOnly>} />
+          <Route path="org/billing" element={<OrgAdminOnly><BillingPage /></OrgAdminOnly>} />
+          <Route path="org/branding" element={<OrgAdminOnly><BrandingPage /></OrgAdminOnly>} />
+          <Route path="org/sso" element={<OrgAdminOnly><SSOConfigPage /></OrgAdminOnly>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

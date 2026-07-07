@@ -107,6 +107,9 @@ func configure(_ app: Application) throws {
     // Phase 14: Agile Time Tracking
     app.migrations.add(CreateTimeLogsTable())
 
+    // Phase 15: SaaS Tenant Fields
+    app.migrations.add(CreateSaaSTenantFields())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

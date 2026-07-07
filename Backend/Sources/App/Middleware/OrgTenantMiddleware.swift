@@ -9,13 +9,24 @@ struct OrgTenantMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
         let auth = try request.authContext
 
+        var customDomainOrgId: UUID? = nil
+        if let host = request.url.host, host != "localhost", host != "127.0.0.1" {
+            if let org = try await OrganizationModel.query(on: request.db)
+                .filter(\.$customDomain == host)
+                .first() {
+                customDomainOrgId = org.id
+            }
+        }
+
         let headerOrgId: UUID? = {
             guard let raw = request.headers.first(name: "X-Org-Id") else { return nil }
             return UUID(uuidString: raw)
         }()
 
         let resolvedOrgId: UUID
-        if let headerOrgId, let authOrgId = auth.orgId, headerOrgId != authOrgId {
+        if let customDomainOrgId {
+            resolvedOrgId = customDomainOrgId
+        } else if let headerOrgId, let authOrgId = auth.orgId, headerOrgId != authOrgId {
             throw Abort(.badRequest, reason: "X-Org-Id does not match API key organization.")
         } else if let headerOrgId {
             resolvedOrgId = headerOrgId

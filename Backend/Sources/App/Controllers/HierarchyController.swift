@@ -85,6 +85,19 @@ struct HierarchyController: RouteCollection {
             throw Abort(.notFound, reason: "Space not found in this organization.")
         }
 
+        // Check Free tier limit
+        guard let org = try await OrganizationModel.find(orgId, on: req.db) else {
+            throw Abort(.notFound, reason: "Organization not found.")
+        }
+        if org.subscriptionTier == "free" {
+            let spaces = try await SpaceModel.query(on: req.db).filter(\.$organization.$id == orgId).all()
+            let spaceIds = spaces.compactMap(\.id)
+            let projectCount = try await ProjectModel.query(on: req.db).filter(\.$space.$id ~~ spaceIds).count()
+            if projectCount >= 1 {
+                throw Abort(.forbidden, reason: "You have reached the maximum limit of 1 project for Free Tier workspaces. Please upgrade to Pro.")
+            }
+        }
+
         let project = ProjectModel(
             spaceId: spaceId,
             name: payload.name,

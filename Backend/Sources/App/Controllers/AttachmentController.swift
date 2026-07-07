@@ -74,6 +74,17 @@ struct AttachmentController: RouteCollection {
             throw Abort(.payloadTooLarge, reason: "File too large. Max is 50MB.")
         }
 
+        // Check Free tier storage limit (100MB)
+        let org = try await OrganizationModel.find(ctx.orgId, on: req.db)
+        if org?.subscriptionTier == "free" {
+            let totalBytes: Int64 = try await AttachmentModel.query(on: req.db)
+                .filter(\.$organization.$id == ctx.orgId)
+                .sum(\.$size) ?? 0
+            if totalBytes + size > 100_000_000 {
+                throw Abort(.forbidden, reason: "You have reached the maximum storage limit of 100MB for Free Tier workspaces. Please upgrade to Pro.")
+            }
+        }
+
         let (fileType, mimeType) = try inferTypeAndMime(from: filename)
 
         let uuid = UUID().uuidString
