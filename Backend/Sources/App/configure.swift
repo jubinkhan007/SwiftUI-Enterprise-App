@@ -131,6 +131,7 @@ func configure(_ app: Application) throws {
 
     // MARK: - Commands
     app.asyncCommands.use(AggregateStatsCommand(), as: "aggregate-stats")
+    app.asyncCommands.use(SeedCommand(), as: "seed")
 
     // Record process boot time for the admin server-health uptime metric.
     app.storage[BootDateKey.self] = Date()
