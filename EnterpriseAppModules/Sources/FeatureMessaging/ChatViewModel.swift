@@ -17,6 +17,16 @@ public final class ChatViewModel: ObservableObject {
     @Published public var error: Error?
     @Published public var editingMessageId: UUID?
     @Published public var isTypingIndicatorVisible: Bool = false
+    @Published public private(set) var typingUsers: [UUID: Date] = [:]
+    
+    public var typingText: String {
+        let active = typingUsers.filter { $0.value.timeIntervalSinceNow > -3.0 }
+        let names = active.compactMap { memberDirectory[$0.key] ?? "Someone" }
+        if names.isEmpty { return "" }
+        if names.count == 1 { return "\(names[0]) is typing..." }
+        if names.count == 2 { return "\(names[0]) and \(names[1]) are typing..." }
+        return "\(names.count) people are typing..."
+    }
     
     public let conversationId: UUID
     public let currentUserId: UUID
@@ -25,6 +35,7 @@ public final class ChatViewModel: ObservableObject {
     private var lastMessageId: UUID?
     private var realtimeListenerID: UUID?
     private var typingTimer: Timer?
+    private var typingCleanupTimers: [UUID: Timer] = [:]
     
     public init(conversationId: UUID, currentUserId: UUID, messagingRepository: MessagingRepositoryProtocol, realtimeProvider: RealTimeProvider) {
         self.conversationId = conversationId
@@ -218,8 +229,12 @@ public final class ChatViewModel: ObservableObject {
                  "message.task_linked":
                 await fetchMessages()
             case "conversation.typing_started":
-                if let typingIdStr = payload["userId"], typingIdStr != currentUserId.uuidString {
-                    showTypingIndicator()
+                if let typingIdStr = payload["userId"],
+                   let typingId = UUID(uuidString: typingIdStr),
+                   typingId != currentUserId {
+                    self.typingUsers[typingId] = Date()
+                    self.isTypingIndicatorVisible = true
+                    self.scheduleTypingCleanup(for: typingId)
                 }
             case "conversation.read":
                 if let userIdStr = payload["userId"],
@@ -232,12 +247,14 @@ public final class ChatViewModel: ObservableObject {
         }
     }
     
-    private func showTypingIndicator() {
-        self.isTypingIndicatorVisible = true
-        typingTimer?.invalidate()
-        typingTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+    private func scheduleTypingCleanup(for userId: UUID) {
+        typingCleanupTimers[userId]?.invalidate()
+        typingCleanupTimers[userId] = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.isTypingIndicatorVisible = false
+                self?.typingUsers.removeValue(forKey: userId)
+                if self?.typingUsers.isEmpty == true {
+                    self?.isTypingIndicatorVisible = false
+                }
             }
         }
     }
@@ -266,6 +283,28 @@ public final class ChatViewModel: ObservableObject {
         } catch {
             // Message rendering can proceed with sender names if member lookup fails.
         }
+    }
+
+    public func lastReadMessageId(for userId: UUID) -> UUID? {
+        guard let readDate = memberReadTimes[userId] else { return nil }
+        for msg in messages.reversed() {
+            if let msgDate = msg.createdAt, msgDate <= readDate {
+                return msg.id
+            }
+        }
+        return nil
+    }
+
+    public func lastReaders(for messageId: UUID) -> [UUID] {
+        var readers: [UUID] = []
+        for (userId, _) in memberReadTimes {
+            if userId != currentUserId {
+                if lastReadMessageId(for: userId) == messageId {
+                    readers.append(userId)
+                }
+            }
+        }
+        return readers
     }
 
     public func readersOfMessage(_ message: MessageDTO) -> [UUID] {

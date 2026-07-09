@@ -54,6 +54,28 @@ public struct MessageBubbleView: View {
                 }
 
                 bubbleContent
+
+                if !readers.isEmpty {
+                    HStack(spacing: -6) {
+                        ForEach(readers, id: \.self) { readerId in
+                            let name = participantNames[readerId] ?? "User"
+                            Circle()
+                                .fill(AppColors.surfaceElevated)
+                                .frame(width: 14, height: 14)
+                                .overlay(
+                                    Text(String(name.prefix(1)).uppercased())
+                                        .font(.system(size: 7, weight: .bold))
+                                        .foregroundColor(AppColors.textPrimary)
+                                )
+                                .overlay(
+                                    Circle()
+                                        .stroke(AppColors.backgroundPrimary, lineWidth: 1)
+                                )
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+
                 messageFooter
             }
 
@@ -212,10 +234,20 @@ public struct MessageBubbleView: View {
     }
 
     private var threadPreviewText: String {
-        if let preview = message.threadPreviewText, !preview.isEmpty {
-            return "\(message.replyCount) repl\(message.replyCount == 1 ? "y" : "ies"): \(preview)"
+        var base = "\(message.replyCount) repl\(message.replyCount == 1 ? "y" : "ies")"
+        if let lastReplyAt = message.lastReplyAt {
+            base += " • \(relativeTimeString(from: lastReplyAt))"
         }
-        return "\(message.replyCount) repl\(message.replyCount == 1 ? "y" : "ies")"
+        if let preview = message.threadPreviewText, !preview.isEmpty {
+            base += ": \(preview)"
+        }
+        return base
+    }
+
+    private func relativeTimeString(from date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     private var avatarView: some View {

@@ -247,6 +247,7 @@ public struct MessageDTO: Codable, Sendable, Identifiable, Hashable {
     public let parentId: UUID?
     public let replyCount: Int
     public let threadPreviewText: String?
+    public let lastReplyAt: Date?
     public let linkedTask: TaskPreviewDTO?
     public let reactions: [MessageReactionGroupDTO]
     public let isPinned: Bool
@@ -267,6 +268,7 @@ public struct MessageDTO: Codable, Sendable, Identifiable, Hashable {
         parentId: UUID? = nil,
         replyCount: Int = 0,
         threadPreviewText: String? = nil,
+        lastReplyAt: Date? = nil,
         linkedTask: TaskPreviewDTO? = nil,
         reactions: [MessageReactionGroupDTO] = [],
         isPinned: Bool = false,
@@ -286,6 +288,7 @@ public struct MessageDTO: Codable, Sendable, Identifiable, Hashable {
         self.parentId = parentId
         self.replyCount = replyCount
         self.threadPreviewText = threadPreviewText
+        self.lastReplyAt = lastReplyAt
         self.linkedTask = linkedTask
         self.reactions = reactions
         self.isPinned = isPinned

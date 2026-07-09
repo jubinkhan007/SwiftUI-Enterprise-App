@@ -35,6 +35,7 @@ struct MessageController: RouteCollection {
 
         // Global search (org-scoped)
         routes.get("search", use: search)
+        routes.get("search", "files", use: searchFiles)
     }
 
     // MARK: - Read
@@ -647,6 +648,7 @@ struct MessageController: RouteCollection {
             parentId: message.$parent.id,
             replyCount: replyCount,
             threadPreviewText: threadPreview?.body,
+            lastReplyAt: threadPreview?.createdAt,
             linkedTask: linkedTask,
             reactions: reactions,
             isPinned: pin != nil,
@@ -763,6 +765,37 @@ struct MessageController: RouteCollection {
         }
 
         return .success(results)
+    }
+
+    @Sendable
+    func searchFiles(req: Request) async throws -> APIResponse<[AttachmentDTO]> {
+        let ctx = try req.orgContext
+        let queryStr = try? req.query.get(String.self, at: "q")
+
+        var query = AttachmentModel.query(on: req.db)
+            .filter(\.$organization.$id == ctx.orgId)
+
+        if let queryStr, !queryStr.isEmpty {
+            query = query.filter(\.$filename ~~ queryStr)
+        }
+
+        let attachments = try await query
+            .limit(100)
+            .all()
+
+        let dtos = attachments.map { att in
+            AttachmentDTO(
+                id: att.id!,
+                taskId: att.$task.id,
+                orgId: att.$organization.id,
+                filename: att.filename,
+                fileType: att.fileType,
+                mimeType: att.mimeType,
+                size: att.size,
+                createdAt: att.createdAt
+            )
+        }
+        return .success(dtos)
     }
 }
 

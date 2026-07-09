@@ -197,7 +197,7 @@ public struct ChatView: View {
 
     private var typingIndicator: some View {
         HStack {
-            Text("Someone is typing...")
+            Text(viewModel.typingText)
                 .appFont(AppTypography.caption1)
                 .foregroundColor(AppColors.textSecondary)
                 .italic()
@@ -321,7 +321,7 @@ public struct ChatView: View {
             isCurrentUser: message.senderId == currentUserId,
             currentUserId: currentUserId,
             participantNames: viewModel.memberDirectory,
-            readers: viewModel.readersOfMessage(message),
+            readers: viewModel.lastReaders(for: message.id),
             onDelete: deleteAction(for: message),
             onEdit: editAction(for: message),
             onOpenThread: {

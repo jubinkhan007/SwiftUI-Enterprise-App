@@ -153,6 +153,11 @@ public final class LiveMessagingService: MessagingRepositoryProtocol {
         let endpoint = MessagingEndpoint.globalSearch(q: q, from: from, `in`: `in`, after: after, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<[MessageSearchResultDTO]>.self)
     }
+
+    public func searchFiles(q: String?) async throws -> APIResponse<[AttachmentDTO]> {
+        let endpoint = MessagingEndpoint.searchFiles(q: q, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[AttachmentDTO]>.self)
+    }
 }
 
 public final class LivePresenceService: PresenceRepositoryProtocol {

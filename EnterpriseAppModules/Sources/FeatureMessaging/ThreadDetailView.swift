@@ -104,24 +104,39 @@ public struct ThreadDetailView: View {
         VStack(spacing: 0) {
             if let root = viewModel.rootMessage {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: AppSpacing.md) {
-                        Text("Original Message")
-                            .appFont(AppTypography.caption1)
-                            .foregroundColor(AppColors.textSecondary)
+                    ScrollViewReader { proxy in
+                        VStack(alignment: .leading, spacing: AppSpacing.md) {
+                            Text("Original Message")
+                                .appFont(AppTypography.caption1)
+                                .foregroundColor(AppColors.textSecondary)
 
-                        MessageBubbleView(message: root, isCurrentUser: root.senderId == currentUserId)
+                            MessageBubbleView(message: root, isCurrentUser: root.senderId == currentUserId)
 
-                        Divider()
+                            Divider()
 
-                        Text("Replies")
-                            .appFont(AppTypography.caption1)
-                            .foregroundColor(AppColors.textSecondary)
+                            Text("Replies")
+                                .appFont(AppTypography.caption1)
+                                .foregroundColor(AppColors.textSecondary)
 
-                        ForEach(viewModel.replies) { reply in
-                            MessageBubbleView(message: reply, isCurrentUser: reply.senderId == currentUserId)
+                            ForEach(viewModel.replies) { reply in
+                                MessageBubbleView(message: reply, isCurrentUser: reply.senderId == currentUserId)
+                                    .id(reply.id)
+                            }
+                        }
+                        .padding()
+                        .onChange(of: viewModel.replies.count) { _, _ in
+                            if let lastReply = viewModel.replies.last {
+                                withAnimation {
+                                    proxy.scrollTo(lastReply.id, anchor: .bottom)
+                                }
+                            }
+                        }
+                        .onAppear {
+                            if let lastReply = viewModel.replies.last {
+                                proxy.scrollTo(lastReply.id, anchor: .bottom)
+                            }
                         }
                     }
-                    .padding()
                 }
 
                 ChatInputBar(text: $viewModel.inputText, onSend: {

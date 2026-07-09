@@ -27,6 +27,7 @@ final class GlobalSearchViewModel: ObservableObject {
     @Published var filterAfterDate: Date? = nil
     @Published private(set) var conversations: [ConversationListItemDTO] = []
     @Published private(set) var messageResults: [MessageResult] = []
+    @Published private(set) var fileResults: [AttachmentDTO] = []
     @Published private(set) var people: [ConversationMemberDTO] = []
     @Published private(set) var isLoading = false
 
@@ -81,6 +82,11 @@ final class GlobalSearchViewModel: ObservableObject {
                 after: dateStr
             )
             let searchResults = response.data ?? []
+
+            let fileResponse = try await messagingRepository.searchFiles(
+                q: parsed.freeText.isEmpty ? nil : parsed.freeText
+            )
+            fileResults = fileResponse.data ?? []
 
             messageResults = searchResults.map { item in
                 MessageResult(id: item.message.id, conversationName: item.conversationName, message: item.message)
@@ -314,7 +320,26 @@ public struct GlobalSearchView: View {
                 }
             }
         case .files:
-            ContentUnavailableView("No file search yet", systemImage: "doc.text.magnifyingglass")
+            if viewModel.fileResults.isEmpty {
+                ContentUnavailableView("No files matched your search", systemImage: "doc.text.magnifyingglass")
+            } else {
+                List(viewModel.fileResults) { file in
+                    HStack(spacing: AppSpacing.sm) {
+                        Image(systemName: "doc.fill")
+                            .foregroundColor(AppColors.brandPrimary)
+                            .font(.system(size: 24))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file.filename)
+                                .appFont(AppTypography.body)
+                                .foregroundColor(AppColors.textPrimary)
+                            Text(ByteCountFormatter().string(fromByteCount: file.size))
+                                .appFont(AppTypography.caption2)
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
         case .people:
             List(viewModel.people) { member in
                 VStack(alignment: .leading, spacing: 4) {

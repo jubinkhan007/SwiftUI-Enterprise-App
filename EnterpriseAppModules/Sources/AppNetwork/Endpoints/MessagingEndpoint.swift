@@ -30,6 +30,7 @@ public enum MessagingEndpoint {
     case listBookmarks(configuration: APIConfiguration)
     case convertToTask(messageId: UUID, payload: ConvertMessageToTaskRequest, configuration: APIConfiguration)
     case globalSearch(q: String?, from: String?, `in`: String?, after: String?, configuration: APIConfiguration)
+    case searchFiles(q: String?, configuration: APIConfiguration)
 }
 
 extension MessagingEndpoint: APIEndpoint {
@@ -55,7 +56,8 @@ extension MessagingEndpoint: APIEndpoint {
              .bookmarkMessage(_, let c), .unbookmarkMessage(_, let c),
              .listBookmarks(let c),
              .convertToTask(_, _, let c),
-             .globalSearch(_, _, _, _, let c):
+             .globalSearch(_, _, _, _, let c),
+             .searchFiles(_, let c):
             return c
         }
     }
@@ -64,12 +66,8 @@ extension MessagingEndpoint: APIEndpoint {
         switch self {
         case .getConversations, .createConversation:
             return "/api/conversations"
-        case .getConversation(let id, _):
+        case .getConversation(let id, _), .updateConversation(let id, _, _), .archiveConversation(let id, _):
             return "/api/conversations/\(id.uuidString)"
-        case .updateConversation(let id, _, _):
-            return "/api/conversations/\(id.uuidString)"
-        case .archiveConversation(let id, _):
-            return "/api/conversations/\(id.uuidString)/archive"
         case .leaveConversation(let id, _):
             return "/api/conversations/\(id.uuidString)/leave"
         case .addMembers(let id, _, _):
@@ -80,23 +78,20 @@ extension MessagingEndpoint: APIEndpoint {
             return "/api/conversations/\(id.uuidString)/preferences"
         case .getMessages(let id, _, _, _), .sendMessage(let id, _, _):
             return "/api/conversations/\(id.uuidString)/messages"
-        case .getThread(let id, _):
-            return "/api/messages/\(id.uuidString)/thread"
         case .markRead(let id, _, _):
             return "/api/conversations/\(id.uuidString)/read"
-        case .editMessage(let id, _, _), .deleteMessage(let id, _):
-            return "/api/messages/\(id.uuidString)"
         case .sendTypingIndicator(let id, _, _):
             return "/api/conversations/\(id.uuidString)/typing"
-        case .updateMemberRole(let conversationId, let memberId, _, _):
-            return "/api/conversations/\(conversationId.uuidString)/members/\(memberId.uuidString)/role"
-        case .approveMember(let conversationId, let memberId, _):
-            return "/api/conversations/\(conversationId.uuidString)/members/\(memberId.uuidString)/approve"
-        case .addReaction(let id, _, _):
+        case .updateMemberRole(let id, let memberId, _, _):
+            return "/api/conversations/\(id.uuidString)/members/\(memberId.uuidString)/role"
+        case .approveMember(let id, let memberId, _):
+            return "/api/conversations/\(id.uuidString)/members/\(memberId.uuidString)/approve"
+        case .getThread(let id, _):
+            return "/api/messages/\(id.uuidString)/thread"
+        case .editMessage(let id, _, _), .deleteMessage(let id, _):
+            return "/api/messages/\(id.uuidString)"
+        case .addReaction(let id, _, _), .removeReaction(let id, _, _):
             return "/api/messages/\(id.uuidString)/reactions"
-        case .removeReaction(let id, let emoji, _):
-            let escaped = emoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? emoji
-            return "/api/messages/\(id.uuidString)/reactions/\(escaped)"
         case .pinMessage(let id, _), .unpinMessage(let id, _):
             return "/api/messages/\(id.uuidString)/pin"
         case .listPins(let id, _):
@@ -109,13 +104,15 @@ extension MessagingEndpoint: APIEndpoint {
             return "/api/messages/\(id.uuidString)/convert-to-task"
         case .globalSearch:
             return "/api/search"
+        case .searchFiles:
+            return "/api/search/files"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
         case .getConversations, .getConversation, .getMessages, .getThread,
-             .listPins, .listBookmarks, .globalSearch:
+             .listPins, .listBookmarks, .globalSearch, .searchFiles:
             return .get
         case .createConversation, .archiveConversation, .leaveConversation, .addMembers, .updatePreferences, .sendMessage, .markRead, .sendTypingIndicator, .approveMember,
              .addReaction, .pinMessage, .bookmarkMessage, .convertToTask:
@@ -143,6 +140,9 @@ extension MessagingEndpoint: APIEndpoint {
             if let `in`, !`in`.isEmpty { params["in"] = `in` }
             if let after, !after.isEmpty { params["after"] = after }
             return params
+        case .searchFiles(let q, _):
+            if let q, !q.isEmpty { return ["q": q] }
+            return nil
         default:
             return nil
         }
