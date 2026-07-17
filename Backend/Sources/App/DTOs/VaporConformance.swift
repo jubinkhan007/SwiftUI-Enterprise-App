@@ -177,3 +177,4 @@ extension MessageSearchResultDTO: Content {}
 extension TimeLogDTO: Content {}
 extension LogTimeRequest: Content {}
 extension ProjectTimeReportDTO: Content {}
+extension UserSessionDTO: Content {}

@@ -58,10 +58,24 @@ struct AdminAuthController: RouteCollection {
             throw Abort(.internalServerError, reason: "User record missing id.")
         }
 
+        let ip = req.peerAddress?.ipAddress ?? "127.0.0.1"
+        let ua = req.headers.first(name: .userAgent) ?? "Admin Portal"
+        let expiresAt = Date().addingTimeInterval(AdminSession.refreshTTL)
+        
+        let session = UserSessionModel(
+            userId: userId,
+            deviceType: "Admin Portal",
+            ipAddress: ip,
+            userAgent: ua,
+            expiresAt: expiresAt
+        )
+        try await session.save(on: req.db)
+        let sessionId = try session.requireID()
+
         let body = try await buildMeResponse(for: user, on: req)
         let response = try await body.encodeResponse(for: req)
-        let access = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "access", ttl: AdminSession.accessTTL, on: req)
-        let refresh = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "refresh", ttl: AdminSession.refreshTTL, on: req)
+        let access = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "access", sessionId: sessionId, ttl: AdminSession.accessTTL, on: req)
+        let refresh = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "refresh", sessionId: sessionId, ttl: AdminSession.refreshTTL, on: req)
         AdminSession.attachCookies(to: response, access: access, refresh: refresh, on: req)
         return response
     }
@@ -85,11 +99,21 @@ struct AdminAuthController: RouteCollection {
             throw Abort(.unauthorized, reason: "Invalid refresh session.")
         }
 
+        if let oldSessionId = payload.sessionId {
+            guard let session = try await UserSessionModel.find(oldSessionId, on: req.db),
+                  !session.isRevoked,
+                  session.expiresAt > Date() else {
+                throw Abort(.unauthorized, reason: "Session has been terminated.")
+            }
+            session.expiresAt = Date().addingTimeInterval(AdminSession.refreshTTL)
+            try await session.save(on: req.db)
+        }
+
         let body = try await buildMeResponse(for: user, on: req)
         let response = try await body.encodeResponse(for: req)
         // Slide the session: re-issue both tokens.
-        let access = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "access", ttl: AdminSession.accessTTL, on: req)
-        let newRefresh = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "refresh", ttl: AdminSession.refreshTTL, on: req)
+        let access = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "access", sessionId: payload.sessionId, ttl: AdminSession.accessTTL, on: req)
+        let newRefresh = try AdminSession.sign(userId: userId, role: user.role.rawValue, kind: "refresh", sessionId: payload.sessionId, ttl: AdminSession.refreshTTL, on: req)
         AdminSession.attachCookies(to: response, access: access, refresh: newRefresh, on: req)
         return response
     }

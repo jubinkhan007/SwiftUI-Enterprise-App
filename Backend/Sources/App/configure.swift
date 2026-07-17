@@ -109,6 +109,7 @@ func configure(_ app: Application) throws {
 
     // Phase 15: SaaS Tenant Fields
     app.migrations.add(CreateSaaSTenantFields())
+    app.migrations.add(CreateUserSession())
 
     // Run migrations automatically in development
     try app.autoMigrate().wait()

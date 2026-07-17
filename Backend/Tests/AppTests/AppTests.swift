@@ -1103,4 +1103,65 @@ final class AppTests: XCTestCase {
 
         return try XCTUnwrap(conversationID)
     }
+
+    func testUserSessionsAndRevocation() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedBasicProject(app: app)
+        
+        // 1. Seed a user session in database
+        let session = UserSessionModel(
+            userId: seed.userId,
+            deviceType: "Test Runner",
+            ipAddress: "127.0.0.1",
+            userAgent: "XCTest",
+            expiresAt: Date().addingTimeInterval(3600)
+        )
+        try await session.save(on: app.db)
+        let sessionId = try session.requireID()
+
+        // 2. Sign token with sessionId
+        let token = try signTokenWithSession(app: app, userId: seed.userId, role: .admin, sessionId: sessionId)
+
+        // 3. GET /api/me/sessions -> list sessions (should succeed)
+        try await app.test(.GET, "api/me/sessions", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: token)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<[UserSessionDTO]>.self)
+            XCTAssertEqual(decoded.data?.count, 1)
+            XCTAssertEqual(decoded.data?.first?.id, sessionId)
+            XCTAssertEqual(decoded.data?.first?.deviceType, "Test Runner")
+        })
+
+        // 4. DELETE /api/me/sessions/:sessionId -> revoke session
+        try await app.test(.DELETE, "api/me/sessions/\(sessionId.uuidString)", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: token)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        // 5. Verify revoked flag in DB
+        let updatedSession = try await UserSessionModel.find(sessionId, on: app.db)
+        XCTAssertEqual(updatedSession?.isRevoked, true)
+
+        // 6. GET /api/me/sessions -> should now fail with 401 unauthorized because session is revoked!
+        try await app.test(.GET, "api/me/sessions", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: token)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .unauthorized)
+        })
+    }
+
+    private func signTokenWithSession(app: Application, userId: UUID, role: UserRole, sessionId: UUID) throws -> String {
+        let payload = JWTAuthPayload(
+            subject: .init(value: userId.uuidString),
+            expiration: .init(value: Date().addingTimeInterval(3600)),
+            role: role.rawValue,
+            sessionId: sessionId
+        )
+        return try app.jwt.signers.sign(payload)
+    }
 }

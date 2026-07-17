@@ -6,6 +6,7 @@ struct JWTAuthPayload: JWTPayload {
     var subject: SubjectClaim
     var expiration: ExpirationClaim
     var role: String
+    var sessionId: UUID?
 
     /// The user's UUID, extracted from the subject claim.
     var userId: UUID? {
@@ -30,6 +31,14 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         } catch {
             request.logger.warning("JWT verification failed: \(String(describing: error))")
             throw Abort(.unauthorized, reason: "Invalid or expired token.")
+        }
+
+        if let sessionId = payload.sessionId {
+            guard let session = try await UserSessionModel.find(sessionId, on: request.db),
+                  !session.isRevoked,
+                  session.expiresAt > Date() else {
+                throw Abort(.unauthorized, reason: "Session has been terminated or expired.")
+            }
         }
 
         request.storage[UserPayloadKey.self] = payload

@@ -28,6 +28,10 @@ func routes(_ app: Application) throws {
     let adminController = AdminController()
     try superAdminAPI.register(collection: adminController)
 
+    let sessionController = UserSessionController()
+    superAdminAPI.get("users", ":userID", "sessions", use: sessionController.listUserSessions)
+    superAdminAPI.delete("sessions", ":sessionID", use: sessionController.forceRevokeSession)
+
     // Web Admin Panel: org-admin tenant routes (cookie auth + org membership + admin role)
     let orgAdminAPI = api
         .grouped("admin", "org")
@@ -39,6 +43,8 @@ func routes(_ app: Application) throws {
 
     // Setup authenticated API routes
     let authenticatedAPI = api.grouped(AnyAuthMiddleware())
+    authenticatedAPI.get("me", "sessions", use: sessionController.listMySessions)
+    authenticatedAPI.delete("me", "sessions", ":sessionID", use: sessionController.revokeMySession)
     // Org-scoped routes (require X-Org-Id header)
     let orgScopedAPI = authenticatedAPI.grouped(OrgTenantMiddleware())
 

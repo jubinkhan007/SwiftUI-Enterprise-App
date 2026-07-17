@@ -151,3 +151,14 @@ export interface JoinRequest {
   status: string;
   created_at?: string | null;
 }
+
+export interface UserSessionDTO {
+  id: string;
+  user_id: string;
+  device_type: string;
+  ip_address: string;
+  user_agent: string;
+  is_revoked: boolean;
+  expires_at: string;
+  created_at?: string | null;
+}

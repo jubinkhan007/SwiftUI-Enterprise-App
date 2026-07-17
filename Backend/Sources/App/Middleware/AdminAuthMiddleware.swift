@@ -14,6 +14,7 @@ struct AdminTokenPayload: JWTPayload {
     var role: String
     /// "access" or "refresh"
     var kind: String
+    var sessionId: UUID?
 
     var userId: UUID? { UUID(uuidString: subject.value) }
 
@@ -34,12 +35,13 @@ enum AdminSession {
     /// 7-day sliding refresh token.
     static let refreshTTL: TimeInterval = 7 * 24 * 60 * 60
 
-    static func sign(userId: UUID, role: String, kind: String, ttl: TimeInterval, on req: Request) throws -> String {
+    static func sign(userId: UUID, role: String, kind: String, sessionId: UUID?, ttl: TimeInterval, on req: Request) throws -> String {
         let payload = AdminTokenPayload(
             subject: .init(value: userId.uuidString),
             expiration: .init(value: Date().addingTimeInterval(ttl)),
             role: role,
-            kind: kind
+            kind: kind,
+            sessionId: sessionId
         )
         return try req.jwt.sign(payload)
     }
@@ -106,6 +108,14 @@ struct CookieAuthMiddleware: AsyncMiddleware {
         }
         guard payload.kind == "access", let userId = payload.userId else {
             throw Abort(.unauthorized, reason: "Invalid session token.")
+        }
+
+        if let sessionId = payload.sessionId {
+            guard let session = try await UserSessionModel.find(sessionId, on: request.db),
+                  !session.isRevoked,
+                  session.expiresAt > Date() else {
+                throw Abort(.unauthorized, reason: "Session has been terminated.")
+            }
         }
 
         request.storage[AuthContextKey.self] = AuthContext(

@@ -92,10 +92,26 @@ struct AuthController: RouteCollection {
         guard let userId = user.id else {
             throw Abort(.internalServerError, reason: "User record is missing an id.")
         }
+        
+        let ip = req.peerAddress?.ipAddress ?? "127.0.0.1"
+        let ua = req.headers.first(name: .userAgent) ?? "iOS Client"
+        let expiresAt = Date().addingTimeInterval(60 * 60 * 24 * 7) // 7 days
+        
+        let session = UserSessionModel(
+            userId: userId,
+            deviceType: "iOS Client",
+            ipAddress: ip,
+            userAgent: ua,
+            expiresAt: expiresAt
+        )
+        try await session.save(on: req.db)
+        let sessionId = try session.requireID()
+
         let payload = JWTAuthPayload(
             subject: .init(value: userId.uuidString),
-            expiration: .init(value: Date().addingTimeInterval(60 * 60 * 24 * 7)), // 7 days
-            role: user.role.rawValue
+            expiration: .init(value: expiresAt),
+            role: user.role.rawValue,
+            sessionId: sessionId
         )
         req.logger.notice("Signing JWT token...")
         let token = try req.jwt.sign(payload)

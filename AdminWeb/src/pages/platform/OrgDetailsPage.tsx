@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../lib/api";
-import type { AdminOrg, OrgMember, ModerationChannel, AuditLog } from "../../types";
+import type { AdminOrg, OrgMember, ModerationChannel, AuditLog, UserSessionDTO } from "../../types";
 import {
   Badge,
   Button,
@@ -47,6 +47,28 @@ export function OrgDetailsPage() {
   const [retentionInput, setRetentionInput] = useState<string>("");
   const [selectedTier, setSelectedTier] = useState<string>("free");
   const [selectedStatus, setSelectedStatus] = useState<string>("active");
+  const [selectedAuditUserId, setSelectedAuditUserId] = useState<string | null>(null);
+  const [selectedAuditUserName, setSelectedAuditUserName] = useState<string>("");
+
+  // Fetch sessions for selected user
+  const {
+    data: userSessions,
+    isLoading: loadingSessions,
+    refetch: refetchSessions,
+  } = useQuery({
+    queryKey: ["admin", "users", selectedAuditUserId, "sessions"],
+    queryFn: () => api<UserSessionDTO[]>(`/admin/users/${selectedAuditUserId}/sessions`),
+    enabled: !!selectedAuditUserId,
+  });
+
+  // Mutation to force-revoke session
+  const forceRevoke = useMutation({
+    mutationFn: (sessionId: string) =>
+      api(`/admin/sessions/${sessionId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      refetchSessions();
+    },
+  });
 
   // 1. Fetch organization details
   const {
@@ -473,18 +495,30 @@ export function OrgDetailsPage() {
                     </Td>
                     <Td className="text-muted">{formatDate(m.joined_at)}</Td>
                     <Td className="text-right">
-                      <Button
-                        variant="ghost"
-                        title="Remove Member"
-                        onClick={() => {
-                          if (confirm(`Remove ${m.display_name} (${m.email}) from workspace?`)) {
-                            removeMember.mutate(m.id);
-                          }
-                        }}
-                        loading={removeMember.isPending}
-                      >
-                        <Trash2 size={15} className="text-rose" />
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          title="Audit Sessions"
+                          onClick={() => {
+                            setSelectedAuditUserId(m.user_id);
+                            setSelectedAuditUserName(m.display_name);
+                          }}
+                        >
+                          <Lock size={15} className="text-primary hover:text-ink" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          title="Remove Member"
+                          onClick={() => {
+                            if (confirm(`Remove ${m.display_name} (${m.email}) from workspace?`)) {
+                              removeMember.mutate(m.id);
+                            }
+                          }}
+                          loading={removeMember.isPending}
+                        >
+                          <Trash2 size={15} className="text-rose" />
+                        </Button>
+                      </div>
                     </Td>
                   </tr>
                 ))}
@@ -614,6 +648,96 @@ export function OrgDetailsPage() {
             </Table>
           )}
         </GlassCard>
+      )}
+      {selectedAuditUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <GlassCard className="w-full max-w-2xl p-6 border border-white/10 relative">
+            <button
+              onClick={() => {
+                setSelectedAuditUserId(null);
+                setSelectedAuditUserName("");
+              }}
+              className="absolute top-4 right-4 text-muted hover:text-ink text-lg font-bold"
+            >
+              &times;
+            </button>
+            <h3 className="font-display text-xl font-bold text-ink mb-2">
+              Active Sessions: {selectedAuditUserName}
+            </h3>
+            <p className="text-sm text-muted mb-4">
+              Audit the login sessions for this user. Revoking a session will immediately log the user out of that device/browser on their next request.
+            </p>
+            {loadingSessions ? (
+              <LoadingState label="Loading sessions..." />
+            ) : !userSessions || userSessions.length === 0 ? (
+              <EmptyState icon={<Lock size={32} />} title="No Active Sessions" hint="This user has no active login sessions registered." />
+            ) : (
+              <div className="overflow-x-auto max-h-[300px] border border-white/5 rounded-xl">
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Device / Client</Th>
+                      <Th>IP Address</Th>
+                      <Th>Expires At</Th>
+                      <Th>Status</Th>
+                      <Th className="text-right">Action</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userSessions.map((session) => (
+                      <tr key={session.id} className="transition hover:bg-white/[0.02]">
+                        <Td className="font-medium text-ink">
+                          <div className="text-sm">{session.device_type}</div>
+                          <div className="text-xs text-muted max-w-[180px] truncate" title={session.user_agent}>
+                            {session.user_agent}
+                          </div>
+                        </Td>
+                        <Td className="font-mono text-xs text-muted">{session.ip_address}</Td>
+                        <Td className="text-xs text-muted">{formatDate(session.expires_at)}</Td>
+                        <Td>
+                          {session.is_revoked ? (
+                            <Badge tone="rose">Revoked</Badge>
+                          ) : new Date(session.expires_at) < new Date() ? (
+                            <Badge tone="slate">Expired</Badge>
+                          ) : (
+                            <Badge tone="emerald">Active</Badge>
+                          )}
+                        </Td>
+                        <Td className="text-right">
+                          {!session.is_revoked && new Date(session.expires_at) >= new Date() && (
+                            <Button
+                              variant="danger"
+                              className="px-2 py-1 text-xs"
+                              loading={forceRevoke.isPending}
+                              onClick={() => {
+                                if (confirm("Are you sure you want to force terminate this session? The user will be instantly logged out.")) {
+                                  forceRevoke.mutate(session.id);
+                                }
+                              }}
+                            >
+                              Revoke
+                            </Button>
+                          )}
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
+            <div className="mt-4 flex justify-end">
+              <Button
+                variant="subtle"
+                onClick={() => {
+                  setSelectedAuditUserId(null);
+                  setSelectedAuditUserName("");
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </GlassCard>
+        </div>
       )}
     </div>
   );
