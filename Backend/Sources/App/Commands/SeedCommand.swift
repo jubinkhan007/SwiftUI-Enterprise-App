@@ -23,6 +23,7 @@ public struct SeedCommand: AsyncCommand {
         let seedEmails = ["ops@acme.com", "alice@acme.com", "bob@acme.com", "charlie@acme.com", "dave@acme.com"]
         for email in seedEmails {
             if let user = try await UserModel.query(on: db).filter(\.$email == email).first() {
+                try await UserSessionModel.query(on: db).filter(\.$user.$id == user.id!).delete()
                 try await OrganizationMemberModel.query(on: db).filter(\.$user.$id == user.id!).delete()
                 try await TimeLogModel.query(on: db).filter(\.$user.$id == user.id!).delete()
                 try await TaskItemModel.query(on: db).filter(\.$assignee.$id == user.id!).delete()
@@ -31,6 +32,12 @@ public struct SeedCommand: AsyncCommand {
         }
         
         if let org = try await OrganizationModel.query(on: db).filter(\.$slug == "acme").first() {
+            let convs = try await ConversationModel.query(on: db).filter(\.$organization.$id == org.id!).all()
+            for conv in convs {
+                try await MessageModel.query(on: db).filter(\.$conversation.$id == conv.id!).delete()
+                try await ConversationMemberModel.query(on: db).filter(\.$conversation.$id == conv.id!).delete()
+                try await conv.delete(on: db)
+            }
             try await AuditLogModel.query(on: db).filter(\.$organization.$id == org.id!).delete()
             try await TimeLogModel.query(on: db).filter(\.$organization.$id == org.id!).delete()
             try await TaskItemModel.query(on: db).filter(\.$organization.$id == org.id!).delete()
@@ -248,6 +255,93 @@ public struct SeedCommand: AsyncCommand {
         )
         
         logger.info("Audit logs seeded successfully.")
+        
+        // 8. Channels & Messaging Seed
+        let generalChan = ConversationModel(
+            type: "channel",
+            name: "general",
+            description: "Company-wide announcements and discussion.",
+            topic: "Welcome to Acme Corp!",
+            isArchived: false,
+            isPrivate: false,
+            createdBy: ownerUser.id!,
+            ownerId: ownerUser.id!,
+            orgId: org.id!
+        )
+        try await generalChan.save(on: db)
+
+        let engChan = ConversationModel(
+            type: "channel",
+            name: "engineering",
+            description: "Engineering sprint discussion and architecture.",
+            topic: "TF-1 & TF-2 Sprint items",
+            isArchived: false,
+            isPrivate: false,
+            createdBy: ownerUser.id!,
+            ownerId: ownerUser.id!,
+            orgId: org.id!
+        )
+        try await engChan.save(on: db)
+
+        let dmAliceDave = ConversationModel(
+            type: "direct",
+            name: nil,
+            description: nil,
+            topic: nil,
+            isArchived: false,
+            isPrivate: true,
+            createdBy: ownerUser.id!,
+            ownerId: ownerUser.id!,
+            orgId: org.id!
+        )
+        try await dmAliceDave.save(on: db)
+
+        // Add Conversation Members
+        let users = [ownerUser, managerUser, member1, member2]
+        for u in users {
+            try await ConversationMemberModel(conversationId: generalChan.id!, userId: u.id!, role: u.id == ownerUser.id ? "admin" : "member").save(on: db)
+            try await ConversationMemberModel(conversationId: engChan.id!, userId: u.id!, role: u.id == ownerUser.id ? "admin" : "member").save(on: db)
+        }
+        try await ConversationMemberModel(conversationId: dmAliceDave.id!, userId: ownerUser.id!, role: "member").save(on: db)
+        try await ConversationMemberModel(conversationId: dmAliceDave.id!, userId: member2.id!, role: "member").save(on: db)
+
+        // Seed messages in #general
+        let msgGen1 = MessageModel(conversationId: generalChan.id!, senderId: ownerUser.id!, body: "Welcome team to the Acme Corp TaskFlow workspace! 🚀")
+        try await msgGen1.save(on: db)
+
+        let msgGen2 = MessageModel(conversationId: generalChan.id!, senderId: managerUser.id!, body: "Glad to be here! Let's get the iOS app and web admin panel ready for demo.")
+        try await msgGen2.save(on: db)
+
+        let msgGen3 = MessageModel(conversationId: generalChan.id!, senderId: member2.id!, body: "I've started work on the dark mode Kanban board layout (TF-1).")
+        try await msgGen3.save(on: db)
+
+        // Thread reply under msgGen3
+        let replyGen1 = MessageModel(conversationId: generalChan.id!, senderId: ownerUser.id!, body: "Awesome Dave! Let me know if you need design review.", parentId: msgGen3.id!)
+        try await replyGen1.save(on: db)
+
+        // Seed messages in #engineering
+        let msgEng1 = MessageModel(conversationId: engChan.id!, senderId: member1.id!, body: "Setting up SAML IDP auth integration for enterprise SSO.")
+        try await msgEng1.save(on: db)
+
+        let msgEng2 = MessageModel(conversationId: engChan.id!, senderId: ownerUser.id!, body: "Great progress Charlie! Make sure to test certificate validation.")
+        try await msgEng2.save(on: db)
+
+        // Seed DM messages between Alice & Dave
+        let msgDm1 = MessageModel(conversationId: dmAliceDave.id!, senderId: member2.id!, body: "Hey Alice, do you have a moment to test the video call feature?")
+        try await msgDm1.save(on: db)
+
+        let msgDm2 = MessageModel(conversationId: dmAliceDave.id!, senderId: ownerUser.id!, body: "Sure Dave! Let's launch a call.")
+        try await msgDm2.save(on: db)
+
+        // Update lastMessageAt on conversations
+        generalChan.lastMessageAt = Date()
+        try await generalChan.save(on: db)
+        engChan.lastMessageAt = Date()
+        try await engChan.save(on: db)
+        dmAliceDave.lastMessageAt = Date()
+        try await dmAliceDave.save(on: db)
+
+        logger.info("Channels and messages seeded successfully.")
         logger.info("Database seeding completed successfully! Ready for demo.")
     }
 }

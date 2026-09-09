@@ -46,6 +46,7 @@ func configure(_ app: Application) throws {
     // Admin Panel: super-admin flag + org status/retention columns must exist before
     // later backfill migrations query the User/Organization models.
     app.migrations.add(AddAdminUserOrgFields())
+    app.migrations.add(CreateSaaSTenantFields())
     app.migrations.add(AddOrgIdToTaskItem())
     app.migrations.add(CreateAuditLog())
     app.migrations.add(AddTaskListHierarchy())
@@ -107,8 +108,7 @@ func configure(_ app: Application) throws {
     // Phase 14: Agile Time Tracking
     app.migrations.add(CreateTimeLogsTable())
 
-    // Phase 15: SaaS Tenant Fields
-    app.migrations.add(CreateSaaSTenantFields())
+    // Phase 15: SaaS Tenant Fields & User Sessions
     app.migrations.add(CreateUserSession())
 
     // Run migrations automatically in development
