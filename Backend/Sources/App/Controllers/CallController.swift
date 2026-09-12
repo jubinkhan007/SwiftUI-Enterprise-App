@@ -546,9 +546,12 @@ struct CallController: RouteCollection {
 
     private func emitCallNotification(req: Request, userId: UUID, actorId: UUID, callSessionId: UUID, type: String) async throws {
         let ctx = try req.orgContext
+        let actorUser = try? await UserModel.find(actorId, on: req.db)
+        let actorName = actorUser?.displayName ?? "Team Member"
         let payload: [String: String] = [
             "callSessionId": callSessionId.uuidString,
-            "actorId": actorId.uuidString
+            "actorId": actorId.uuidString,
+            "actorName": actorName
         ]
         let payloadJson = try? String(
             data: JSONSerialization.data(withJSONObject: payload, options: []),

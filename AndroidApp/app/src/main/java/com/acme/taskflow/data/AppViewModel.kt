@@ -12,8 +12,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-class AppViewModel(application: Application) : AndroidViewModel(application) {
-    private val storage = SessionStore(application)
+class AppViewModel @JvmOverloads constructor(
+    application: Application,
+    private val storage: SessionStore = SessionStore(application)
+) : AndroidViewModel(application) {
     private var session = storage.read()
     var user by mutableStateOf(session?.child("user"))
         private set
@@ -27,7 +29,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var revision by mutableStateOf(0)
         private set
-    val api: ApiClient get() = ApiClient(server, session?.text("token").orEmpty(), workspace?.id.orEmpty())
+    val sessionToken: String get() = session?.text("token").orEmpty()
+    val api: ApiClient get() {
+        val activeToken = session?.text("token").orEmpty()
+        return ApiClient(server, activeToken, workspace?.id.orEmpty(), onUnauthorized = {
+            viewModelScope.launch {
+                if (session?.text("token") == activeToken) expired()
+            }
+        })
+    }
 
     fun authenticate(email: String, password: String, name: String?, endpoint: String) {
         if (busy) return
@@ -61,4 +71,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun changed() { revision++ }
     fun signOut() { storage.clear(); session = null; user = null; workspace = null; error = null; revision++ }
     fun expired() { signOut(); error = "Your session expired. Please sign in again." }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun restoreForTesting(userProfile: JsonObject, authServer: String, authToken: String) {
+        server = authServer
+        session = json("token" to authToken, "user" to userProfile, "server" to authServer)
+        user = userProfile
+    }
 }

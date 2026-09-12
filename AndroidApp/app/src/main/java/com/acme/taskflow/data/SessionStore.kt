@@ -12,9 +12,9 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class SessionStore(context: Context) {
-    private val preferences = context.getSharedPreferences("session", Context.MODE_PRIVATE)
-    private val alias = "taskflow.session.v1"
+class SessionStore(context: Context, namespace: String = "session") {
+    private val preferences = context.getSharedPreferences(namespace, Context.MODE_PRIVATE)
+    private val alias = "taskflow.$namespace.v1"
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

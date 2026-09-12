@@ -22,7 +22,9 @@ public struct InboxView: View {
             await viewModel.fetchNotifications()
         }
         .task {
-            if viewModel.notifications.isEmpty {
+            await viewModel.fetchNotifications()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
                 await viewModel.fetchNotifications()
             }
         }

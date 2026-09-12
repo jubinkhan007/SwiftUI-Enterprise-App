@@ -40,7 +40,8 @@ class ApiClient(
     val baseUrl: String,
     private val token: String = "",
     val orgId: String = "",
-    private val client: OkHttpClient = transport
+    private val client: OkHttpClient = transport,
+    private val onUnauthorized: () -> Unit = {}
 ) {
     fun events() = callbackFlow<JsonObject> {
         val url = baseUrl.toHttpUrl().newBuilder().encodedPath("/ws").addQueryParameter("org_id", orgId).build()
@@ -91,8 +92,13 @@ class ApiClient(
                             val raw = it.body?.string().orEmpty()
                             val envelope = runCatching { JsonParser.parseString(raw).obj() }.getOrDefault(JsonObject())
                             if (!it.isSuccessful || (envelope.has("success") && !envelope.flag("success"))) {
-                                throw ApiFailure(it.code, envelope.child("error").text("message")
-                                    .ifBlank { envelope.text("reason") }.ifBlank { "Request failed (${it.code})" })
+                                val errorMessage = when {
+                                    envelope.has("reason") && envelope.get("reason").isJsonPrimitive -> envelope.text("reason")
+                                    envelope.has("error") && envelope.get("error").isJsonObject -> envelope.child("error").text("message")
+                                    envelope.has("error") && envelope.get("error").isJsonPrimitive && !envelope.get("error").asString.equals("true", ignoreCase = true) -> envelope.text("error")
+                                    else -> "Request failed (${it.code})"
+                                }
+                                throw ApiFailure(it.code, errorMessage)
                             }
                             if (it.code != 204 && !envelope.has("success")) {
                                 throw ApiFailure(it.code, "The server returned an invalid response.")
@@ -100,7 +106,10 @@ class ApiClient(
                             ApiResult(envelope.get("data") ?: JsonNull.INSTANCE, envelope.child("pagination"))
                         }
                     }
-                    if (continuation.isActive) result.fold(continuation::resume, continuation::resumeWithException)
+                    if (continuation.isActive) {
+                        if ((result.exceptionOrNull() as? ApiFailure)?.status == 401) onUnauthorized()
+                        result.fold(continuation::resume, continuation::resumeWithException)
+                    }
                 }
             })
         }

@@ -12,5 +12,10 @@ Backend/.env
 build/
 *.log
 simulator_screen.png
+emulator_current.png
 App/Info.plist
 build_output*.txt
+node_modules/
+dist/
+.gradle/
+*.png

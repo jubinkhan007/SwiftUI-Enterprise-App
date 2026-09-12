@@ -25,65 +25,105 @@ struct ConversationController: RouteCollection {
         let ctx = try req.orgContext
         let payload = try req.content.decode(CreateConversationRequest.self)
 
-        guard payload.type == "direct" else {
-            throw Abort(.badRequest, reason: "Only direct messages are supported in this version.")
-        }
-
-        guard payload.memberIds.count == 1 else {
-            throw Abort(.badRequest, reason: "DM requires exactly one other member ID.")
-        }
-
-        let otherUserId = payload.memberIds[0]
-        guard otherUserId != ctx.userId else {
-            throw Abort(.badRequest, reason: "Cannot create a DM with yourself.")
-        }
-
-        let isMember = try await OrganizationMemberModel.query(on: req.db)
-            .filter(\.$organization.$id == ctx.orgId)
-            .filter(\.$user.$id == otherUserId)
-            .count() > 0
-        guard isMember else {
-            throw Abort(.notFound, reason: "User not found in this organization.")
-        }
-
-        let existingConvIds = try await ConversationMemberModel.query(on: req.db)
-            .filter(\.$user.$id == ctx.userId)
-            .all()
-            .map(\.$conversation.id)
-
-        if !existingConvIds.isEmpty {
-            let match = try await ConversationModel.query(on: req.db)
-                .filter(\.$id ~~ existingConvIds)
-                .filter(\.$type == "direct")
-                .filter(\.$organization.$id == ctx.orgId)
-                .join(ConversationMemberModel.self, on: \ConversationMemberModel.$conversation.$id == \ConversationModel.$id)
-                .filter(ConversationMemberModel.self, \.$user.$id == otherUserId)
-                .first()
-
-            if let existing = match {
-                return .success(try await conversationDTO(for: existing, currentUserId: ctx.userId, on: req.db))
+        switch payload.type {
+        case "direct":
+            guard payload.memberIds.count == 1 else {
+                throw Abort(.badRequest, reason: "DM requires exactly one other member ID.")
             }
+
+            let otherUserId = payload.memberIds[0]
+            guard otherUserId != ctx.userId else {
+                throw Abort(.badRequest, reason: "Cannot create a DM with yourself.")
+            }
+
+            let isMember = try await OrganizationMemberModel.query(on: req.db)
+                .filter(\.$organization.$id == ctx.orgId)
+                .filter(\.$user.$id == otherUserId)
+                .count() > 0
+            guard isMember else {
+                throw Abort(.notFound, reason: "User not found in this organization.")
+            }
+
+            let existingConvIds = try await ConversationMemberModel.query(on: req.db)
+                .filter(\.$user.$id == ctx.userId)
+                .all()
+                .map(\.$conversation.id)
+
+            if !existingConvIds.isEmpty {
+                let match = try await ConversationModel.query(on: req.db)
+                    .filter(\.$id ~~ existingConvIds)
+                    .filter(\.$type == "direct")
+                    .filter(\.$organization.$id == ctx.orgId)
+                    .join(ConversationMemberModel.self, on: \ConversationMemberModel.$conversation.$id == \ConversationModel.$id)
+                    .filter(ConversationMemberModel.self, \.$user.$id == otherUserId)
+                    .first()
+
+                if let existing = match {
+                    return .success(try await conversationDTO(for: existing, currentUserId: ctx.userId, on: req.db))
+                }
+            }
+
+            let conversation = ConversationModel(
+                type: "direct",
+                name: payload.name,
+                description: payload.description,
+                topic: payload.topic,
+                createdBy: ctx.userId,
+                ownerId: ctx.userId,
+                orgId: ctx.orgId
+            )
+            try await conversation.save(on: req.db)
+            let conversationID = try conversation.requireID()
+
+            let ownerMembership = ConversationMemberModel(conversationId: conversationID, userId: ctx.userId, role: "admin")
+            ownerMembership.lastSeenAt = Date()
+            let peerMembership = ConversationMemberModel(conversationId: conversationID, userId: otherUserId, role: "member")
+            try await ownerMembership.save(on: req.db)
+            try await peerMembership.save(on: req.db)
+
+            return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
+
+        case "group", "channel":
+            let isChannel = payload.type == "channel"
+            let rawMemberIds = Array(Set(payload.memberIds)).filter { $0 != ctx.userId }
+
+            if !rawMemberIds.isEmpty {
+                let memberCountInOrg = try await OrganizationMemberModel.query(on: req.db)
+                    .filter(\.$organization.$id == ctx.orgId)
+                    .filter(\.$user.$id ~~ rawMemberIds)
+                    .count()
+                guard memberCountInOrg == rawMemberIds.count else {
+                    throw Abort(.badRequest, reason: "One or more members are not in this organization.")
+                }
+            }
+
+            let conversation = ConversationModel(
+                type: payload.type,
+                name: payload.name ?? (isChannel ? "general" : "Group Chat"),
+                description: payload.description,
+                topic: payload.topic,
+                isPrivate: !isChannel,
+                createdBy: ctx.userId,
+                ownerId: ctx.userId,
+                orgId: ctx.orgId
+            )
+            try await conversation.save(on: req.db)
+            let conversationID = try conversation.requireID()
+
+            let ownerMembership = ConversationMemberModel(conversationId: conversationID, userId: ctx.userId, role: "admin")
+            ownerMembership.lastSeenAt = Date()
+            try await ownerMembership.save(on: req.db)
+
+            for memberId in rawMemberIds {
+                let membership = ConversationMemberModel(conversationId: conversationID, userId: memberId, role: "member")
+                try await membership.save(on: req.db)
+            }
+
+            return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
+
+        default:
+            throw Abort(.badRequest, reason: "Unsupported conversation type: \(payload.type)")
         }
-
-        let conversation = ConversationModel(
-            type: "direct",
-            name: payload.name,
-            description: payload.description,
-            topic: payload.topic,
-            createdBy: ctx.userId,
-            ownerId: ctx.userId,
-            orgId: ctx.orgId
-        )
-        try await conversation.save(on: req.db)
-        let conversationID = try conversation.requireID()
-
-        let ownerMembership = ConversationMemberModel(conversationId: conversationID, userId: ctx.userId, role: "admin")
-        ownerMembership.lastSeenAt = Date()
-        let peerMembership = ConversationMemberModel(conversationId: conversationID, userId: otherUserId, role: "member")
-        try await ownerMembership.save(on: req.db)
-        try await peerMembership.save(on: req.db)
-
-        return .success(try await conversationDTO(for: conversation, currentUserId: ctx.userId, on: req.db))
     }
 
     @Sendable

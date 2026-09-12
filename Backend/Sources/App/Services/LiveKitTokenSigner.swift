@@ -1,5 +1,6 @@
 import Crypto
 import Foundation
+import JWT
 import Vapor
 
 /// LiveKit-compatible JWT token signer.
@@ -44,6 +45,33 @@ enum LiveKitTokenSigner {
         let isReal: Bool
     }
 
+    private struct VideoGrant: Codable {
+        let room: String
+        let roomJoin: Bool
+        let canPublish: Bool
+        let canSubscribe: Bool
+        let canPublishData: Bool
+        let canPublishSources: [String]?
+        let roomAdmin: Bool
+        let roomCreate: Bool
+    }
+
+    private struct Payload: JWTPayload {
+        let issuer: IssuerClaim
+        let subject: SubjectClaim
+        let issuedAt: IssuedAtClaim
+        let notBefore: NotBeforeClaim
+        let expiration: ExpirationClaim
+        let id: IDClaim
+        let name: String
+        let video: VideoGrant
+
+        func verify(using signer: JWTSigner) throws {
+            try expiration.verifyNotExpired()
+            try notBefore.verifyNotBefore()
+        }
+    }
+
     static let defaultTtl: TimeInterval = 6 * 60 * 60  // 6h
 
     static func sign(
@@ -70,43 +98,28 @@ enum LiveKitTokenSigner {
             )
         }
 
-        let header = Self.base64URL(json: [
-            "alg": "HS256",
-            "typ": "JWT"
-        ])
-
-        var video: [String: Any] = [
-            "room": roomName,
-            "roomJoin": true,
-            "canPublish": grants.canPublish,
-            "canSubscribe": grants.canSubscribe,
-            "canPublishData": grants.canPublishData,
-            "roomAdmin": grants.roomAdmin,
-            "roomCreate": grants.roomCreate
-        ]
-        if let sources = grants.canPublishSources {
-            video["canPublishSources"] = sources
+        let payload = Payload(
+            issuer: IssuerClaim(value: apiKey),
+            subject: SubjectClaim(value: identity),
+            issuedAt: IssuedAtClaim(value: now),
+            notBefore: NotBeforeClaim(value: now.addingTimeInterval(-5)),
+            expiration: ExpirationClaim(value: exp),
+            id: IDClaim(value: UUID().uuidString),
+            name: displayName,
+            video: VideoGrant(
+                room: roomName,
+                roomJoin: true,
+                canPublish: grants.canPublish,
+                canSubscribe: grants.canSubscribe,
+                canPublishData: grants.canPublishData,
+                canPublishSources: grants.canPublishSources,
+                roomAdmin: grants.roomAdmin,
+                roomCreate: grants.roomCreate
+            )
+        )
+        guard let token = try? JWTSigner.hs256(key: apiSecret).sign(payload) else {
+            return SignedToken(token: "dev_\(UUID().uuidString)_\(roomName)_\(identity)", expiresAt: exp, serverUrl: nil, isReal: false)
         }
-
-        let payload: [String: Any] = [
-            "iss": apiKey,
-            "sub": identity,
-            "name": displayName,
-            "iat": Int(now.timeIntervalSince1970),
-            "nbf": Int(now.timeIntervalSince1970),
-            "exp": Int(exp.timeIntervalSince1970),
-            "jti": UUID().uuidString,
-            "video": video
-        ]
-
-        let body = Self.base64URL(json: payload)
-        let signingInput = "\(header).\(body)"
-
-        let key = SymmetricKey(data: Data(apiSecret.utf8))
-        let mac = HMAC<SHA256>.authenticationCode(for: Data(signingInput.utf8), using: key)
-        let signature = Self.base64URLEncode(Data(mac))
-
-        let token = "\(signingInput).\(signature)"
         return SignedToken(token: token, expiresAt: exp, serverUrl: serverUrl, isReal: true)
     }
 

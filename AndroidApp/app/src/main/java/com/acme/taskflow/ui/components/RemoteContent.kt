@@ -104,7 +104,8 @@ fun dateLabel(value: String): String = runCatching {
 }.getOrDefault(value)
 
 data class FormField(val key: String, val label: String, val initial: String = "", val required: Boolean = false,
-    val options: List<Choice>? = null, val multiline: Boolean = false, val date: Boolean = false, val numeric: Boolean = false)
+    val options: List<Choice>? = null, val multiline: Boolean = false, val date: Boolean = false, val numeric: Boolean = false,
+    val emitEmpty: Boolean = false)
 
 @Composable
 fun ChoiceMenu(label: String, value: String, options: List<Choice>, onChange: (String) -> Unit) {
@@ -158,8 +159,9 @@ fun EditorDialog(title: String, fields: List<FormField>, onDismiss: () -> Unit, 
                     val payload = JsonObject()
                     fields.forEach { field ->
                         val value = values[field.key].orEmpty().trim()
-                        if (field.required || value.isNotBlank()) {
+                        if (field.required || field.emitEmpty || value.isNotBlank()) {
                             if (field.numeric) payload.addProperty(field.key, value.toIntOrNull() ?: error("${field.label} must be a whole number."))
+                            else if (field.date && value.isNotBlank()) payload.addProperty(field.key, Instant.parse(value).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
                             else payload.addProperty(field.key, value)
                         }
                     }
