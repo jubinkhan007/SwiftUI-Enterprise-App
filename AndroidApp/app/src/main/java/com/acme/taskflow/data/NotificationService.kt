@@ -37,7 +37,15 @@ class NotificationService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannels()
-        startForeground(SERVICE_NOTIFICATION_ID, serviceNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                SERVICE_NOTIFICATION_ID,
+                serviceNotification(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            startForeground(SERVICE_NOTIFICATION_ID, serviceNotification())
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

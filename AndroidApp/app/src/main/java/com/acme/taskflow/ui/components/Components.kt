@@ -218,6 +218,7 @@ fun IosTextField(
     minLines: Int = 1,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    leadingIcon: (@Composable () -> Unit)? = null,
     trailingIcon: (@Composable () -> Unit)? = null
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
@@ -272,6 +273,10 @@ fun IosTextField(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (leadingIcon != null) {
+                        leadingIcon()
+                        Spacer(Modifier.width(AppSpacing.sm))
+                    }
                     Box(modifier = Modifier.weight(1f)) {
                         if (value.isEmpty() && isFloating && placeholder.isNotEmpty()) {
                             Text(

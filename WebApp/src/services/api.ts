@@ -62,6 +62,25 @@ class ApiService {
     }
   }
 
+  async updateProfile(displayName: string, email: string): Promise<UserDTO> {
+    const raw = await this.request<any>('/api/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName: displayName.trim(), email: email.trim() }),
+    });
+    const userRaw = raw || {};
+    const user: UserDTO = {
+      id: userRaw.id || '',
+      email: userRaw.email || email,
+      displayName: userRaw.display_name || userRaw.displayName || displayName,
+      role: userRaw.role || this.currentUser?.role || 'member',
+      createdAt: userRaw.created_at || userRaw.createdAt,
+      updatedAt: userRaw.updated_at || userRaw.updatedAt,
+      isSuperAdmin: userRaw.is_super_admin ?? userRaw.isSuperAdmin ?? this.currentUser?.isSuperAdmin ?? false,
+    };
+    this.setCurrentUser(user);
+    return user;
+  }
+
   logout() {
     this.setToken(null);
     this.setOrgId(null);
@@ -355,8 +374,16 @@ class ApiService {
       isPrivate: c.is_private ?? c.isPrivate ?? false,
       memberCount: c.member_count ?? c.memberCount,
       messageCount: c.message_count ?? c.messageCount,
+      unreadCount: c.unread_count ?? c.unreadCount ?? 0,
       lastMessageAt: c.last_message_at || c.lastMessageAt,
     }));
+  }
+
+  async markConversationRead(conversationId: string, lastReadMessageId?: string): Promise<void> {
+    await this.request('/api/conversations/' + conversationId + '/read', {
+      method: 'POST',
+      body: JSON.stringify(lastReadMessageId ? { lastReadMessageId } : {}),
+    });
   }
 
   async createConversation(payload: {
@@ -381,6 +408,7 @@ class ApiService {
       isPrivate: c.is_private ?? c.isPrivate ?? false,
       memberCount: c.member_count ?? c.memberCount,
       messageCount: c.message_count ?? c.messageCount,
+      unreadCount: c.unread_count ?? c.unreadCount ?? 0,
       lastMessageAt: c.last_message_at || c.lastMessageAt,
     };
   }

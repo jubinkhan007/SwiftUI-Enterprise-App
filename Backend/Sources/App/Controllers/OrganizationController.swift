@@ -7,6 +7,7 @@ struct OrganizationController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         // /api/me — no org context required, returns user + all their orgs
         routes.get("me", use: me)
+        routes.patch("me", use: updateMe)
         // /api/invites — no org context required, returns invites addressed to the current user
         routes.get("invites", use: myInvites)
 
@@ -40,6 +41,11 @@ struct OrganizationController: RouteCollection {
 
         // Public invite acceptance (no org context needed, uses invite token)
         orgs.post("invites", ":inviteID", "accept", use: acceptInvite)
+    }
+
+    struct UpdateProfileRequest: Content {
+        let displayName: String
+        let email: String
     }
 
     // MARK: - GET /api/me
@@ -88,6 +94,39 @@ struct OrganizationController: RouteCollection {
         )
 
         return .success(response)
+    }
+
+    // MARK: - PATCH /api/me
+
+    @Sendable
+    func updateMe(req: Request) async throws -> APIResponse<UserDTO> {
+        let userId = try req.authContext.userId
+        let payload = try req.content.decode(UpdateProfileRequest.self)
+        let displayName = payload.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = payload.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        guard !displayName.isEmpty else {
+            throw Abort(.badRequest, reason: "Display name is required.")
+        }
+        guard email.contains("@"), email.contains(".") else {
+            throw Abort(.badRequest, reason: "Enter a valid email address.")
+        }
+
+        guard let user = try await UserModel.find(userId, on: req.db) else {
+            throw Abort(.notFound, reason: "User not found.")
+        }
+
+        if let duplicate = try await UserModel.query(on: req.db)
+            .filter(\.$email == email)
+            .filter(\.$id != userId)
+            .first(), duplicate.id != userId {
+            throw Abort(.conflict, reason: "A user with this email already exists.")
+        }
+
+        user.displayName = displayName
+        user.email = email
+        try await user.save(on: req.db)
+        return .success(user.toDTO())
     }
 
     // MARK: - GET /api/invites

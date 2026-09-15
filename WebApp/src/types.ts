@@ -102,6 +102,7 @@ export interface ConversationDTO {
   isLocked?: boolean;
   memberCount?: number;
   messageCount?: number;
+  unreadCount?: number;
   lastMessageAt?: string;
 }
 

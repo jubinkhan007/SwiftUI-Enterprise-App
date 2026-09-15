@@ -4,6 +4,7 @@ import SharedModels
 import AppData
 import Domain
 import AppNetwork
+import FeatureAuth
 
 public struct SidebarView: View {
     @ObservedObject var viewModel: SidebarViewModel
@@ -15,6 +16,7 @@ public struct SidebarView: View {
     
     @State private var showingCreateSheet = false
     @State private var showingSyncCenter = false
+    @State private var showingProfile = false
     
     public init(
         viewModel: SidebarViewModel,
@@ -54,6 +56,9 @@ public struct SidebarView: View {
         .sheet(isPresented: $showingSyncCenter) {
             SyncCenterSheet(syncManager: syncManager)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showingProfile) {
+            ProfileView(authManager: authManager)
         }
         .refreshable {
             await viewModel.fetchHierarchy()
@@ -166,6 +171,14 @@ public struct SidebarView: View {
                     .font(.caption)
             }
             
+            Divider()
+
+            Button {
+                showingProfile = true
+            } label: {
+                Label("Profile", systemImage: "person.crop.circle")
+            }
+
             Divider()
             
             Button {

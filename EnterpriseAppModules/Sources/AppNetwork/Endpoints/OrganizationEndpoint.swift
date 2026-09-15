@@ -1,9 +1,20 @@
 import Foundation
 import SharedModels
 
+public struct UpdateProfilePayload: Codable, Sendable {
+    public let displayName: String
+    public let email: String
+
+    public init(displayName: String, email: String) {
+        self.displayName = displayName
+        self.email = email
+    }
+}
+
 /// API endpoints for Organization management.
 public enum OrganizationEndpoint {
     case me(orgId: UUID?, configuration: APIConfiguration)
+    case updateProfile(payload: UpdateProfilePayload, configuration: APIConfiguration)
     case myInvites(configuration: APIConfiguration)
     case listOrgs(configuration: APIConfiguration)
     case createOrg(payload: CreateOrganizationRequest, configuration: APIConfiguration)
@@ -25,7 +36,7 @@ public enum OrganizationEndpoint {
 extension OrganizationEndpoint: APIEndpoint {
     public var baseURL: URL {
         switch self {
-        case .me(_, let c), .myInvites(let c), .listOrgs(let c), .createOrg(_, let c),
+        case .me(_, let c), .updateProfile(_, let c), .myInvites(let c), .listOrgs(let c), .createOrg(_, let c),
              .showOrg(_, let c), .listMembers(_, let c),
              .createInvite(_, _, let c), .listInvites(_, let c),
              .acceptInvite(_, let c), .updateMemberRole(_, _, _, let c),
@@ -43,6 +54,8 @@ extension OrganizationEndpoint: APIEndpoint {
             if let orgId = orgId {
                 return "/api/me?org_id=\(orgId.uuidString)"
             }
+            return "/api/me"
+        case .updateProfile:
             return "/api/me"
         case .myInvites:
             return "/api/invites"
@@ -82,6 +95,8 @@ extension OrganizationEndpoint: APIEndpoint {
         case .me, .myInvites, .listOrgs, .showOrg, .listMembers, .listInvites, .auditLog,
              .searchOrganizations, .listJoinRequests:
             return .get
+        case .updateProfile:
+            return .patch
         case .createOrg, .createInvite, .acceptInvite, .revokeInvite,
              .requestToJoin, .respondToJoinRequest:
             return .post
@@ -105,6 +120,8 @@ extension OrganizationEndpoint: APIEndpoint {
 
     public var body: Data? {
         switch self {
+        case .updateProfile(let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
         case .createOrg(let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .createInvite(_, let payload, _):

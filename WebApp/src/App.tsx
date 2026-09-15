@@ -118,7 +118,11 @@ export const App: React.FC = () => {
       )}
 
       {/* Workspace Header Topbar */}
-      <WorkspaceHeader currentUser={user} onLogout={handleLogout} />
+      <WorkspaceHeader
+        currentUser={user}
+        onLogout={handleLogout}
+        onProfileSaved={setUser}
+      />
 
       {/* Main Container with Sidebar + Content */}
       <div className="flex-1 flex overflow-hidden">

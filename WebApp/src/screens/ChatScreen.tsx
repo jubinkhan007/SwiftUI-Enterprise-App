@@ -40,6 +40,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMarkedReadRef = useRef<Record<string, string>>({});
 
   // Input
   const [inputText, setInputText] = useState('');
@@ -140,6 +141,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
     try {
       const data = await api.getMessages(convId);
       setMessages(data);
+      const lastMessage = data[data.length - 1];
+      if (lastMessage && lastMarkedReadRef.current[convId] !== lastMessage.id) {
+        await api.markConversationRead(convId, lastMessage.id);
+        lastMarkedReadRef.current[convId] = lastMessage.id;
+      }
+      setConversations(prev => prev.map(conversation =>
+        conversation.id === convId ? { ...conversation, unreadCount: 0 } : conversation
+      ));
     } catch (err: any) {
       console.error(err);
     } finally {
@@ -341,6 +350,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
                       {channel.messageCount}
                     </span>
                   )}
+                  {(channel.unreadCount || 0) > 0 && (
+                    <span className="ml-1 min-w-4 rounded-full bg-indigo-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                      {channel.unreadCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -375,6 +389,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
                     <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span className="truncate">{group.name || 'Private Group'}</span>
                   </div>
+                  {(group.unreadCount || 0) > 0 && (
+                    <span className="min-w-4 rounded-full bg-indigo-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                      {group.unreadCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -409,6 +428,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
                     <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span className="truncate">{dm.name || 'Direct Message'}</span>
                   </div>
+                  {(dm.unreadCount || 0) > 0 && (
+                    <span className="min-w-4 rounded-full bg-indigo-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                      {dm.unreadCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

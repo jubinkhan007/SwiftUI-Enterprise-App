@@ -616,13 +616,15 @@ fun KanbanBoard(
                 .fillMaxSize()
                 .onGloballyPositioned { boardCoordinates = it }
         ) {
-            LazyRow(
-                state = lazyListState,
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(columns, key = { it.id }) { column ->
+            key(groupBy) {
+                val rowState = rememberLazyListState()
+                LazyRow(
+                    state = rowState,
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(columns, key = { it.id }) { column ->
                     val isTargeted = draggingTaskId != null && hoveredColumnKey == column.id
                     val columnTasks = tasks.filter { taskGroupKey(it) == column.id }
                         .sortedBy { it.number("position")?.toDouble() ?: 65536.0 }
@@ -859,6 +861,7 @@ fun KanbanBoard(
                     }
                 }
             }
+        }
 
             // Floating Card during Drag
             if (draggingTaskId != null && draggingTask != null && dragCardSize != IntSize.Zero) {

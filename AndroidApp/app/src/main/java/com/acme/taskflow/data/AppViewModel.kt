@@ -69,6 +69,38 @@ class AppViewModel @JvmOverloads constructor(
 
     fun selectWorkspace(value: JsonObject?) { workspace = value; revision++ }
     fun changed() { revision++ }
+
+    fun updateProfile(displayName: String, email: String, onSaved: () -> Unit = {}) {
+        if (busy) return
+        busy = true
+        error = null
+        viewModelScope.launch {
+            try {
+                val updatedUser = api.request(
+                    "/api/me",
+                    method = "PATCH",
+                    body = json("displayName" to displayName.trim(), "email" to email.trim())
+                ).data.obj()
+                check(updatedUser.id.isNotBlank()) { "The server returned an invalid profile." }
+                val updatedSession = json(
+                    "token" to session?.text("token").orEmpty(),
+                    "user" to updatedUser,
+                    "server" to server
+                )
+                storage.write(updatedSession)
+                session = updatedSession
+                user = updatedUser
+                onSaved()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "Unable to update profile."
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     fun signOut() { storage.clear(); session = null; user = null; workspace = null; error = null; revision++ }
     fun expired() { signOut(); error = "Your session expired. Please sign in again." }
 

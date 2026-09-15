@@ -146,6 +146,10 @@ public struct ConversationListView: View {
                 presenceStore.startHeartbeat()
                 await presenceStore.refreshMyPresence()
             }
+            .onChange(of: navigationPath) { _, path in
+                guard path.isEmpty else { return }
+                Task { await viewModel.fetchConversations() }
+            }
             .refreshable {
                 await viewModel.fetchConversations()
                 let partnerIds = viewModel.conversations.compactMap(\.partnerId)

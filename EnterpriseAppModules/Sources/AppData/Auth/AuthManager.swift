@@ -1,6 +1,7 @@
 import Domain
 import Foundation
 import AppNetwork
+import SharedModels
 
 @MainActor
 public final class AuthManager: ObservableObject {
@@ -78,6 +79,20 @@ public final class AuthManager: ObservableObject {
 #if DEBUG
         print("AuthManager register ok hasSession=\(session != nil)")
 #endif
+    }
+
+    public func updateProfile(displayName: String, email: String) async throws {
+        let endpoint = OrganizationEndpoint.updateProfile(
+            payload: UpdateProfilePayload(displayName: displayName, email: email),
+            configuration: .current
+        )
+        let response = try await APIClient().request(endpoint, responseType: APIResponse<UserDTO>.self)
+        guard response.success, let user = response.data, let currentSession = session else {
+            throw AuthError.server(response.error?.message ?? "Unable to update profile.")
+        }
+        let updatedSession = AuthSession(token: currentSession.token, user: user)
+        try sessionStore.saveSession(updatedSession)
+        session = updatedSession
     }
 
     public func signOut() {

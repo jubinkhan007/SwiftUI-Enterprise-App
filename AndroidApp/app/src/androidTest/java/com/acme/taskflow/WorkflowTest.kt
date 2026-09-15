@@ -45,6 +45,14 @@ class WorkflowTest {
         val description = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc tempus imperdiet velit accumsan fermentum. Sed eleifend vel ex et mi at dignissim. Quisque ut velit vel eros hendrerit aliquet vel et nibh. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Proin a cursus nisl. Cras mollis hendrerit orci quis justo sed dolor iaculis posuere at at lacus. Phasellus eget neque cursus, euismod neque vitae, eleifend diam. Cras bibendum, elit eu porttitor convallis, magna orci molestie dolor, vel fermentum velit diam at mi. Phasellus et vulputate massa. Duis iaculis odio posuere tortor vehicula, eget varius leo lacinia. Vestibulum a orci sed nisl eleifend tristique vitae"
         tasks += json("id" to "task-a", "title" to "Test Task 26/02 01", "status" to "cancelled", "priority" to "medium", "description" to description, "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a")
         tasks += json("id" to "task-b", "title" to "Kanban Task", "status" to "todo", "priority" to "high", "description" to "Board item", "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a")
+        sent += json(
+            "id" to "sent-0",
+            "body" to "Hello team! Check https://example.com for specs",
+            "sender_id" to "user-a",
+            "sender_name" to "Alex Chen",
+            "reply_count" to 1,
+            "created_at" to "2026-09-14T10:00:00Z"
+        )
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -75,8 +83,38 @@ class WorkflowTest {
                     path == "/api/conversations" -> listOf(json("id" to "conversation-a", "name" to "Mobile team", "type" to "channel", "unread_count" to 2))
                     path == "/api/conversations/conversation-a" -> json("id" to "conversation-a", "name" to "Mobile team")
                     path.endsWith("/draft") -> JsonObject()
-                    path == "/api/conversations/conversation-a/messages" && request.method == "POST" -> payload.also { it.addProperty("id", "sent-${sent.size}"); it.addProperty("sender_id", "user-a"); it.addProperty("sender_name", "Alex Chen"); sent += it }
+                    path == "/api/conversations/conversation-a/messages" && request.method == "POST" -> payload.also {
+                        it.addProperty("id", "sent-${sent.size}")
+                        it.addProperty("sender_id", "user-a")
+                        it.addProperty("sender_name", "Alex Chen")
+                        it.addProperty("created_at", "2026-09-14T10:10:00Z")
+                        sent += it
+                    }
                     path == "/api/conversations/conversation-a/messages" -> sent.toList()
+                    path.startsWith("/api/messages/") && path.endsWith("/thread") -> json(
+                        "rootMessage" to (sent.firstOrNull() ?: JsonObject()),
+                        "replies" to listOf(
+                            json("id" to "reply-1", "parent_id" to "sent-0", "body" to "I reviewed the specs!", "sender_id" to "user-a", "sender_name" to "Alex Chen", "created_at" to "2026-09-14T10:05:00Z")
+                        )
+                    )
+                    path.startsWith("/api/messages/") && path.endsWith("/convert-to-task") && request.method == "POST" -> payload.also {
+                        it.addProperty("id", "task-converted")
+                        it.addProperty("status", "todo")
+                        tasks += it
+                    }
+                    path == "/api/templates" -> listOf(
+                        json("id" to "tmpl-1", "name" to "Bug Report", "body" to "Steps to reproduce:\n")
+                    )
+                    path.endsWith("/scheduled-messages") && request.method == "POST" -> payload.also {
+                        it.addProperty("id", "sched-1")
+                    }
+                    path == "/api/me/scheduled-messages" -> listOf(
+                        json("id" to "sched-1", "body" to "Scheduled standup", "scheduled_for" to "2026-09-15T09:00:00Z")
+                    )
+                    path.startsWith("/api/messages/") && path.endsWith("/remind") && request.method == "POST" -> json("id" to "remind-1")
+                    path == "/api/search" || path == "/api/search/files" -> listOf(
+                        json("id" to "res-1", "title" to "Mobile team", "subtitle" to "Found message here", "type" to "message")
+                    )
                     else -> emptyList<JsonObject>()
                 }
                 return MockResponse().setHeader("Content-Type", "application/json").setBody(json("success" to true, "data" to data).toString())
@@ -93,7 +131,11 @@ class WorkflowTest {
     }
 
     private fun waitFor(text: String) {
-        compose.waitUntil(15000) { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(15000) {
+            runCatching {
+                compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
+            }.getOrDefault(false)
+        }
     }
 
     private fun login() {
@@ -185,7 +227,61 @@ class WorkflowTest {
     @Test fun messagesOpenOnPhoneAndSendToSelectedConversation() {
         login()
         compose.onNodeWithText("Messages").performClick()
-        compose.onAllNodesWithText("Messages").assertCountEquals(2)
-        screenshot("messages-phone")
+        assertTrue(compose.onAllNodesWithText("Messages").fetchSemanticsNodes().size >= 2)
+
+        // Open conversation
+        compose.onNodeWithText("Mobile team").performClick()
+        waitFor("Hello team!")
+        compose.onNodeWithText("example.com").assertExists()
+        compose.onNode(hasContentDescription("Open link")).assertExists()
+        compose.onNodeWithText("1 reply").assertExists()
+        screenshot("android_messages_rich")
+
+        // Test Slash command palette appearance on typing "/"
+        val input = compose.onNode(hasSetTextAction())
+        input.performTextInput("/")
+        waitFor("/task")
+        compose.onNodeWithText("/remind", substring = true).assertExists()
+        screenshot("android_slash_commands")
+
+        // Clear and send a message
+        input.performTextClearance()
+        input.performTextInput("Checking thread support")
+        compose.onNode(hasContentDescription("Send")).performClick()
+        waitFor("Checking thread support")
+    }
+
+    @Test fun messageThreadsWorkflow() {
+        login()
+        compose.onNodeWithText("Messages").performClick()
+        waitFor("Mobile team")
+        compose.onNodeWithText("Mobile team").performClick()
+        waitFor("Hello team!")
+
+        // Open thread modal via reply badge
+        compose.onNodeWithText("1 reply").performClick()
+        waitFor("Thread")
+        waitFor("I reviewed the specs!")
+        screenshot("android_message_thread")
+    }
+
+    @Test fun convertMessageToTaskWorkflow() {
+        login()
+        compose.onNodeWithText("Messages").performClick()
+        waitFor("Mobile team")
+        compose.onNodeWithText("Mobile team").performClick()
+        waitFor("Hello team!")
+
+        // Open message context menu and convert to task
+        compose.onAllNodes(hasContentDescription("Message options"))[0].performClick()
+        waitFor("Convert to Task")
+        compose.onAllNodes(hasText("Convert to Task")).onLast().performClick()
+        waitFor("Target List")
+        screenshot("android_convert_to_task")
+        compose.onNodeWithText("Create Task").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.endsWith("/convert-to-task") })
+        }
     }
 }

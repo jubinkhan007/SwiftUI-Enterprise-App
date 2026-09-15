@@ -31,6 +31,7 @@ class RemoteState {
     var error by mutableStateOf<String?>(null)
     var revision by mutableIntStateOf(0)
     fun refresh() { revision++ }
+    fun reload() { refresh() }
 }
 
 @Composable

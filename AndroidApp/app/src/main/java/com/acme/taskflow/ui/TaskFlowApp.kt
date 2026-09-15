@@ -40,10 +40,12 @@ import kotlinx.coroutines.launch
 fun TaskFlowApp(vm: AppViewModel = viewModel()) {
     val context = LocalContext.current
     LaunchedEffect(vm.user, vm.workspace, vm.server) {
-        if (vm.user != null && vm.workspace != null) {
-            NotificationService.start(context, vm.server, vm.sessionToken, vm.workspace?.id.orEmpty())
-        } else {
-            NotificationService.stop(context)
+        runCatching {
+            if (vm.user != null && vm.workspace != null) {
+                NotificationService.start(context, vm.server, vm.sessionToken, vm.workspace?.id.orEmpty())
+            } else {
+                NotificationService.stop(context)
+            }
         }
     }
     val api = remember(vm.user, vm.workspace, vm.server) { vm.api }
@@ -226,22 +228,29 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
             // User footer
             HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle, modifier = Modifier.padding(vertical = 12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                AppAvatar(vm.user?.text("display_name").orEmpty())
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = vm.user?.text("display_name").orEmpty(),
-                        style = AppTypography.headline,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = vm.user?.text("email").orEmpty(),
-                        style = AppTypography.caption1,
-                        color = AppColors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { showUserMenu = true },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppAvatar(vm.user?.text("display_name").orEmpty())
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = vm.user?.text("display_name").orEmpty(),
+                            style = AppTypography.headline,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = vm.user?.text("email").orEmpty(),
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 IconButton(onClick = vm::signOut) {
                     Icon(Icons.AutoMirrored.Filled.Logout, "Sign out", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
@@ -377,6 +386,62 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
             vm.changed()
         }
     }
+
+    if (showUserMenu) {
+        ProfileDialog(vm = vm, onDismiss = { showUserMenu = false })
+    }
+}
+
+@Composable
+private fun ProfileDialog(vm: AppViewModel, onDismiss: () -> Unit) {
+    var name by rememberSaveable { mutableStateOf(vm.user?.text("display_name").orEmpty()) }
+    var email by rememberSaveable { mutableStateOf(vm.user?.text("email").orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Profile", style = AppTypography.title2) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppAvatar(name)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(name.ifBlank { "Your profile" }, style = AppTypography.headline)
+                        Text(vm.user?.text("role", "Member")?.replaceFirstChar { it.uppercase() } ?: "Member",
+                            style = AppTypography.caption1, color = AppColors.textSecondary)
+                    }
+                }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Full name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                vm.error?.let { Text(it, color = AppColors.statusError, style = AppTypography.caption1) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !vm.busy && name.trim().isNotEmpty() && email.contains("@"),
+                onClick = {
+                    vm.updateProfile(name, email) { onDismiss() }
+                }
+            ) {
+                Text(if (vm.busy) "Saving..." else "Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 // MARK: - Compact Workspace Navigation Screen (Exact 1:1 match to app_running.png)
