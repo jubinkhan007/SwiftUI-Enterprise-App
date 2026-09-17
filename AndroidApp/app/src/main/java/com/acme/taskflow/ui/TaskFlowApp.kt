@@ -1,6 +1,8 @@
 package com.acme.taskflow.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,8 +23,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -63,6 +67,8 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
     var projectId by rememberSaveable { mutableStateOf("") }
     var showNavigation by rememberSaveable { mutableStateOf(true) }
     var hierarchyEditor by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showCreateHierarchy by remember { mutableStateOf(false) }
+    var showSyncCenter by remember { mutableStateOf(false) }
     var showUserMenu by remember { mutableStateOf(false) }
 
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -279,12 +285,24 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                     backText = if (!wide) "Workspace" else null,
                     onBack = if (!wide) { { showNavigation = true } } else null,
                     actions = {
-                        if (!live) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(AppRadius.small))
+                                .clickable { showSyncCenter = true }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (live) Color(0xFF34C759) else Color(0xFFFF9500))
+                            )
+                            Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "Offline",
+                                text = if (live) "Live" else "Offline",
                                 style = AppTypography.caption2,
-                                color = AppColors.statusWarning,
-                                modifier = Modifier.padding(end = 8.dp)
+                                color = if (live) AppColors.statusSuccess else AppColors.statusWarning
                             )
                         }
                         IconButton(onClick = { vm.changed() }) {
@@ -361,7 +379,7 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                 projectId = ""
                 showNavigation = false
             },
-            onCreate = { hierarchyEditor = "Create space" to "/api/spaces" }
+            onCreate = { showCreateHierarchy = true }
         )
     } else if (wide) {
         Row(Modifier.fillMaxSize()) {
@@ -385,6 +403,24 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
             api.request(path, "POST", it)
             vm.changed()
         }
+    }
+
+    if (showCreateHierarchy) {
+        CreateHierarchyItemModal(
+            hierarchy = hierarchy,
+            api = api,
+            vm = vm,
+            onDismiss = { showCreateHierarchy = false }
+        )
+    }
+
+    if (showSyncCenter) {
+        SyncCenterModal(
+            vm = vm,
+            api = api,
+            isLive = live,
+            onDismiss = { showSyncCenter = false }
+        )
     }
 
     if (showUserMenu) {
@@ -562,6 +598,223 @@ private fun CompactWorkspaceNavigation(
                         showChevron = true,
                         showDivider = index < secondaryNavItems.lastIndex,
                         onClick = { onSelect(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Create Hierarchy Item Modal (matching CreateHierarchyItemSheet.swift)
+@Composable
+fun CreateHierarchyItemModal(
+    hierarchy: RemoteState,
+    api: ApiClient,
+    vm: AppViewModel,
+    onDismiss: () -> Unit
+) {
+    var mode by rememberSaveable { mutableStateOf("Team") } // "Team", "Project", "List"
+    val spaces = hierarchy.data.obj().list("spaces")
+    var selectedSpaceId by rememberSaveable { mutableStateOf(spaces.firstOrNull()?.child("space")?.id.orEmpty()) }
+
+    val currentSpace = spaces.firstOrNull { it.child("space").id == selectedSpaceId }
+    val projects = currentSpace?.list("projects").orEmpty().map { it.child("project") }
+    var selectedProjectId by rememberSaveable(selectedSpaceId) { mutableStateOf(projects.firstOrNull()?.id.orEmpty()) }
+
+    var name by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var color by rememberSaveable { mutableStateOf("#6E56CF") }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Create",
+                        style = AppTypography.title2,
+                        color = AppColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textTertiary)
+                    }
+                }
+
+                // Mode segmented picker (Team, Project, List)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(AppRadius.medium))
+                        .background(AppColors.surfaceElevated)
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf("Team", "Project", "List").forEach { item ->
+                        val isSelected = mode == item
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(AppRadius.small))
+                                .background(if (isSelected) AppColors.surfacePrimary else Color.Transparent)
+                                .clickable { mode = item }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = item,
+                                style = AppTypography.caption1.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal),
+                                color = if (isSelected) AppColors.textPrimary else AppColors.textSecondary
+                            )
+                        }
+                    }
+                }
+
+                // Team selector for Project and List
+                if (mode != "Team") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Team", style = AppTypography.caption1, color = AppColors.textSecondary)
+                        val spaceOptions = spaces.map { Choice(it.child("space").id, it.child("space").text("name")) }
+                        IosDropdownSelector(
+                            label = "Select Team",
+                            value = selectedSpaceId,
+                            options = spaceOptions,
+                            onSelect = { selectedSpaceId = it }
+                        )
+                    }
+                }
+
+                // Cascading Project selector for List
+                if (mode == "List") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Project", style = AppTypography.caption1, color = AppColors.textSecondary)
+                        val projectOptions = projects.map { Choice(it.id, it.text("name")) }
+                        if (projectOptions.isNotEmpty()) {
+                            IosDropdownSelector(
+                                label = "Select Project",
+                                value = selectedProjectId,
+                                options = projectOptions,
+                                onSelect = { selectedProjectId = it }
+                            )
+                        } else {
+                            Text(
+                                "No projects in this team yet. Create a project first.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textTertiary
+                            )
+                        }
+                    }
+                }
+
+                // Name field
+                IosTextField(
+                    label = when (mode) {
+                        "Team" -> "Team Name (Required)"
+                        "Project" -> "Project Name (Required)"
+                        else -> "List Name (Required)"
+                    },
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true
+                )
+
+                // Description field
+                if (mode != "List") {
+                    IosTextField(
+                        label = "Description (Optional)",
+                        value = description,
+                        onValueChange = { description = it },
+                        singleLine = false,
+                        minLines = 2
+                    )
+                }
+
+                // Color selection for List
+                if (mode == "List") {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Color", style = AppTypography.caption1, color = AppColors.textSecondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            listOf("#6E56CF", "#007AFF", "#34C759", "#FF9500", "#FF3B30").forEach { hex ->
+                                val swatchColor = Color(android.graphics.Color.parseColor(hex))
+                                val isSelected = color.equals(hex, ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(swatchColor)
+                                        .border(
+                                            if (isSelected) BorderStroke(3.dp, AppColors.textPrimary) else BorderStroke(0.dp, Color.Transparent),
+                                            CircleShape
+                                        )
+                                        .clickable { color = hex }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (errorMessage != null) {
+                    Text(errorMessage!!, style = AppTypography.caption1, color = AppColors.statusError)
+                }
+
+                // Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    IosButton(
+                        title = "Cancel",
+                        onClick = onDismiss,
+                        variant = IosButtonVariant.Secondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    val canCreate = name.isNotBlank() && !isSaving && (mode == "Team" || selectedSpaceId.isNotBlank()) && (mode != "List" || selectedProjectId.isNotBlank())
+                    IosButton(
+                        title = if (isSaving) "Creating..." else "Create",
+                        isEnabled = canCreate,
+                        isLoading = isSaving,
+                        onClick = {
+                            scope.launch {
+                                isSaving = true
+                                errorMessage = null
+                                val result = runCatching {
+                                    val trimmedName = name.trim()
+                                    val trimmedDesc = description.trim().ifEmpty { null }
+                                    when (mode) {
+                                        "Team" -> {
+                                            api.request("/api/spaces", "POST", json("name" to trimmedName, "description" to trimmedDesc))
+                                        }
+                                        "Project" -> {
+                                            api.request("/api/spaces/$selectedSpaceId/projects", "POST", json("name" to trimmedName, "description" to trimmedDesc))
+                                        }
+                                        "List" -> {
+                                            api.request("/api/projects/$selectedProjectId/lists", "POST", json("name" to trimmedName, "color" to color))
+                                        }
+                                    }
+                                }
+                                isSaving = false
+                                if (result.isSuccess) {
+                                    vm.changed()
+                                    onDismiss()
+                                } else {
+                                    errorMessage = result.exceptionOrNull()?.message ?: "Failed to create item."
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }

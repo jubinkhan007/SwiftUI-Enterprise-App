@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -40,10 +41,12 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import com.acme.taskflow.data.*
 import com.acme.taskflow.ui.components.*
@@ -108,6 +111,8 @@ fun TasksScreen(
     var mode by rememberSaveable { mutableStateOf("List") }
     var selected by rememberSaveable(listId, mine) { mutableStateOf<String?>(null) }
     var create by remember { mutableStateOf(false) }
+    var showSavedViews by remember { mutableStateOf(false) }
+    var showSyncCenter by remember { mutableStateOf(false) }
 
     LaunchedEffect(selected) {
         onDetailActive?.invoke(selected != null)
@@ -313,6 +318,24 @@ fun TasksScreen(
                     }
                 )
                 IconButton(
+                    onClick = { showSavedViews = true },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(AppRadius.medium))
+                        .background(AppColors.surfaceElevated)
+                ) {
+                    Icon(Icons.Default.BookmarkBorder, "Saved views", tint = AppColors.brandPrimary, modifier = Modifier.size(22.dp))
+                }
+                IconButton(
+                    onClick = { showSyncCenter = true },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(AppRadius.medium))
+                        .background(AppColors.surfaceElevated)
+                ) {
+                    Icon(Icons.Default.Sync, "Sync center", tint = AppColors.brandPrimary, modifier = Modifier.size(22.dp))
+                }
+                IconButton(
                     onClick = { create = true },
                     modifier = Modifier
                         .size(44.dp)
@@ -453,6 +476,34 @@ fun TasksScreen(
             api.request("/api/tasks", "POST", it)
             vm.changed()
         }
+    }
+
+    if (showSavedViews) {
+        SavedViewsModal(
+            api = api,
+            vm = vm,
+            scope = if (listId.isNotBlank()) "list" else "project",
+            scopeId = if (listId.isNotBlank()) listId else (projectId.ifBlank { api.orgId }),
+            currentMode = mode,
+            currentStatus = status,
+            currentPriority = priority,
+            currentSearch = search,
+            onApplyView = { newMode, newStatus, newPriority, newSearch ->
+                mode = newMode
+                status = newStatus
+                priority = newPriority
+                search = newSearch
+            },
+            onDismiss = { showSavedViews = false }
+        )
+    }
+
+    if (showSyncCenter) {
+        SyncCenterModal(
+            vm = vm,
+            api = api,
+            onDismiss = { showSyncCenter = false }
+        )
     }
 }
 
@@ -1345,13 +1396,13 @@ private fun TaskDetailScreen(
                     }
                 }
 
-                // Sections / Tabs (Activity, Checklist, Subtasks, Time logs)
+                // Sections / Tabs (Activity, Checklist, Subtasks, Dependencies, Time logs)
                 item {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("Activity", "Checklist", "Subtasks", "Time logs").forEach { name ->
+                        listOf("Activity", "Checklist", "Subtasks", "Dependencies", "Time logs").forEach { name ->
                             IosFilterChip(
                                 title = name,
                                 isSelected = tab == name,
@@ -1365,10 +1416,13 @@ private fun TaskDetailScreen(
                     val endpoint = when (tab) {
                         "Checklist" -> "checklist"
                         "Subtasks" -> "subtasks"
+                        "Dependencies" -> "relations"
                         "Time logs" -> "time-logs"
                         else -> "activity"
                     }
                     val section = rememberRemote(api, "/api/tasks/$taskId/$endpoint", vm.revision)
+                    val items = section.data.rows()
+
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(tab, Modifier.weight(1f), style = AppTypography.headline)
@@ -1376,42 +1430,247 @@ private fun TaskDetailScreen(
                                 Icon(Icons.Default.Add, "Add to $tab", tint = AppColors.brandPrimary)
                             }
                         }
-                        RemoteStatus(section)
-                        section.data.rows().forEach { item ->
-                            when (tab) {
-                                "Checklist" -> IosCard(modifier = Modifier.fillMaxWidth()) {
+
+                        // Checklist completion progress bar
+                        if (tab == "Checklist" && items.isNotEmpty()) {
+                            val completed = items.count { it.flag("is_completed") }
+                            val total = items.size
+                            val progress = if (total > 0) completed.toFloat() / total else 0f
+                            val percent = (progress * 100).roundToInt()
+                            IosCard(modifier = Modifier.fillMaxWidth()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(
-                                            item.flag("is_completed"),
-                                            enabled = !action.busy,
-                                            onCheckedChange = { checked ->
-                                                action.run {
-                                                    api.request("/api/tasks/$taskId/checklist/${item.id}", "PATCH", json("is_completed" to checked))
-                                                    vm.changed()
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            null,
+                                            tint = if (completed == total) AppColors.statusSuccess else AppColors.brandPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = "$completed of $total completed ($percent%)",
+                                            style = AppTypography.caption1.copy(fontWeight = FontWeight.SemiBold),
+                                            color = AppColors.textPrimary
+                                        )
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { progress },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(6.dp)
+                                            .clip(RoundedCornerShape(3.dp)),
+                                        color = if (completed == total) AppColors.statusSuccess else AppColors.brandPrimary,
+                                        trackColor = AppColors.borderSubtle
+                                    )
+                                }
+                            }
+                        }
+
+                        // Subtasks completion progress bar
+                        if (tab == "Subtasks" && items.isNotEmpty()) {
+                            val completed = items.count { it.text("status") in listOf("done", "cancelled", "completed") }
+                            val total = items.size
+                            val progress = if (total > 0) completed.toFloat() / total else 0f
+                            val percent = (progress * 100).roundToInt()
+                            IosCard(modifier = Modifier.fillMaxWidth()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            null,
+                                            tint = if (completed == total) AppColors.statusSuccess else AppColors.brandPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = "$completed of $total subtasks completed ($percent%)",
+                                            style = AppTypography.caption1.copy(fontWeight = FontWeight.SemiBold),
+                                            color = AppColors.textPrimary
+                                        )
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { progress },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(6.dp)
+                                            .clip(RoundedCornerShape(3.dp)),
+                                        color = if (completed == total) AppColors.statusSuccess else AppColors.brandPrimary,
+                                        trackColor = AppColors.borderSubtle
+                                    )
+                                }
+                            }
+                        }
+
+                        RemoteStatus(section)
+
+                        if (items.isEmpty()) {
+                            val emptyMsg = when (tab) {
+                                "Checklist" -> "No checklist items yet."
+                                "Subtasks" -> "No subtasks yet."
+                                "Dependencies" -> "No dependencies yet. Link tasks that block or relate to this one."
+                                "Time logs" -> "No time logged yet."
+                                else -> "No activity yet."
+                            }
+                            Text(emptyMsg, style = AppTypography.body, color = AppColors.textSecondary)
+                        } else {
+                            items.forEach { item ->
+                                when (tab) {
+                                    "Checklist" -> {
+                                        val isDone = item.flag("is_completed")
+                                        IosCard(modifier = Modifier.fillMaxWidth()) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Checkbox(
+                                                    checked = isDone,
+                                                    enabled = !action.busy,
+                                                    onCheckedChange = { checked ->
+                                                        action.run {
+                                                            api.request("/api/tasks/$taskId/checklist/${item.id}", "PATCH", json("is_completed" to checked))
+                                                            vm.changed()
+                                                        }
+                                                    }
+                                                )
+                                                Text(
+                                                    text = item.text("title"),
+                                                    modifier = Modifier.weight(1f),
+                                                    style = if (isDone) AppTypography.body.copy(textDecoration = TextDecoration.LineThrough, color = AppColors.textTertiary) else AppTypography.body
+                                                )
+                                                IconButton(onClick = {
+                                                    action.run {
+                                                        api.request("/api/tasks/$taskId/checklist/${item.id}", "DELETE")
+                                                        vm.changed()
+                                                    }
+                                                }) {
+                                                    Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
                                                 }
                                             }
-                                        )
-                                        Text(item.text("title"), Modifier.weight(1f), style = AppTypography.body)
-                                        IconButton(onClick = {
-                                            action.run {
-                                                api.request("/api/tasks/$taskId/checklist/${item.id}", "DELETE")
-                                                vm.changed()
-                                            }
-                                        }) {
-                                            Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
                                         }
                                     }
-                                }
-                                "Time logs" -> IosCard(modifier = Modifier.fillMaxWidth()) {
-                                    Text("${item.text("hours_logged")} hours • ${item.text("user_display_name")}", style = AppTypography.headline)
-                                    Text("${item.text("description")}\n${dateLabel(item.text("logged_at"))}", style = AppTypography.caption1, color = AppColors.textSecondary)
-                                }
-                                "Subtasks" -> IosCard(modifier = Modifier.fillMaxWidth()) {
-                                    TaskRowContent(item, members)
-                                }
-                                else -> IosCard(modifier = Modifier.fillMaxWidth()) {
-                                    Text(item.text("content", label(item.text("type"))), style = AppTypography.body)
-                                    Text(dateLabel(item.text("created_at")), style = AppTypography.caption2, color = AppColors.textTertiary)
+                                    "Subtasks" -> {
+                                        val isDone = item.text("status") in listOf("done", "cancelled", "completed")
+                                        IosCard(modifier = Modifier.fillMaxWidth()) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Checkbox(
+                                                    checked = isDone,
+                                                    enabled = !action.busy,
+                                                    onCheckedChange = { checked ->
+                                                        action.run {
+                                                            val newStatus = if (checked) "done" else "todo"
+                                                            api.request("/api/tasks/${item.id}", "PATCH", json("status" to newStatus))
+                                                            vm.changed()
+                                                        }
+                                                    }
+                                                )
+                                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        val issueKey = item.text("issue_key")
+                                                        if (issueKey.isNotBlank()) {
+                                                            Text(issueKey, style = AppTypography.caption2, color = AppColors.brandPrimary)
+                                                        }
+                                                        Text(
+                                                            text = item.text("title"),
+                                                            style = if (isDone) AppTypography.body.copy(textDecoration = TextDecoration.LineThrough, color = AppColors.textTertiary) else AppTypography.body
+                                                        )
+                                                    }
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        val pr = item.text("priority")
+                                                        if (pr.isNotBlank()) {
+                                                            IosPill(label(pr))
+                                                        }
+                                                        val assigneeName = members.firstOrNull { it.value == item.text("assignee_id") }?.label
+                                                        if (assigneeName != null) {
+                                                            Text(assigneeName, style = AppTypography.caption2, color = AppColors.textSecondary)
+                                                        }
+                                                    }
+                                                }
+                                                IconButton(onClick = {
+                                                    action.run {
+                                                        api.request("/api/tasks/${item.id}", "DELETE")
+                                                        vm.changed()
+                                                    }
+                                                }) {
+                                                    Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "Dependencies" -> {
+                                        val rawType = item.text("relation_type", item.text("relationType", item.text("type")))
+                                        val (typeLabel, typeColor, typeIcon) = when (rawType.lowercase()) {
+                                            "blocked_by", "blockedby" -> Triple("Blocked by", AppColors.statusError, Icons.Default.Lock)
+                                            "blocks" -> Triple("Blocks", AppColors.brandPrimary, Icons.AutoMirrored.Filled.ArrowForward)
+                                            "duplicate_of", "duplicateof" -> Triple("Duplicate of", AppColors.textSecondary, Icons.Default.ContentCopy)
+                                            else -> Triple("Relates to", Color(0xFF007AFF), Icons.Default.Link)
+                                        }
+                                        val relatedTitle = item.text("related_task_title", item.text("relatedTaskId", item.text("related_task_id", "Task")))
+                                        IosCard(modifier = Modifier.fillMaxWidth()) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(AppRadius.small))
+                                                        .background(typeColor.copy(alpha = 0.12f))
+                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        Icon(typeIcon, null, tint = typeColor, modifier = Modifier.size(14.dp))
+                                                        Text(typeLabel, style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold), color = typeColor)
+                                                    }
+                                                }
+                                                Spacer(Modifier.width(10.dp))
+                                                Text(relatedTitle, Modifier.weight(1f), style = AppTypography.body)
+                                                IconButton(onClick = {
+                                                    action.run {
+                                                        api.request("/api/tasks/$taskId/relations/${item.id}", "DELETE")
+                                                        vm.changed()
+                                                    }
+                                                }) {
+                                                    Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "Time logs" -> IosCard(modifier = Modifier.fillMaxWidth()) {
+                                        Text("${item.text("hours_logged")} hours • ${item.text("user_display_name")}", style = AppTypography.headline)
+                                        Text("${item.text("description")}\n${dateLabel(item.text("logged_at"))}", style = AppTypography.caption1, color = AppColors.textSecondary)
+                                    }
+                                    else -> {
+                                        val actType = item.text("type")
+                                        val isComment = actType == "comment"
+                                        val userName = item.text("user_name", item.text("user_display_name", "User ${item.text("user_id").take(4)}"))
+                                        val (iconVector, iconTint) = when (actType) {
+                                            "comment" -> Icons.Default.ChatBubble to AppColors.brandPrimary
+                                            "status_changed", "status" -> Icons.Default.Autorenew to Color(0xFF007AFF)
+                                            "assignee_changed", "assignee" -> Icons.Default.Person to Color(0xFF34C759)
+                                            "priority_changed", "priority" -> Icons.Default.Flag to Color(0xFFFF9500)
+                                            "moved", "reordered" -> Icons.Default.SwapHoriz to AppColors.brandPrimary
+                                            else -> Icons.Default.Sync to AppColors.textTertiary
+                                        }
+                                        IosCard(modifier = Modifier.fillMaxWidth()) {
+                                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clip(CircleShape)
+                                                        .background(iconTint.copy(alpha = 0.12f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(iconVector, null, tint = iconTint, modifier = Modifier.size(16.dp))
+                                                }
+                                                Spacer(Modifier.width(10.dp))
+                                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(userName, style = AppTypography.subheadline.copy(fontWeight = FontWeight.SemiBold), color = AppColors.textPrimary)
+                                                        Spacer(Modifier.weight(1f))
+                                                        Text(dateLabel(item.text("created_at")), style = AppTypography.caption2, color = AppColors.textTertiary)
+                                                    }
+                                                    if (isComment) {
+                                                        Text(item.text("content"), style = AppTypography.body, color = AppColors.textPrimary)
+                                                    } else {
+                                                        Text(item.text("content", label(actType)), style = AppTypography.body.copy(color = AppColors.textSecondary))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1420,14 +1679,66 @@ private fun TaskDetailScreen(
             }
         }
 
-        // Bottom comment area (exact match to screenshot.png)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(AppColors.surfacePrimary)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
+        // Bottom comment area with @ mention autocomplete (Activity tab only, matching iOS)
+        if (tab == "Activity") {
+            val mentionQuery = remember(comment) {
+                val lastAt = comment.lastIndexOf('@')
+                if (lastAt >= 0) {
+                    val isWordBefore = lastAt > 0 && comment[lastAt - 1].isLetterOrDigit()
+                    if (!isWordBefore) {
+                        val afterAt = comment.substring(lastAt + 1)
+                        if (!afterAt.contains(' ') && !afterAt.contains('\n')) afterAt else null
+                    } else null
+                } else null
+            }
+            val mentionCandidates = remember(mentionQuery, members) {
+                if (mentionQuery != null) {
+                    members.filter {
+                        it.label.contains(mentionQuery, ignoreCase = true)
+                    }.take(5)
+                } else emptyList()
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(AppColors.surfacePrimary)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+            if (mentionCandidates.isNotEmpty()) {
+                IosInsetGroupedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "Mention member",
+                            style = AppTypography.caption2,
+                            color = AppColors.textTertiary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                        mentionCandidates.forEach { member ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(AppRadius.small))
+                                    .clickable {
+                                        val lastAt = comment.lastIndexOf('@')
+                                        if (lastAt >= 0) {
+                                            val prefix = comment.substring(0, lastAt)
+                                            comment = "$prefix@${member.label} "
+                                        }
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AppAvatar(member.label)
+                                Spacer(Modifier.width(8.dp))
+                                Text(member.label, style = AppTypography.subheadline, color = AppColors.textPrimary)
+                            }
+                        }
+                    }
+                }
+            }
+
             Text(
                 text = if (previewComment) "Edit" else "Preview",
                 style = AppTypography.caption1,
@@ -1501,6 +1812,7 @@ private fun TaskDetailScreen(
             }
         }
     }
+}
 
     // Modal Error Dialog (exact match to screenshot.png)
     if (alertError != null) {
@@ -1518,7 +1830,15 @@ private fun TaskDetailScreen(
         val fields = when (title) {
             "Edit task" -> taskFields(task, lists, members)
             "Checklist" -> listOf(FormField("title", "Title", required = true))
-            "Subtasks" -> listOf(FormField("title", "Title", required = true))
+            "Subtasks" -> listOf(
+                FormField("title", "Title", required = true),
+                FormField("description", "Description"),
+                FormField("priority", "Priority", "medium")
+            )
+            "Dependencies" -> listOf(
+                FormField("type", "Relation Type (blocked_by, blocks, relates_to)", "blocked_by"),
+                FormField("related_task_id", "Related Task ID", required = true)
+            )
             "Time logs" -> listOf(
                 FormField("hours_logged", "Hours", required = true),
                 FormField("description", "Description"),
@@ -1534,9 +1854,28 @@ private fun TaskDetailScreen(
                 }
                 "Subtasks" -> {
                     payload.addProperty("parent_id", taskId)
+                    payload.addProperty("parent_task_id", taskId)
                     payload.addProperty("task_type", "subtask")
                     payload.addProperty("list_id", task.text("list_id"))
+                    payload.addProperty("project_id", task.text("project_id"))
                     api.request("/api/tasks", "POST", payload)
+                }
+                "Dependencies" -> {
+                    val rawType = payload.text("type").ifBlank { "blocked_by" }
+                    val relType = when (rawType.lowercase()) {
+                        "blocked_by", "blockedby", "blocked by" -> "blockedBy"
+                        "blocks" -> "blocks"
+                        "duplicate_of", "duplicateof" -> "duplicateOf"
+                        else -> "relatesTo"
+                    }
+                    val relatedId = payload.text("related_task_id")
+                    val relPayload = json(
+                        "relationType" to relType,
+                        "type" to relType,
+                        "relatedTaskId" to relatedId,
+                        "related_task_id" to relatedId
+                    )
+                    api.request("/api/tasks/$taskId/relations", "POST", relPayload)
                 }
                 "Time logs" -> {
                     val hours = payload.text("hours_logged").toDoubleOrNull()
@@ -1556,6 +1895,320 @@ private fun TaskDetailScreen(
             api.request("/api/tasks/$taskId", "DELETE")
             vm.changed()
             onBack()
+        }
+    }
+}
+
+// MARK: - Saved Views Modal (matching ViewConfig.swift & DashboardView.swift)
+@Composable
+fun SavedViewsModal(
+    api: ApiClient,
+    vm: AppViewModel,
+    scope: String,
+    scopeId: String,
+    currentMode: String,
+    currentStatus: String,
+    currentPriority: String,
+    currentSearch: String,
+    onApplyView: (mode: String, status: String, priority: String, search: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val viewsRemote = rememberRemote(
+        api,
+        "/api/views",
+        vm.revision,
+        query = mapOf("scope" to scope, "scopeId" to scopeId)
+    )
+    var showSaveDialog by remember { mutableStateOf(false) }
+    var viewName by remember { mutableStateOf("") }
+    var isDefault by remember { mutableStateOf(false) }
+    var isPublic by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Saved Views",
+                        style = AppTypography.title2,
+                        color = AppColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { showSaveDialog = true }) {
+                        Icon(Icons.Default.Add, "Save current view", tint = AppColors.brandPrimary)
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textTertiary)
+                    }
+                }
+
+                RemoteStatus(viewsRemote)
+
+                val views = viewsRemote.data.rows()
+                if (views.isEmpty()) {
+                    Text(
+                        text = "No saved views yet for this $scope. Save current filters to quickly access them later.",
+                        style = AppTypography.caption1,
+                        color = AppColors.textSecondary
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(views) { viewItem ->
+                            val isDefaultView = viewItem.flag("is_default")
+                            IosCard(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val vType = viewItem.text("type").replaceFirstChar { it.uppercase() }
+                                            var targetStatus = ""
+                                            var targetPriority = ""
+                                            var targetSearch = ""
+                                            val filtersStr = viewItem.text("filters_json").ifBlank { viewItem.text("filtersJson") }
+                                            if (filtersStr.isNotBlank()) {
+                                                runCatching {
+                                                    val parsed = com.google.gson.JsonParser.parseString(filtersStr).obj()
+                                                    targetStatus = parsed.text("status")
+                                                    targetPriority = parsed.text("priority")
+                                                    targetSearch = parsed.text("search")
+                                                }
+                                            }
+                                            onApplyView(vType.ifBlank { "List" }, targetStatus, targetPriority, targetSearch)
+                                            onDismiss()
+                                        },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = viewItem.text("name"),
+                                                style = AppTypography.headline,
+                                                color = AppColors.textPrimary
+                                            )
+                                            if (isDefaultView) {
+                                                Spacer(Modifier.width(6.dp))
+                                                Icon(
+                                                    Icons.Default.Star,
+                                                    "Default",
+                                                    tint = Color(0xFFFFCC00),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = viewItem.text("type").uppercase(),
+                                            style = AppTypography.caption2,
+                                            color = AppColors.textTertiary
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                runCatching {
+                                                    api.request("/api/views/${viewItem.id}", "DELETE")
+                                                    vm.changed()
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Delete, "Delete view", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                IosButton(
+                    title = "Save Current View",
+                    onClick = { showSaveDialog = true },
+                    variant = IosButtonVariant.Secondary,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+
+    if (showSaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text("Save Current View", style = AppTypography.title2) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    IosTextField(
+                        label = "View Name",
+                        value = viewName,
+                        onValueChange = { viewName = it },
+                        singleLine = true
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isDefault, onCheckedChange = { isDefault = it })
+                        Text("Set as default view", style = AppTypography.body)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isPublic, onCheckedChange = { isPublic = it })
+                        Text("Public to team", style = AppTypography.body)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = viewName.isNotBlank(),
+                    onClick = {
+                        coroutineScope.launch {
+                            val filtersObj = json(
+                                "status" to currentStatus,
+                                "priority" to currentPriority,
+                                "search" to currentSearch
+                            )
+                            val payload = json(
+                                "name" to viewName.trim(),
+                                "type" to currentMode.lowercase(),
+                                "filtersJson" to filtersObj.toString(),
+                                "appliesTo" to scope,
+                                "scopeId" to scopeId,
+                                "isDefault" to isDefault,
+                                "isPublic" to isPublic
+                            )
+                            runCatching {
+                                api.request("/api/views", "POST", payload)
+                                vm.changed()
+                            }
+                            showSaveDialog = false
+                        }
+                    }
+                ) {
+                    Text("Save", style = AppTypography.headline, color = AppColors.brandPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+// MARK: - Sync Center Modal (matching SyncCenterSheet.swift)
+@Composable
+fun SyncCenterModal(
+    vm: AppViewModel,
+    api: ApiClient,
+    isLive: Boolean = true,
+    onDismiss: () -> Unit
+) {
+    var lastSyncedText by remember { mutableStateOf("Just now") }
+    var isSyncing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Sync Center",
+                        style = AppTypography.title2,
+                        color = AppColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                isSyncing = true
+                                kotlinx.coroutines.delay(600)
+                                vm.changed()
+                                lastSyncedText = "Just now"
+                                isSyncing = false
+                            }
+                        },
+                        enabled = !isSyncing
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Sync Now", style = AppTypography.headline, color = AppColors.brandPrimary)
+                        }
+                    }
+                }
+
+                // Status Section matching SyncCenterSheet.swift
+                IosInsetGroupedCard {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            isSyncing -> Color(0xFF007AFF)
+                                            isLive -> Color(0xFF34C759)
+                                            else -> Color(0xFFFF9500)
+                                        }
+                                    )
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = when {
+                                    isSyncing -> "Syncing"
+                                    isLive -> "Online"
+                                    else -> "Offline"
+                                },
+                                style = AppTypography.headline,
+                                color = AppColors.textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "Last: $lastSyncedText",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                        }
+                        HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+                        Text(
+                            text = "Pending operations: 0",
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary
+                        )
+                        Text(
+                            text = "Needs attention: 0",
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary
+                        )
+                    }
+                }
+
+                IosButton(
+                    title = "Close",
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
