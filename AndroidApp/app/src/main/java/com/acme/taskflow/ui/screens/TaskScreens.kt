@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -58,6 +59,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import kotlin.math.roundToInt
 
 private val priorities = choices("low", "medium", "high", "critical")
@@ -110,6 +112,7 @@ fun TasksScreen(
     var type by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("List") }
     var selected by rememberSaveable(listId, mine) { mutableStateOf<String?>(null) }
+    var selectedEpicId by remember { mutableStateOf<String?>(null) }
     var create by remember { mutableStateOf(false) }
     var showSavedViews by remember { mutableStateOf(false) }
     var showSyncCenter by remember { mutableStateOf(false) }
@@ -347,17 +350,17 @@ fun TasksScreen(
             }
 
             // View modes (segmented/pills)
-            Row(
-                Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().testTag("mode_chips"),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf("List", "Board", "Backlog", "Calendar", "Timeline", "Analytics", "Releases").forEach { item ->
+                items(listOf("List", "Board", "Backlog", "Calendar", "Timeline", "Epics", "Analytics", "Releases")) { item ->
                     IosFilterChip(
                         title = item,
                         isSelected = mode == item,
-                        onClick = { mode = item }
+                        onClick = { mode = item },
+                        modifier = Modifier.testTag("chip_$item")
                     )
                 }
             }
@@ -438,16 +441,54 @@ fun TasksScreen(
                 onMoveTask = onMoveTask
             )
             "Calendar" -> TaskCalendar(tasks, onSelect = { selected = it })
-            "Timeline" -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(tasks.sortedBy { it.text("start_date", it.text("due_date", "9999")) }, key = { it.id }) { task ->
-                    IosCard(onClick = { selected = task.id }) {
-                        Text(
-                            "${dateLabel(task.text("start_date")).ifBlank { "No start" }} → ${dateLabel(task.text("due_date")).ifBlank { "No due date" }}",
-                            style = AppTypography.caption1,
-                            color = AppColors.brandPrimary
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        TaskRowContent(task, memberChoices)
+            "Timeline" -> TimelineGanttView(tasks = tasks, onSelectTask = { selected = it })
+            "Epics" -> {
+                val epics = baseTasks.filter { it.text("task_type").lowercase() == "epic" || it.text("type").lowercase() == "epic" }
+                if (epics.isEmpty()) {
+                    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("No epics found.", style = AppTypography.body, color = AppColors.textSecondary)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(epics, key = { it.id }) { epic ->
+                            IosCard(onClick = { selectedEpicId = epic.id }) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        val key = epic.text("issue_key").ifBlank { "Epic" }
+                                        Text(key, style = AppTypography.caption1, color = AppColors.brandPrimary)
+                                        Text(epic.text("title"), style = AppTypography.headline, color = AppColors.textPrimary)
+                                    }
+                                    IosPill(label(epic.text("status").ifBlank { "todo" }))
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                val donePoints = epic.number("epic_completed_points").toInt()
+                                val totalPoints = epic.number("epic_total_points").toInt()
+                                val doneIssues = epic.number("epic_children_done_count").toInt()
+                                val totalIssues = epic.number("epic_children_count").toInt()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Points: $donePoints / $totalPoints", style = AppTypography.caption2, color = AppColors.textSecondary)
+                                    Text("Issues: $doneIssues / $totalIssues", style = AppTypography.caption2, color = AppColors.textSecondary)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = { if (totalPoints > 0) (donePoints.toFloat() / totalPoints).coerceIn(0f, 1f) else 0f },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                    color = AppColors.brandPrimary,
+                                    trackColor = AppColors.borderSubtle
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -503,6 +544,19 @@ fun TasksScreen(
             vm = vm,
             api = api,
             onDismiss = { showSyncCenter = false }
+        )
+    }
+
+    if (selectedEpicId != null) {
+        EpicDetailDashboardModal(
+            epicId = selectedEpicId!!,
+            api = api,
+            vm = vm,
+            onSelectTask = { taskId ->
+                selectedEpicId = null
+                selected = taskId
+            },
+            onDismiss = { selectedEpicId = null }
         )
     }
 }
@@ -1212,6 +1266,485 @@ private fun TaskCalendar(tasks: List<JsonObject>, onSelect: (String) -> Unit) {
     }
 }
 
+private fun parseDateLocalDate(raw: String): LocalDate? = runCatching {
+    if (raw.isBlank()) null
+    else if (raw.length >= 10) LocalDate.parse(raw.substring(0, 10))
+    else null
+}.getOrNull()
+
+// MARK: - Interactive Roadmap / Timeline Gantt View (matching TimelineView.swift)
+@Composable
+fun TimelineGanttView(
+    tasks: List<JsonObject>,
+    onSelectTask: (String) -> Unit
+) {
+    val verticalScrollState = rememberLazyListState()
+    val horizontalScrollState = rememberScrollState()
+
+    val now = remember { LocalDate.now() }
+    val sortedTasks = remember(tasks) {
+        tasks.sortedBy { it.text("start_date", it.text("due_date", "9999")) }
+    }
+
+    val baseDate = remember(tasks) {
+        val parsedDates = tasks.mapNotNull { parseDateLocalDate(it.text("start_date")) ?: parseDateLocalDate(it.text("due_date")) }
+        if (parsedDates.isNotEmpty()) {
+            val minDate = parsedDates.minOrNull() ?: now.minusDays(3)
+            if (minDate.isBefore(now.minusDays(14))) minDate else now.minusDays(3)
+        } else {
+            now.minusDays(3)
+        }
+    }
+
+    val totalDays = 21
+    val days = remember(baseDate) {
+        (0 until totalDays).map { baseDate.plusDays(it.toLong()) }
+    }
+
+    val dayWidth = 68.dp
+    val rowHeight = 48.dp
+
+    Row(
+        Modifier
+            .fillMaxSize()
+            .background(AppColors.backgroundPrimary)
+    ) {
+        // Sticky Left Column: Task Labels
+        Column(
+            Modifier
+                .width(140.dp)
+                .fillMaxHeight()
+                .background(AppColors.surfacePrimary)
+        ) {
+            Box(
+                modifier = Modifier
+                    .height(56.dp)
+                    .fillMaxWidth()
+                    .background(AppColors.surfaceElevated)
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    text = "Tasks",
+                    style = AppTypography.headline,
+                    color = AppColors.textPrimary
+                )
+            }
+            HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                state = verticalScrollState
+            ) {
+                items(sortedTasks, key = { it.id }) { task ->
+                    Box(
+                        modifier = Modifier
+                            .height(rowHeight)
+                            .fillMaxWidth()
+                            .clickable { onSelectTask(task.id) }
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Column(verticalArrangement = Arrangement.Center) {
+                            val key = task.text("issue_key").ifBlank { task.text("key") }
+                            if (key.isNotBlank()) {
+                                Text(
+                                    text = key,
+                                    style = AppTypography.caption2,
+                                    color = AppColors.brandPrimary,
+                                    maxLines = 1
+                                )
+                            }
+                            Text(
+                                text = task.text("title"),
+                                style = AppTypography.caption1,
+                                color = AppColors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+                }
+            }
+        }
+
+        VerticalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+        // Right Area: Scrollable Calendar Header + Grid + Duration Bars
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .horizontalScroll(horizontalScrollState)
+        ) {
+            Row(
+                Modifier
+                    .height(56.dp)
+                    .background(AppColors.surfaceElevated)
+            ) {
+                days.forEach { day ->
+                    val isToday = day == now
+                    Column(
+                        modifier = Modifier
+                            .width(dayWidth)
+                            .fillMaxHeight()
+                            .border(0.5.dp, AppColors.borderSubtle.copy(alpha = 0.3f)),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = day.month.name.take(3),
+                            style = AppTypography.caption2,
+                            color = if (isToday) AppColors.brandPrimary else AppColors.textSecondary
+                        )
+                        Text(
+                            text = "${day.dayOfMonth}",
+                            style = AppTypography.headline,
+                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.SemiBold,
+                            color = if (isToday) AppColors.brandPrimary else AppColors.textPrimary
+                        )
+                        Text(
+                            text = day.dayOfWeek.name.take(3),
+                            style = AppTypography.caption2,
+                            color = if (isToday) AppColors.brandPrimary else AppColors.textTertiary
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                state = verticalScrollState
+            ) {
+                items(sortedTasks, key = { it.id }) { task ->
+                    Box(
+                        modifier = Modifier
+                            .height(rowHeight)
+                            .width(dayWidth * days.size)
+                    ) {
+                        Row(Modifier.fillMaxSize()) {
+                            days.forEach { day ->
+                                val isToday = day == now
+                                Box(
+                                    Modifier
+                                        .width(dayWidth)
+                                        .fillMaxHeight()
+                                        .background(if (isToday) AppColors.brandPrimary.copy(alpha = 0.06f) else Color.Transparent)
+                                        .border(0.5.dp, AppColors.borderSubtle.copy(alpha = 0.15f))
+                                )
+                            }
+                        }
+
+                        val taskStart = parseDateLocalDate(task.text("start_date"))
+                        val taskDue = parseDateLocalDate(task.text("due_date"))
+
+                        val effectiveStart = taskStart ?: taskDue ?: baseDate
+                        val effectiveDue = taskDue ?: taskStart ?: effectiveStart
+
+                        val startOffsetDays = ChronoUnit.DAYS.between(baseDate, effectiveStart).toInt()
+                        val durationDays = ChronoUnit.DAYS.between(effectiveStart, effectiveDue).toInt() + 1
+
+                        val barOffset = (startOffsetDays.coerceAtLeast(0) * 68).dp + 4.dp
+                        val barWidth = (durationDays.coerceAtLeast(1) * 68).dp - 8.dp
+
+                        val statusColor = when (task.text("status").lowercase()) {
+                            "done", "closed" -> AppColors.statusSuccess
+                            "in_progress", "in-progress" -> AppColors.brandPrimary
+                            "blocked", "cancelled" -> AppColors.statusError
+                            else -> AppColors.textSecondary
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .padding(vertical = 10.dp)
+                                .offset(x = barOffset)
+                                .width(barWidth)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(AppRadius.small))
+                                .background(statusColor.copy(alpha = 0.18f))
+                                .border(1.dp, statusColor, RoundedCornerShape(AppRadius.small))
+                                .clickable { onSelectTask(task.id) }
+                                .padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(statusColor)
+                                )
+                                Text(
+                                    text = task.text("title"),
+                                    style = AppTypography.caption1,
+                                    color = statusColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle.copy(alpha = 0.5f))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Epic Detail Dashboard Modal (matching EpicDetailDashboardView.swift)
+@Composable
+fun EpicDetailDashboardModal(
+    epicId: String,
+    api: ApiClient,
+    vm: AppViewModel,
+    onSelectTask: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val epicRemote = rememberRemote(api, "/api/tasks/$epicId", vm.revision)
+    val subtasksRemote = rememberRemote(api, "/api/tasks/$epicId/subtasks", vm.revision)
+    val epic = epicRemote.data.obj()
+    val childTasks = subtasksRemote.data.rows()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        val key = epic.text("issue_key")
+                        Text(
+                            text = if (key.isNotBlank()) "Epic Dashboard • $key" else "Epic Dashboard",
+                            style = AppTypography.caption1,
+                            color = AppColors.brandPrimary
+                        )
+                        Text(
+                            text = epic.text("title"),
+                            style = AppTypography.headline,
+                            color = AppColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle, modifier = Modifier.padding(vertical = 8.dp))
+
+                if (epicRemote.loading && epic.id.isBlank()) {
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = AppColors.brandPrimary)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Section: Progress Rollup
+                        item {
+                            Card(
+                                shape = RoundedCornerShape(AppRadius.medium),
+                                colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = "Progress",
+                                        style = AppTypography.headline,
+                                        color = AppColors.textPrimary
+                                    )
+
+                                    // Points Rollup
+                                    val donePoints = epic.number("epic_completed_points").toInt().let {
+                                        if (it > 0) it
+                                        else childTasks.filter { c -> c.text("status").lowercase() in listOf("done", "closed") }.sumOf { c -> c.number("story_points").toInt() }
+                                    }
+                                    val totalPoints = epic.number("epic_total_points").toInt().let {
+                                        if (it > 0) it
+                                        else childTasks.sumOf { c -> c.number("story_points").toInt() }
+                                    }
+                                    val pointsProgress = if (totalPoints > 0) (donePoints.toFloat() / totalPoints).coerceIn(0f, 1f) else 0f
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text("Points", style = AppTypography.subheadline, color = AppColors.textPrimary)
+                                            Text(if (totalPoints > 0) "$donePoints / $totalPoints" else "—", style = AppTypography.caption1, color = AppColors.textSecondary)
+                                        }
+                                        LinearProgressIndicator(
+                                            progress = { pointsProgress },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(8.dp)
+                                                .clip(RoundedCornerShape(4.dp)),
+                                            color = AppColors.brandPrimary,
+                                            trackColor = AppColors.borderSubtle
+                                        )
+                                    }
+
+                                    // Issues Rollup
+                                    val doneIssues = epic.number("epic_children_done_count").toInt().let {
+                                        if (it > 0) it
+                                        else childTasks.count { c -> c.text("status").lowercase() in listOf("done", "closed") }
+                                    }
+                                    val totalIssues = epic.number("epic_children_count").toInt().let {
+                                        if (it > 0) it
+                                        else childTasks.size
+                                    }
+                                    val issuesProgress = if (totalIssues > 0) (doneIssues.toFloat() / totalIssues).coerceIn(0f, 1f) else 0f
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text("Issues", style = AppTypography.subheadline, color = AppColors.textPrimary)
+                                            Text(if (totalIssues > 0) "$doneIssues / $totalIssues" else "—", style = AppTypography.caption1, color = AppColors.textSecondary)
+                                        }
+                                        LinearProgressIndicator(
+                                            progress = { issuesProgress },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(8.dp)
+                                                .clip(RoundedCornerShape(4.dp)),
+                                            color = AppColors.statusSuccess,
+                                            trackColor = AppColors.borderSubtle
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section: Child Issues
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Child Issues",
+                                    style = AppTypography.headline,
+                                    color = AppColors.textPrimary
+                                )
+                                Text(
+                                    text = "${childTasks.size} issues",
+                                    style = AppTypography.caption1,
+                                    color = AppColors.textSecondary
+                                )
+                            }
+                        }
+
+                        if (childTasks.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No child issues yet.",
+                                        style = AppTypography.body,
+                                        color = AppColors.textSecondary
+                                    )
+                                }
+                            }
+                        } else {
+                            items(childTasks, key = { it.id }) { child ->
+                                Card(
+                                    shape = RoundedCornerShape(AppRadius.medium),
+                                    colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectTask(child.id) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            val key = child.text("issue_key")
+                                            if (key.isNotBlank()) {
+                                                Text(
+                                                    text = key,
+                                                    style = AppTypography.caption2,
+                                                    color = AppColors.brandPrimary
+                                                )
+                                            }
+                                            Text(
+                                                text = child.text("title"),
+                                                style = AppTypography.subheadline,
+                                                color = AppColors.textPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = label(child.text("status").ifBlank { "todo" }),
+                                                style = AppTypography.caption2,
+                                                color = AppColors.textSecondary
+                                            )
+                                        }
+
+                                        val sp = child.number("story_points").toInt()
+                                        if (sp > 0) {
+                                            Surface(
+                                                shape = RoundedCornerShape(AppRadius.small),
+                                                color = AppColors.brandPrimary.copy(alpha = 0.12f),
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$sp pts",
+                                                    style = AppTypography.caption2,
+                                                    color = AppColors.brandPrimary,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        Icon(
+                                            Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            tint = AppColors.textTertiary,
+                                            modifier = Modifier.size(18.dp).padding(start = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun taskFields(task: JsonObject?, lists: List<Choice>, members: List<Choice>, listId: String = ""): List<FormField> = listOf(
     FormField("title", "Title", task?.text("title").orEmpty(), required = true),
     FormField("description", "Description", task?.text("description").orEmpty(), multiline = true, emitEmpty = true),
@@ -1249,6 +1782,9 @@ private fun TaskDetailScreen(
     var editor by remember { mutableStateOf<String?>(null) }
     var delete by remember { mutableStateOf(false) }
     var alertError by remember { mutableStateOf<String?>(null) }
+    var showEpicDashboard by remember { mutableStateOf(false) }
+    var selectedParentEpicId by remember { mutableStateOf<String?>(null) }
+    val isEpicTask = task.text("task_type").lowercase() == "epic" || task.text("type").lowercase() == "epic"
 
     val action = rememberAction()
 
@@ -1292,6 +1828,16 @@ private fun TaskDetailScreen(
             }
 
             Spacer(Modifier.weight(1f))
+
+            if (isEpicTask) {
+                TextButton(onClick = { showEpicDashboard = true }) {
+                    Text(
+                        text = "Epic Dashboard",
+                        style = AppTypography.headline,
+                        color = AppColors.brandPrimary
+                    )
+                }
+            }
 
             TextButton(
                 enabled = task.id.isNotEmpty() && !action.busy,
@@ -1369,6 +1915,25 @@ private fun TaskDetailScreen(
                             onSelect = { editPriority = it },
                             modifier = Modifier.weight(1f)
                         )
+                    }
+                }
+
+                // Parent Epic pill if linked to an epic
+                val parentEpicId = task.text("epic_id").ifBlank { task.text("parent_id") }
+                if (!isEpicTask && parentEpicId.isNotBlank() && task.text("task_type") != "subtask") {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(AppRadius.medium))
+                                .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                                .clickable { selectedParentEpicId = parentEpicId }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Default.Dashboard, contentDescription = null, tint = AppColors.brandPrimary, modifier = Modifier.size(16.dp))
+                            Text("View Parent Epic", style = AppTypography.caption1, color = AppColors.brandPrimary, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
 
@@ -1896,6 +2461,26 @@ private fun TaskDetailScreen(
             vm.changed()
             onBack()
         }
+    }
+
+    if (showEpicDashboard) {
+        EpicDetailDashboardModal(
+            epicId = taskId,
+            api = api,
+            vm = vm,
+            onSelectTask = { _ -> showEpicDashboard = false },
+            onDismiss = { showEpicDashboard = false }
+        )
+    }
+
+    if (selectedParentEpicId != null) {
+        EpicDetailDashboardModal(
+            epicId = selectedParentEpicId!!,
+            api = api,
+            vm = vm,
+            onSelectTask = { _ -> selectedParentEpicId = null },
+            onDismiss = { selectedParentEpicId = null }
+        )
     }
 }
 

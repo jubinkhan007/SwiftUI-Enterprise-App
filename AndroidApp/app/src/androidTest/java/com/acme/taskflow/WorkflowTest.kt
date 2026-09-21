@@ -38,6 +38,9 @@ class WorkflowTest {
     private val relations = CopyOnWriteArrayList<JsonObject>()
     private val views = CopyOnWriteArrayList<JsonObject>()
     private val activities = CopyOnWriteArrayList<JsonObject>()
+    private val convMembers = CopyOnWriteArrayList<JsonObject>()
+    private val epicChildren = CopyOnWriteArrayList<JsonObject>()
+    private lateinit var conversationData: JsonObject
     private val workspace = json("id" to "org-a", "name" to "Acme Workspace", "subscription_tier" to "pro")
 
     @Before fun start() {
@@ -49,12 +52,52 @@ class WorkflowTest {
         relations.clear()
         views.clear()
         activities.clear()
+        convMembers.clear()
+        convMembers += json("id" to "cm-1", "user_id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com", "role" to "owner", "status" to "active")
+        convMembers += json("id" to "cm-2", "user_id" to "user-b", "display_name" to "Sarah Connor", "email" to "sarah@example.com", "role" to "member", "status" to "active")
+
+        conversationData = json(
+            "id" to "conversation-a",
+            "name" to "Mobile team",
+            "topic" to "All mobile topics",
+            "description" to "Engineering discussions",
+            "is_private" to false,
+            "is_archived" to false,
+            "owner_id" to "user-a",
+            "unread_count" to 2,
+            "members" to convMembers
+        )
+
+        epicChildren.clear()
+        epicChildren += json("id" to "child-1", "issue_key" to "PROJ-101", "title" to "Design Specs", "status" to "done", "story_points" to 8, "parent_id" to "epic-1")
+        epicChildren += json("id" to "child-2", "issue_key" to "PROJ-102", "title" to "Compose Implementation", "status" to "in_progress", "story_points" to 5, "parent_id" to "epic-1")
+
         val storage = SessionStore(app, "workflow-test")
         storage.clear()
         vm = AppViewModel(app, storage)
         val description = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc tempus imperdiet velit accumsan fermentum. Sed eleifend vel ex et mi at dignissim. Quisque ut velit vel eros hendrerit aliquet vel et nibh. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Proin a cursus nisl. Cras mollis hendrerit orci quis justo sed dolor iaculis posuere at at lacus. Phasellus eget neque cursus, euismod neque vitae, eleifend diam. Cras bibendum, elit eu porttitor convallis, magna orci molestie dolor, vel fermentum velit diam at mi. Phasellus et vulputate massa. Duis iaculis odio posuere tortor vehicula, eget varius leo lacinia. Vestibulum a orci sed nisl eleifend tristique vitae"
-        tasks += json("id" to "task-a", "title" to "Test Task 26/02 01", "status" to "cancelled", "priority" to "medium", "description" to description, "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a")
-        tasks += json("id" to "task-b", "title" to "Kanban Task", "status" to "todo", "priority" to "high", "description" to "Board item", "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a")
+        tasks += json("id" to "task-a", "title" to "Test Task 26/02 01", "status" to "cancelled", "priority" to "medium", "description" to description, "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a", "start_date" to "2026-09-15T00:00:00Z", "due_date" to "2026-09-20T00:00:00Z")
+        tasks += json("id" to "task-b", "title" to "Kanban Task", "status" to "todo", "priority" to "high", "description" to "Board item", "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a", "start_date" to "2026-09-16T00:00:00Z", "due_date" to "2026-09-22T00:00:00Z")
+        tasks += json(
+            "id" to "epic-1",
+            "issue_key" to "PROJ-100",
+            "title" to "Mobile 2.0 Redesign",
+            "status" to "in_progress",
+            "priority" to "high",
+            "description" to "Epic for mobile 2.0 architecture overhaul",
+            "task_type" to "epic",
+            "type" to "epic",
+            "version" to 1,
+            "list_id" to "list-a",
+            "project_id" to "project-a",
+            "assignee_id" to "user-a",
+            "start_date" to "2026-09-14T00:00:00Z",
+            "due_date" to "2026-09-24T00:00:00Z",
+            "epic_completed_points" to 8,
+            "epic_total_points" to 13,
+            "epic_children_done_count" to 1,
+            "epic_children_count" to 2
+        )
         checklist += json("id" to "chk-1", "title" to "Unit Tests Pass", "is_completed" to false)
         subtasks += json("id" to "sub-1", "title" to "Draft RFC", "status" to "todo", "priority" to "high", "parent_id" to "task-a")
         relations += json("id" to "rel-1", "relation_type" to "blocked_by", "related_task_title" to "Auth Backend V2", "relatedTaskId" to "task-b")
@@ -83,7 +126,11 @@ class WorkflowTest {
                     path == "/api/organizations" -> listOf(workspace)
                     path == "/api/me" -> json("user" to json("id" to "user-a"), "role" to "owner", "permissions" to json("permissions" to listOf("members.invite")))
                     path == "/api/hierarchy" -> json("spaces" to listOf(json("space" to json("id" to "space-a", "name" to "Ex1 Space"), "projects" to listOf(json("project" to json("id" to "project-a", "name" to "Mobile"), "lists" to listOf(json("id" to "list-a", "name" to "Release")))))))
-                    path == "/api/organizations/org-a/members" -> listOf(json("id" to "member-a", "user_id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com", "role" to "owner"))
+                    path == "/api/organizations/org-a/members" -> listOf(
+                        json("id" to "member-a", "user_id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com", "role" to "owner"),
+                        json("id" to "member-b", "user_id" to "user-b", "display_name" to "Sarah Connor", "email" to "sarah@example.com", "role" to "member"),
+                        json("id" to "member-c", "user_id" to "user-c", "display_name" to "John Wick", "email" to "john@example.com", "role" to "member")
+                    )
                     path == "/api/tasks/move-multiple" && request.method == "POST" -> {
                         val target = payload.text("targetStatus")
                         payload.list("moves").forEach { m ->
@@ -100,7 +147,9 @@ class WorkflowTest {
                         }
                     }
                     path == "/api/tasks" || path == "/api/tasks/assigned" -> tasks.toList()
-                    path == "/api/tasks/task-a" -> tasks.first()
+                    path == "/api/tasks/task-a" -> tasks.first { it.id == "task-a" }
+                    path == "/api/tasks/epic-1" -> tasks.first { it.id == "epic-1" }
+                    path == "/api/tasks/epic-1/subtasks" -> epicChildren.toList()
                     path == "/api/tasks/task-a/checklist" && request.method == "POST" -> payload.also {
                         it.addProperty("id", "chk-${checklist.size + 1}")
                         it.addProperty("is_completed", false)
@@ -163,8 +212,33 @@ class WorkflowTest {
                     path.startsWith("/api/spaces/") && path.endsWith("/projects") && request.method == "POST" -> payload.also { it.addProperty("id", "project-new") }
                     path.startsWith("/api/projects/") && path.endsWith("/lists") && request.method == "POST" -> payload.also { it.addProperty("id", "list-new") }
                     path == "/api/projects/project-a/workflow" -> json("statuses" to listOf(json("id" to "cancelled", "name" to "Cancelled"), json("id" to "todo", "name" to "To Do"), json("id" to "status-done", "name" to "Done")))
-                    path == "/api/conversations" -> listOf(json("id" to "conversation-a", "name" to "Mobile team", "type" to "channel", "unread_count" to 2))
-                    path == "/api/conversations/conversation-a" -> json("id" to "conversation-a", "name" to "Mobile team")
+                    path == "/api/conversations" -> listOf(conversationData)
+                    path == "/api/conversations/conversation-a" && request.method == "GET" -> conversationData
+                    path == "/api/conversations/conversation-a" && request.method == "PUT" -> {
+                        if (payload.has("name")) conversationData.addProperty("name", payload.text("name"))
+                        if (payload.has("topic")) conversationData.addProperty("topic", payload.text("topic"))
+                        if (payload.has("description")) conversationData.addProperty("description", payload.text("description"))
+                        if (payload.has("is_private")) conversationData.addProperty("is_private", payload.get("is_private").asBoolean)
+                        conversationData
+                    }
+                    path == "/api/conversations/conversation-a/members" && request.method == "POST" -> {
+                        convMembers += json("id" to "cm-3", "user_id" to "user-c", "display_name" to "John Wick", "email" to "john@example.com", "role" to "member", "status" to "active")
+                        conversationData.add("members", com.google.gson.Gson().toJsonTree(convMembers))
+                        conversationData
+                    }
+                    path.startsWith("/api/conversations/conversation-a/members/") && request.method == "DELETE" -> {
+                        val memberId = path.substringAfterLast("/")
+                        convMembers.removeIf { it.id == memberId || it.text("user_id") == memberId }
+                        conversationData.add("members", com.google.gson.Gson().toJsonTree(convMembers))
+                        conversationData
+                    }
+                    path == "/api/conversations/conversation-a/archive" && request.method == "POST" -> {
+                        conversationData.addProperty("is_archived", true)
+                        conversationData
+                    }
+                    path == "/api/conversations/conversation-a" && request.method == "DELETE" -> {
+                        json("success" to true)
+                    }
                     path.endsWith("/draft") -> JsonObject()
                     path == "/api/conversations/conversation-a/messages" && request.method == "POST" -> payload.also {
                         it.addProperty("id", "sent-${sent.size}")
@@ -492,5 +566,107 @@ class WorkflowTest {
             assertTrue(writes.any { it.first == "/api/spaces" && it.second.text("name") == "Platform Core" })
         }
     }
+
+    @Test fun epicDashboardAndRoadmapTimelineWorkflow() {
+        login()
+        compose.onNodeWithText("All Tasks").performClick()
+        waitFor("Test Task 26/02 01")
+
+        // 1. Switch to Timeline view
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(4)
+        compose.waitForIdle()
+        compose.onNodeWithTag("chip_Timeline").performClick()
+        compose.waitForIdle()
+        waitFor("Tasks")
+        waitFor("Kanban Task")
+        screenshot("android_timeline_gantt")
+
+        // 2. Switch to Epics view
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(5)
+        compose.waitForIdle()
+        compose.onNodeWithTag("chip_Epics").performClick()
+        compose.waitForIdle()
+        waitFor("Mobile 2.0 Redesign")
+        waitFor("Points: 8 / 13")
+        waitFor("Issues: 1 / 2")
+
+        // 3. Open Epic Detail Dashboard Modal
+        compose.onNodeWithText("Mobile 2.0 Redesign").performClick()
+        compose.waitForIdle()
+        waitFor("Epic Dashboard")
+        waitFor("Child Issues")
+        waitFor("Design Specs")
+        waitFor("Compose Implementation")
+        waitFor("8 pts")
+        screenshot("android_epic_dashboard")
+
+        // Dismiss modal
+        compose.onNode(hasContentDescription("Close")).performClick()
+        compose.waitForIdle()
+
+        // 4. Open Epic task detail directly and verify Epic Dashboard button in top bar
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(0)
+        compose.waitForIdle()
+        compose.onNodeWithTag("chip_List").performClick()
+        compose.waitForIdle()
+        waitFor("Mobile 2.0 Redesign")
+        compose.onNodeWithText("Mobile 2.0 Redesign").performClick()
+        waitFor("Task Details")
+        compose.onNodeWithText("Epic Dashboard").performClick()
+        waitFor("Child Issues")
+        compose.onNode(hasContentDescription("Close")).performClick()
+    }
+
+    @Test fun channelSettingsAndMemberManagementWorkflow() {
+        login()
+        compose.onNodeWithText("Messages").performClick()
+        waitFor("Mobile team")
+        compose.onNodeWithText("Mobile team").performClick()
+        waitFor("Alex Chen")
+
+        // Open Channel Settings
+        compose.onNode(hasContentDescription("Settings")).performClick()
+        waitFor("Channel Settings")
+        waitFor("Metadata")
+        screenshot("android_channel_settings_members")
+
+        // 1. Edit Topic and save
+        compose.onNode(hasSetTextAction() and hasText("All mobile topics")).performTextReplacement("Release 2.0 Discussion Hub")
+        compose.onNodeWithText("Save Changes").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/conversations/conversation-a" && it.second.text("topic") == "Release 2.0 Discussion Hub" })
+        }
+
+        // 2. Add Member: scroll to Add Member, choose from dropdown and click Add Selected Member
+        compose.onNodeWithTag("channel_settings_list").performScrollToIndex(2)
+        compose.onNodeWithText("Select Member: Choose").performClick()
+        waitFor("John Wick")
+        compose.onNodeWithText("John Wick").performClick()
+        compose.onNodeWithText("Add Selected Member").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/conversations/conversation-a/members" })
+        }
+
+        // 3. Remove Member: scroll to Members, click Remove on Sarah Connor
+        compose.onNodeWithTag("channel_settings_list").performScrollToIndex(1)
+        waitFor("Remove")
+        compose.onAllNodesWithText("Remove").onFirst().performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.startsWith("/api/conversations/conversation-a/members/") })
+        }
+
+        // 4. Archive Channel: scroll to Lifecycle, click Archive Channel
+        compose.onNodeWithTag("channel_settings_list").performScrollToIndex(3)
+        waitFor("Archive Channel")
+        compose.onNodeWithText("Archive Channel").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/conversations/conversation-a/archive" })
+        }
+    }
 }
+
 

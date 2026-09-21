@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -758,20 +759,18 @@ fun ChatScreen(vm: AppViewModel, api: ApiClient, conversationId: String, lists: 
         )
     }
 
-    // Settings Dialog
+    // Channel Settings & Member Management Modal (matching ChannelSettingsView.swift)
     if (settings) {
-        EditorDialog(
-            "Conversation settings",
-            listOf(
-                FormField("name", "Name", details.data.obj().text("name")),
-                FormField("topic", "Topic", details.data.obj().text("topic")),
-                FormField("description", "Description", details.data.obj().text("description"), multiline = true)
-            ),
-            { settings = false }
-        ) {
-            api.request("/api/conversations/$conversationId", "PUT", it)
-            vm.changed()
-        }
+        ChannelSettingsModal(
+            api = api,
+            conversationId = conversationId,
+            onDismiss = { settings = false },
+            onChanged = { vm.changed() },
+            onChannelClosed = {
+                settings = false
+                onBack()
+            }
+        )
     }
 
     // Templates Picker
@@ -1684,3 +1683,364 @@ fun GlobalSearchDialog(
         }
     }
 }
+
+// MARK: - Channel Settings & Member Management Modal (matching ChannelSettingsView.swift)
+@Composable
+fun ChannelSettingsModal(
+    api: ApiClient,
+    conversationId: String,
+    onDismiss: () -> Unit,
+    onChanged: () -> Unit,
+    onChannelClosed: () -> Unit
+) {
+    val conversationRemote = rememberRemote(api, "/api/conversations/$conversationId")
+    val orgMembersRemote = rememberRemote(api, "/api/organizations/${api.orgId}/members")
+    val conversation = conversationRemote.data.obj()
+
+    var name by remember(conversation.text("name")) { mutableStateOf(conversation.text("name")) }
+    var topic by remember(conversation.text("topic")) { mutableStateOf(conversation.text("topic")) }
+    var description by remember(conversation.text("description")) { mutableStateOf(conversation.text("description")) }
+    var isPrivate by remember(conversation.flag("is_private")) { mutableStateOf(conversation.flag("is_private")) }
+
+    var selectedMemberIdToAdd by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Channel Settings",
+                        style = AppTypography.headline,
+                        color = AppColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle, modifier = Modifier.padding(vertical = 6.dp))
+
+                statusMessage?.let {
+                    Text(
+                        text = it,
+                        style = AppTypography.caption1,
+                        color = AppColors.brandPrimary,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("channel_settings_list"),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // SECTION 1: METADATA
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(AppRadius.medium),
+                            colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("Metadata", style = AppTypography.headline, color = AppColors.textPrimary)
+
+                                IosTextField(
+                                    label = "Name",
+                                    value = name,
+                                    onValueChange = { name = it },
+                                    singleLine = true
+                                )
+
+                                IosTextField(
+                                    label = "Topic",
+                                    value = topic,
+                                    onValueChange = { topic = it },
+                                    singleLine = true
+                                )
+
+                                IosTextField(
+                                    label = "Description",
+                                    value = description,
+                                    onValueChange = { description = it },
+                                    singleLine = false,
+                                    minLines = 2
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Private Channel", style = AppTypography.subheadline, color = AppColors.textPrimary)
+                                    Switch(checked = isPrivate, onCheckedChange = { isPrivate = it })
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isSaving = true
+                                            try {
+                                                api.request(
+                                                    "/api/conversations/$conversationId",
+                                                    "PUT",
+                                                    json(
+                                                        "name" to name.trim(),
+                                                        "topic" to topic.trim(),
+                                                        "description" to description.trim(),
+                                                        "is_private" to isPrivate
+                                                    )
+                                                )
+                                                conversationRemote.refresh()
+                                                onChanged()
+                                                statusMessage = "Channel updated successfully"
+                                            } catch (e: Exception) {
+                                                statusMessage = e.message ?: "Failed to save"
+                                            } finally {
+                                                isSaving = false
+                                            }
+                                        }
+                                    },
+                                    enabled = !isSaving,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                                ) {
+                                    Text(if (isSaving) "Saving..." else "Save Changes", style = AppTypography.headline)
+                                }
+                            }
+                        }
+                    }
+
+                    // SECTION 2: MEMBERS
+                    val rawMembers = conversation.get("members")?.asJsonArray
+                    val members = rawMembers?.mapNotNull { it.asJsonObject } ?: emptyList()
+
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(AppRadius.medium),
+                            colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Members (${members.size})", style = AppTypography.headline, color = AppColors.textPrimary)
+                                }
+
+                                if (members.isEmpty()) {
+                                    Text("No members listed", style = AppTypography.caption1, color = AppColors.textSecondary)
+                                } else {
+                                    members.forEach { m ->
+                                        val displayName = m.text("display_name").ifBlank { m.text("name", "Member") }
+                                        val role = m.text("role").ifBlank { "member" }
+                                        val mUserId = m.text("user_id").ifBlank { m.id }
+                                        val isOwner = role.lowercase() == "owner"
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clip(CircleShape)
+                                                        .background(AppColors.brandPrimary.copy(alpha = 0.15f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = displayName.take(1).uppercase().ifBlank { "U" },
+                                                        style = AppTypography.caption1,
+                                                        color = AppColors.brandPrimary,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                                Column {
+                                                    Text(displayName, style = AppTypography.subheadline, color = AppColors.textPrimary)
+                                                    Text(role.replaceFirstChar { it.uppercase() }, style = AppTypography.caption2, color = AppColors.textTertiary)
+                                                }
+                                            }
+
+                                            if (!isOwner) {
+                                                TextButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            try {
+                                                                api.request("/api/conversations/$conversationId/members/$mUserId", "DELETE")
+                                                                conversationRemote.refresh()
+                                                                onChanged()
+                                                                statusMessage = "Member removed"
+                                                            } catch (e: Exception) {
+                                                                statusMessage = e.message ?: "Failed to remove member"
+                                                            }
+                                                        }
+                                                    }
+                                                ) {
+                                                    Text("Remove", style = AppTypography.caption1, color = AppColors.statusError)
+                                                }
+                                            }
+                                        }
+                                        HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle.copy(alpha = 0.5f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // SECTION 3: ADD MEMBERS
+                    val currentMemberUserIds = members.map { it.text("user_id").ifBlank { it.id } }.toSet()
+                    val availableMembers = orgMembersRemote.data.rows().filter {
+                        val uid = it.text("user_id").ifBlank { it.id }
+                        uid !in currentMemberUserIds
+                    }
+
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(AppRadius.medium),
+                            colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("Add Member", style = AppTypography.headline, color = AppColors.textPrimary)
+
+                                if (availableMembers.isEmpty()) {
+                                    Text("All organization members are already in this channel.", style = AppTypography.caption1, color = AppColors.textSecondary)
+                                } else {
+                                    val memberChoices = availableMembers.map {
+                                        Choice(it.text("user_id").ifBlank { it.id }, it.text("display_name").ifBlank { it.text("email") })
+                                    }
+                                    ChoiceMenu(
+                                        label = "Select Member",
+                                        value = selectedMemberIdToAdd,
+                                        options = memberChoices,
+                                        onChange = { selectedMemberIdToAdd = it }
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            if (selectedMemberIdToAdd.isNotBlank()) {
+                                                scope.launch {
+                                                    try {
+                                                        api.request(
+                                                            "/api/conversations/$conversationId/members",
+                                                            "POST",
+                                                            json(
+                                                                "member_ids" to listOf(selectedMemberIdToAdd),
+                                                                "memberIds" to listOf(selectedMemberIdToAdd)
+                                                            )
+                                                        )
+                                                        selectedMemberIdToAdd = ""
+                                                        conversationRemote.refresh()
+                                                        onChanged()
+                                                        statusMessage = "Member added"
+                                                    } catch (e: Exception) {
+                                                        statusMessage = e.message ?: "Failed to add member"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = selectedMemberIdToAdd.isNotBlank(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                                    ) {
+                                        Text("Add Selected Member", style = AppTypography.subheadline)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // SECTION 4: LIFECYCLE & DANGER ZONE
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(AppRadius.medium),
+                            colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("Lifecycle", style = AppTypography.headline, color = AppColors.textPrimary)
+
+                                val isArchived = conversation.flag("is_archived")
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            try {
+                                                api.request("/api/conversations/$conversationId/archive", "POST")
+                                                conversationRemote.refresh()
+                                                onChanged()
+                                                onChannelClosed()
+                                            } catch (e: Exception) {
+                                                statusMessage = e.message ?: "Failed to archive channel"
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.statusWarning)
+                                ) {
+                                    Text(if (isArchived) "Unarchive Channel" else "Archive Channel", style = AppTypography.subheadline)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            try {
+                                                api.request("/api/conversations/$conversationId", "DELETE")
+                                                onChanged()
+                                                onChannelClosed()
+                                            } catch (e: Exception) {
+                                                statusMessage = e.message ?: "Failed to delete channel"
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.statusError)
+                                ) {
+                                    Text("Delete Channel", style = AppTypography.subheadline, color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
