@@ -42,6 +42,9 @@ class WorkflowTest {
     private val epicChildren = CopyOnWriteArrayList<JsonObject>()
     private val meetings = CopyOnWriteArrayList<JsonObject>()
     private val meetingParticipants = CopyOnWriteArrayList<JsonObject>()
+    private val callParticipants = CopyOnWriteArrayList<JsonObject>()
+    private lateinit var callSessionData: JsonObject
+    private lateinit var callTicketData: JsonObject
     private lateinit var meetingData: JsonObject
     private lateinit var meetingSummary: JsonObject
     private lateinit var conversationData: JsonObject
@@ -122,6 +125,60 @@ class WorkflowTest {
 
         meetings.clear()
         meetings += meetingData
+
+        callParticipants.clear()
+        callParticipants += json(
+            "id" to "cp-1",
+            "call_session_id" to "call-1",
+            "user_id" to "user-a",
+            "display_name" to "Alex Chen",
+            "role" to "host",
+            "status" to "connected",
+            "is_audio_muted" to false,
+            "is_video_muted" to false,
+            "is_screen_sharing" to false
+        )
+        callParticipants += json(
+            "id" to "cp-2",
+            "call_session_id" to "call-1",
+            "user_id" to "user-b",
+            "display_name" to "Sarah Connor",
+            "role" to "participant",
+            "status" to "connected",
+            "is_audio_muted" to true,
+            "is_video_muted" to true,
+            "is_screen_sharing" to false
+        )
+
+        callSessionData = json(
+            "id" to "call-1",
+            "org_id" to "org-a",
+            "conversation_id" to "conversation-a",
+            "host_id" to "user-a",
+            "status" to "active",
+            "room_name" to "room-call-1",
+            "has_video" to true,
+            "is_locked" to false,
+            "provider" to "internal",
+            "active_speaker_user_id" to "cp-1",
+            "my_participant" to json("id" to "cp-1", "role" to "host"),
+            "participants" to callParticipants
+        )
+
+        callTicketData = json(
+            "session" to callSessionData,
+            "token" to json(
+                "call_session_id" to "call-1",
+                "room_name" to "room-call-1",
+                "identity" to "user-a",
+                "token" to "mock-call-token",
+                "provider" to "internal",
+                "url" to "mock://livekit",
+                "can_publish" to true,
+                "can_subscribe" to true,
+                "can_publish_data" to true
+            )
+        )
 
         val storage = SessionStore(app, "workflow-test")
         storage.clear()
@@ -375,6 +432,50 @@ class WorkflowTest {
                         ))
                         meetingSummary.add("action_items", com.google.gson.Gson().toJsonTree(currentItems))
                         json("success" to true)
+                    }
+                    path == "/api/calls/initiate" && request.method == "POST" -> {
+                        callSessionData.add("participants", com.google.gson.Gson().toJsonTree(callParticipants))
+                        callTicketData.add("session", callSessionData)
+                        callTicketData
+                    }
+                    path == "/api/calls/call-1" && request.method == "GET" -> {
+                        callSessionData.add("participants", com.google.gson.Gson().toJsonTree(callParticipants))
+                        callSessionData
+                    }
+                    path == "/api/calls/call-incoming-test/accept" && request.method == "POST" -> {
+                        callSessionData.add("participants", com.google.gson.Gson().toJsonTree(callParticipants))
+                        callTicketData.add("session", callSessionData)
+                        callTicketData
+                    }
+                    path == "/api/calls/call-incoming-test/decline" && request.method == "POST" -> json("success" to true)
+                    path == "/api/calls/call-1/leave" && request.method == "POST" -> json("success" to true)
+                    path == "/api/calls/call-1/end" && request.method == "POST" -> {
+                        callSessionData.addProperty("status", "ended")
+                        json("success" to true)
+                    }
+                    path == "/api/calls/call-1/state" && request.method == "PUT" -> {
+                        if (payload.has("is_audio_muted")) {
+                            callParticipants.firstOrNull { it.id == "cp-1" }?.addProperty("is_audio_muted", payload.flag("is_audio_muted"))
+                        }
+                        if (payload.has("is_video_muted")) {
+                            callParticipants.firstOrNull { it.id == "cp-1" }?.addProperty("is_video_muted", payload.flag("is_video_muted"))
+                        }
+                        json("success" to true)
+                    }
+                    path == "/api/calls/call-1/admin" && request.method == "POST" -> {
+                        val action = payload.text("action")
+                        val targetId = payload.text("target_participant_id")
+                        when (action) {
+                            "lock_room" -> callSessionData.addProperty("is_locked", true)
+                            "unlock_room" -> callSessionData.addProperty("is_locked", false)
+                            "mute_remote_audio" -> callParticipants.firstOrNull { it.id == targetId }?.addProperty("is_audio_muted", true)
+                            "mute_remote_video" -> callParticipants.firstOrNull { it.id == targetId }?.addProperty("is_video_muted", true)
+                            "promote_to_presenter" -> callParticipants.firstOrNull { it.id == targetId }?.addProperty("role", "presenter")
+                            "demote_from_presenter" -> callParticipants.firstOrNull { it.id == targetId }?.addProperty("role", "participant")
+                            "eject" -> callParticipants.removeIf { it.id == targetId }
+                        }
+                        callSessionData.add("participants", com.google.gson.Gson().toJsonTree(callParticipants))
+                        callSessionData
                     }
                     else -> emptyList<JsonObject>()
                 }
@@ -910,6 +1011,121 @@ class WorkflowTest {
 
         // Close modal
         compose.onNodeWithText("Done").performClick()
+        compose.waitForIdle()
+    }
+
+    @Test fun callInitiationAndInCallControlsWorkflow() {
+        login()
+        compose.onNodeWithText("Calls").performClick()
+        waitFor("Calls")
+        waitFor("Mobile team")
+
+        // Start video call on conversation-a
+        compose.onNodeWithTag("btn_start_video_call_conversation-a").performClick()
+        waitFor("2 on the call")
+        waitFor("Connected")
+        waitFor("Speaking")
+        waitFor("Alex Chen")
+        waitFor("Sarah Connor")
+        screenshot("android_call_participant_grid")
+
+        // Toggle Mic
+        compose.onNodeWithTag("btn_call_mic").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-1/state" && it.second.has("is_audio_muted") })
+        }
+
+        // Toggle Camera
+        compose.onNodeWithTag("btn_call_cam").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-1/state" && it.second.has("is_video_muted") })
+        }
+        screenshot("android_call_controls_dock")
+
+        // Hang up call
+        compose.onNodeWithTag("btn_call_hangup").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-1/end" || it.first == "/api/calls/call-1/leave" })
+        }
+    }
+
+    @Test fun callHostControlsAndRoomLockWorkflow() {
+        login()
+        compose.onNodeWithText("Calls").performClick()
+        waitFor("Calls")
+
+        // Start call
+        compose.onNodeWithTag("btn_start_video_call_conversation-a").performClick()
+        waitFor("2 on the call")
+
+        // Open Host Controls
+        compose.onNodeWithTag("btn_call_host").performClick()
+        waitFor("Host controls")
+        waitFor("Lock room (block new joiners)")
+        waitFor("Participants (2)")
+        waitFor("Mute mic")
+        screenshot("android_call_host_controls")
+
+        // Toggle Lock Room switch
+        compose.onNodeWithTag("switch_lock_room").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-1/admin" && it.second.text("action") == "lock_room" })
+        }
+
+        // Mute remote participant mic
+        compose.onNodeWithTag("btn_mute_mic_cp-2").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-1/admin" && it.second.text("action") == "mute_remote_audio" })
+        }
+
+        // Promote participant to presenter
+        compose.onNodeWithTag("btn_promote_cp-2").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-1/admin" && it.second.text("action") == "promote_to_presenter" })
+        }
+
+        // Eject remote participant
+        compose.onNodeWithTag("btn_eject_cp-2").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-1/admin" && it.second.text("action") == "eject" })
+        }
+
+        // Close host controls
+        compose.onNodeWithTag("btn_done_host_controls").performClick()
+        compose.waitForIdle()
+
+        // Hang up
+        compose.onNodeWithTag("btn_call_hangup").performClick()
+    }
+
+    @Test fun incomingCallAcceptWorkflow() {
+        login()
+        compose.onNodeWithText("Calls").performClick()
+        waitFor("Calls")
+
+        // Simulate incoming call
+        compose.onNodeWithTag("btn_trigger_incoming_call").performClick()
+        waitFor("Incoming call…")
+        waitFor("Sarah Connor")
+        screenshot("android_call_incoming_modal")
+
+        // Accept call
+        compose.onNodeWithTag("btn_accept_call").performClick()
+        waitFor("2 on the call")
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/calls/call-incoming-test/accept" })
+        }
+
+        // Hang up
+        compose.onNodeWithTag("btn_call_hangup").performClick()
         compose.waitForIdle()
     }
 }

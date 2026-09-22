@@ -139,7 +139,7 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                     IosInsetGroupedCard {
                         val navItems = listOf(
                             Destination.AllTasks, Destination.MyTasks, Destination.Inbox,
-                            Destination.Messages, Destination.Meetings, Destination.Productivity
+                            Destination.Messages, Destination.Meetings, Destination.Calls, Destination.Productivity
                         )
                         navItems.forEachIndexed { index, item ->
                             val isSelected = destination == item && listId.isBlank() && projectId.isBlank()
@@ -497,6 +497,7 @@ private fun CompactWorkspaceNavigation(
     val secondaryNavItems = listOf(
         Destination.Messages,
         Destination.Meetings,
+        Destination.Calls,
         Destination.Productivity
     )
     val spaces = hierarchy.data.obj().list("spaces")
@@ -588,6 +589,7 @@ private fun CompactWorkspaceNavigation(
                     val iconVector = when (item) {
                         Destination.Messages -> Icons.AutoMirrored.Filled.Chat
                         Destination.Meetings -> Icons.Default.Videocam
+                        Destination.Calls -> Icons.Default.Call
                         Destination.Productivity -> Icons.Default.Bolt
                         else -> item.icon
                     }
