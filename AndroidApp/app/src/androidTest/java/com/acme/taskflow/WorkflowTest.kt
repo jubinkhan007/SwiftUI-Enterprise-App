@@ -40,6 +40,10 @@ class WorkflowTest {
     private val activities = CopyOnWriteArrayList<JsonObject>()
     private val convMembers = CopyOnWriteArrayList<JsonObject>()
     private val epicChildren = CopyOnWriteArrayList<JsonObject>()
+    private val meetings = CopyOnWriteArrayList<JsonObject>()
+    private val meetingParticipants = CopyOnWriteArrayList<JsonObject>()
+    private lateinit var meetingData: JsonObject
+    private lateinit var meetingSummary: JsonObject
     private lateinit var conversationData: JsonObject
     private val workspace = json("id" to "org-a", "name" to "Acme Workspace", "subscription_tier" to "pro")
 
@@ -71,6 +75,53 @@ class WorkflowTest {
         epicChildren.clear()
         epicChildren += json("id" to "child-1", "issue_key" to "PROJ-101", "title" to "Design Specs", "status" to "done", "story_points" to 8, "parent_id" to "epic-1")
         epicChildren += json("id" to "child-2", "issue_key" to "PROJ-102", "title" to "Compose Implementation", "status" to "in_progress", "story_points" to 5, "parent_id" to "epic-1")
+
+        meetingParticipants.clear()
+        meetingParticipants += json(
+            "id" to "part-1",
+            "user_id" to "user-a",
+            "display_name" to "Alex Chen",
+            "email" to "alex@example.com",
+            "role" to "host",
+            "join_state" to "in_meeting"
+        )
+        meetingParticipants += json(
+            "id" to "part-2",
+            "user_id" to "user-b",
+            "display_name" to "Sarah Connor",
+            "email" to "sarah@example.com",
+            "role" to "attendee",
+            "join_state" to "waiting"
+        )
+
+        meetingSummary = json(
+            "meeting_id" to "meeting-a",
+            "source" to "ai",
+            "summary_text" to "The team aligned on the mobile 2.0 release roadmap and agreed to conduct lobby security checks.",
+            "action_items" to listOf(
+                json("id" to "ai-1", "text" to "Deploy lobby service to staging", "due_at" to "2026-09-25T17:00:00Z", "linked_task_id" to "task-a")
+            )
+        )
+
+        meetingData = json(
+            "id" to "meeting-a",
+            "title" to "Sprint Planning & Sync",
+            "agenda" to "Review sprint backlog, epics, and meeting controls.",
+            "description" to "Engineering sprint planning meeting.",
+            "status" to "scheduled",
+            "scheduled_start_at" to "2026-09-22T10:00:00Z",
+            "scheduled_end_at" to "2026-09-22T10:45:00Z",
+            "timezone" to "UTC",
+            "requires_waiting_room" to true,
+            "allow_guests" to false,
+            "host_id" to "user-a",
+            "host_display_name" to "Alex Chen",
+            "my_participant" to json("id" to "part-1", "role" to "host", "join_state" to "in_meeting"),
+            "participants" to meetingParticipants
+        )
+
+        meetings.clear()
+        meetings += meetingData
 
         val storage = SessionStore(app, "workflow-test")
         storage.clear()
@@ -272,6 +323,59 @@ class WorkflowTest {
                     path == "/api/search" || path == "/api/search/files" -> listOf(
                         json("id" to "res-1", "title" to "Mobile team", "subtitle" to "Found message here", "type" to "message")
                     )
+                    path == "/api/meetings" && request.method == "GET" -> meetings.toList()
+                    path == "/api/meetings" && request.method == "POST" -> payload.also {
+                        it.addProperty("id", "meeting-new-${meetings.size + 1}")
+                        it.addProperty("host_id", "user-a")
+                        it.addProperty("host_display_name", "Alex Chen")
+                        it.addProperty("status", "scheduled")
+                        meetings += it
+                    }
+                    path == "/api/meetings/meeting-a" && request.method == "GET" -> {
+                        meetingData.add("participants", com.google.gson.Gson().toJsonTree(meetingParticipants))
+                        meetingData
+                    }
+                    path == "/api/meetings/meeting-a/notes" -> emptyList<JsonObject>()
+                    path == "/api/meetings/meeting-a/join" && request.method == "POST" -> json(
+                        "ticket_id" to "ticket-1",
+                        "join_state" to "waiting",
+                        "token" to "join-token-123"
+                    )
+                    path == "/api/meetings/meeting-a/leave" && request.method == "POST" -> json("success" to true)
+                    path == "/api/meetings/meeting-a/end" && request.method == "POST" -> {
+                        meetingData.addProperty("status", "ended")
+                        json("success" to true)
+                    }
+                    path == "/api/meetings/meeting-a/participants/part-2/admit" && request.method == "POST" -> {
+                        meetingParticipants.firstOrNull { it.id == "part-2" }?.addProperty("join_state", "in_meeting")
+                        json("success" to true)
+                    }
+                    path == "/api/meetings/meeting-a/participants/part-2/deny" && request.method == "POST" -> {
+                        meetingParticipants.firstOrNull { it.id == "part-2" }?.addProperty("join_state", "denied")
+                        json("success" to true)
+                    }
+                    path.startsWith("/api/meetings/meeting-a/participants/") && path.endsWith("/role") && request.method == "PUT" -> {
+                        val pId = path.substringBefore("/role").substringAfterLast("/")
+                        val role = payload.text("role")
+                        meetingParticipants.firstOrNull { it.id == pId }?.addProperty("role", role)
+                        json("success" to true)
+                    }
+                    path == "/api/meetings/meeting-a/summary" && request.method == "GET" -> meetingSummary
+                    path == "/api/meetings/meeting-a/summary" && request.method == "POST" -> {
+                        meetingSummary.addProperty("summary_text", "Regenerated AI Summary: Key architectural decisions ratified.")
+                        meetingSummary.addProperty("source", "ai-regenerated")
+                        meetingSummary
+                    }
+                    path == "/api/meetings/meeting-a/summary/action-items" && request.method == "POST" -> {
+                        val currentItems = meetingSummary.list("action_items").toMutableList()
+                        currentItems.add(json(
+                            "id" to "ai-${currentItems.size + 1}",
+                            "text" to payload.text("text"),
+                            "due_at" to "2026-09-30T18:00:00Z"
+                        ))
+                        meetingSummary.add("action_items", com.google.gson.Gson().toJsonTree(currentItems))
+                        json("success" to true)
+                    }
                     else -> emptyList<JsonObject>()
                 }
                 return MockResponse().setHeader("Content-Type", "application/json").setBody(json("success" to true, "data" to data).toString())
@@ -303,6 +407,8 @@ class WorkflowTest {
 
     private fun screenshot(name: String) {
         runCatching {
+            runCatching { androidx.test.espresso.Espresso.closeSoftKeyboard() }
+            Thread.sleep(350)
             val bitmap = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
             val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
             val dir = context.getExternalFilesDir(null) ?: File("/sdcard/Download")
@@ -666,6 +772,145 @@ class WorkflowTest {
         compose.runOnIdle {
             assertTrue(writes.any { it.first == "/api/conversations/conversation-a/archive" })
         }
+    }
+
+    @Test fun scheduleMeetingWithRecurrenceAndWaitingRoomWorkflow() {
+        login()
+        compose.onNodeWithText("Meetings").performClick()
+        waitFor("Meetings")
+        waitFor("Sprint Planning & Sync")
+        screenshot("android_meetings_list")
+
+        // Open Schedule Meeting Sheet
+        compose.onNodeWithTag("btn_schedule_meeting").performClick()
+        waitFor("New Meeting")
+        waitFor("Details")
+        screenshot("android_schedule_meeting_sheet")
+
+        // Fill Title
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("All-Hands Engineering Review")
+
+        // Scroll to Member Selection and pick Sarah Connor
+        compose.onNodeWithTag("schedule_meeting_list").performScrollToIndex(2)
+        waitFor("Sarah Connor")
+        compose.onNodeWithText("Sarah Connor").performClick()
+
+        // Scroll to Recurrence and Settings, then pick Weekly
+        compose.onNodeWithTag("schedule_meeting_list").performScrollToIndex(4)
+        waitFor("Recurrence")
+        screenshot("android_schedule_meeting_sheet_recurrence")
+        compose.onNodeWithText("Weekly").performClick()
+
+        // Submit Schedule Meeting
+        compose.onNodeWithTag("btn_submit_meeting").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/meetings" && it.second.text("title") == "All-Hands Engineering Review" })
+        }
+    }
+
+    @Test fun meetingLobbyWaitingRoomAndHostControlsWorkflow() {
+        login()
+        compose.onNodeWithText("Meetings").performClick()
+        waitFor("Sprint Planning & Sync")
+
+        // Open Meeting Detail
+        compose.onNodeWithTag("meeting_card_meeting-a").performClick()
+        waitFor("Sprint Planning & Sync")
+        waitFor("Join Meeting")
+        waitFor("Host Panel")
+        screenshot("android_meeting_detail")
+
+        // 1. Pre-Join Lobby
+        compose.onNodeWithTag("btn_join_meeting").performClick()
+        waitFor("Lobby")
+        waitFor("Camera off")
+        screenshot("android_meeting_lobby")
+
+        // Toggle camera & mic
+        compose.onNodeWithTag("btn_lobby_cam").performClick()
+        waitFor("Camera preview active")
+        compose.onNodeWithTag("btn_lobby_mic").performClick()
+
+        // Click Join meeting from lobby -> enters waiting room
+        compose.onNodeWithTag("btn_lobby_join").performClick()
+        waitFor("Waiting for host…")
+        screenshot("android_waiting_room")
+
+        // Leave waiting room
+        compose.onNodeWithTag("btn_leave_waiting_room").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/meetings/meeting-a/leave" })
+        }
+
+        // 2. Open Host Controls Panel
+        compose.onNodeWithTag("btn_host_panel").performClick()
+        waitFor("Host Controls")
+        waitFor("Waiting room (1)")
+        waitFor("Admit")
+        compose.waitForIdle()
+        screenshot("android_host_controls_panel")
+
+        // Admit Sarah Connor
+        compose.onNodeWithTag("btn_admit_part-2").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/meetings/meeting-a/participants/part-2/admit" })
+        }
+
+        // Change Alex Chen role
+        compose.onAllNodesWithText("Alex Chen").onLast().performClick()
+        waitFor("Change Role:")
+        compose.onNodeWithText("Co-host").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.endsWith("/role") && it.second.text("role") == "co_host" })
+        }
+
+        // End meeting for all
+        compose.onNodeWithTag("btn_end_meeting_for_all").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/meetings/meeting-a/end" })
+        }
+    }
+
+    @Test fun meetingSummaryAndActionItemsWorkflow() {
+        login()
+        compose.onNodeWithText("Meetings").performClick()
+        waitFor("Sprint Planning & Sync")
+
+        // Open Meeting Detail
+        compose.onNodeWithTag("meeting_card_meeting-a").performClick()
+        waitFor("Sprint Planning & Sync")
+
+        // Open Summary Modal
+        compose.onNodeWithTag("btn_view_summary").performClick()
+        waitFor("Meeting Summary")
+        waitFor("Summary")
+        waitFor("The team aligned on the mobile 2.0 release roadmap")
+        waitFor("Deploy lobby service to staging")
+        screenshot("android_meeting_summary_ai")
+
+        // Regenerate Summary
+        compose.onNodeWithTag("btn_regenerate_summary").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/meetings/meeting-a/summary" })
+        }
+
+        // Add Action Item
+        compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("Finalize security review for waiting room")
+        compose.onNodeWithTag("btn_add_action_item").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/meetings/meeting-a/summary/action-items" && it.second.text("text") == "Finalize security review for waiting room" })
+        }
+
+        // Close modal
+        compose.onNodeWithText("Done").performClick()
+        compose.waitForIdle()
     }
 }
 
