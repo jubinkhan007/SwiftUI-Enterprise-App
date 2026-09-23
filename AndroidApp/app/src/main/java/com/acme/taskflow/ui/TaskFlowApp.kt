@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,6 +71,7 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
     var showCreateHierarchy by remember { mutableStateOf(false) }
     var showSyncCenter by remember { mutableStateOf(false) }
     var showUserMenu by remember { mutableStateOf(false) }
+    var showWorkspaceSwitcher by remember { mutableStateOf(false) }
 
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -106,8 +108,9 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(AppRadius.medium))
                     .background(AppColors.surfacePrimary)
-                    .clickable { vm.selectWorkspace(null) }
-                    .padding(12.dp),
+                    .clickable { showWorkspaceSwitcher = true }
+                    .padding(12.dp)
+                    .testTag("workspace_header_switcher"),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -139,7 +142,8 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                     IosInsetGroupedCard {
                         val navItems = listOf(
                             Destination.AllTasks, Destination.MyTasks, Destination.Inbox,
-                            Destination.Messages, Destination.Meetings, Destination.Calls, Destination.Productivity
+                            Destination.Messages, Destination.Meetings, Destination.Calls,
+                            Destination.Productivity, Destination.Team
                         )
                         navItems.forEachIndexed { index, item ->
                             val isSelected = destination == item && listId.isBlank() && projectId.isBlank()
@@ -379,7 +383,8 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                 projectId = ""
                 showNavigation = false
             },
-            onCreate = { showCreateHierarchy = true }
+            onCreate = { showCreateHierarchy = true },
+            onOpenWorkspaceSwitcher = { showWorkspaceSwitcher = true }
         )
     } else if (wide) {
         Row(Modifier.fillMaxSize()) {
@@ -424,12 +429,35 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
     }
 
     if (showUserMenu) {
-        ProfileDialog(vm = vm, onDismiss = { showUserMenu = false })
+        ProfileDialog(
+            vm = vm,
+            onDismiss = { showUserMenu = false },
+            onNavigateToTeam = {
+                destination = Destination.Team
+                listId = ""
+                listName = ""
+                projectId = ""
+                showNavigation = false
+                showUserMenu = false
+            }
+        )
+    }
+
+    if (showWorkspaceSwitcher) {
+        WorkspaceSwitcherModal(
+            vm = vm,
+            api = api,
+            onDismiss = { showWorkspaceSwitcher = false }
+        )
     }
 }
 
 @Composable
-private fun ProfileDialog(vm: AppViewModel, onDismiss: () -> Unit) {
+private fun ProfileDialog(
+    vm: AppViewModel,
+    onDismiss: () -> Unit,
+    onNavigateToTeam: (() -> Unit)? = null
+) {
     var name by rememberSaveable { mutableStateOf(vm.user?.text("display_name").orEmpty()) }
     var email by rememberSaveable { mutableStateOf(vm.user?.text("email").orEmpty()) }
 
@@ -461,6 +489,16 @@ private fun ProfileDialog(vm: AppViewModel, onDismiss: () -> Unit) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (onNavigateToTeam != null) {
+                    OutlinedButton(
+                        onClick = onNavigateToTeam,
+                        modifier = Modifier.fillMaxWidth().testTag("btn_profile_team_management")
+                    ) {
+                        Icon(Icons.Default.Groups, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Team Management")
+                    }
+                }
                 vm.error?.let { Text(it, color = AppColors.statusError, style = AppTypography.caption1) }
             }
         },
@@ -487,7 +525,8 @@ private fun CompactWorkspaceNavigation(
     hierarchy: RemoteState,
     onSelect: (Destination) -> Unit,
     onSelectSpace: (String, String) -> Unit,
-    onCreate: () -> Unit
+    onCreate: () -> Unit,
+    onOpenWorkspaceSwitcher: () -> Unit = {}
 ) {
     val navItems = listOf(
         Destination.AllTasks,
@@ -498,7 +537,8 @@ private fun CompactWorkspaceNavigation(
         Destination.Messages,
         Destination.Meetings,
         Destination.Calls,
-        Destination.Productivity
+        Destination.Productivity,
+        Destination.Team
     )
     val spaces = hierarchy.data.obj().list("spaces")
 
@@ -506,7 +546,8 @@ private fun CompactWorkspaceNavigation(
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.backgroundSecondary)
-            .safeDrawingPadding(),
+            .safeDrawingPadding()
+            .testTag("compact_nav_list"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -538,6 +579,40 @@ private fun CompactWorkspaceNavigation(
             )
         }
 
+        // Workspace switcher banner (matching SidebarView.swift)
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(AppRadius.medium))
+                    .background(AppColors.surfacePrimary)
+                    .clickable { onOpenWorkspaceSwitcher() }
+                    .padding(12.dp)
+                    .testTag("workspace_header_switcher"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(AppRadius.small))
+                        .background(AppColors.brandPrimary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Business, null, tint = AppColors.brandPrimary, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = vm.workspace?.text("name").orEmpty().ifBlank { "Select Workspace" },
+                    style = AppTypography.headline,
+                    color = AppColors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.Default.UnfoldMore, "Switch", tint = AppColors.textTertiary, modifier = Modifier.size(18.dp))
+            }
+        }
+
         // Section "NAVIGATION" (exact match to app_running.png)
         item {
             IosSectionHeader("NAVIGATION")
@@ -551,6 +626,7 @@ private fun CompactWorkspaceNavigation(
                     }
                     IosGroupedRow(
                         title = item.title,
+                        modifier = Modifier.testTag("nav_item_${item.name.lowercase()}"),
                         icon = iconVector,
                         iconTint = Color(0xFF007AFF),
                         showChevron = true,
@@ -581,7 +657,7 @@ private fun CompactWorkspaceNavigation(
             }
         }
 
-        // Extra navigation sections (Messages, Meetings, Productivity)
+        // Extra navigation sections (Messages, Meetings, Productivity, Team)
         item {
             IosSectionHeader("COLLABORATION")
             IosInsetGroupedCard {
@@ -591,10 +667,12 @@ private fun CompactWorkspaceNavigation(
                         Destination.Meetings -> Icons.Default.Videocam
                         Destination.Calls -> Icons.Default.Call
                         Destination.Productivity -> Icons.Default.Bolt
+                        Destination.Team -> Icons.Default.Groups
                         else -> item.icon
                     }
                     IosGroupedRow(
                         title = item.title,
+                        modifier = Modifier.testTag("nav_item_${item.name.lowercase()}"),
                         icon = iconVector,
                         iconTint = Color(0xFF007AFF),
                         showChevron = true,
@@ -818,6 +896,335 @@ fun CreateHierarchyItemModal(
                         },
                         modifier = Modifier.weight(1f)
                     )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Workspace Switcher & Discovery Modals (Matching WorkspaceSwitcherView.swift & JoinWorkspaceView.swift)
+
+@Composable
+fun WorkspaceSwitcherModal(
+    vm: AppViewModel,
+    api: ApiClient,
+    onDismiss: () -> Unit
+) {
+    val orgs = rememberRemote(api, "/api/organizations", vm.revision)
+    var showJoinModal by remember { mutableStateOf(false) }
+    var showCreateModal by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .testTag("workspace_switcher_modal"),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Workspaces",
+                        style = AppTypography.title2,
+                        color = AppColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("btn_close_switcher")) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                RemoteStatus(orgs)
+
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 240.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(orgs.data.rows(), key = { it.id }) { org ->
+                        val isSelected = org.id == vm.workspace?.id
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(AppRadius.medium))
+                                .background(if (isSelected) AppColors.brandPrimary.copy(alpha = 0.10f) else AppColors.surfaceElevated)
+                                .clickable {
+                                    vm.selectWorkspace(org)
+                                    onDismiss()
+                                }
+                                .padding(12.dp)
+                                .testTag("org_item_${org.id}"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(AppRadius.small))
+                                    .background(AppColors.brandPrimary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = org.text("name").take(1).uppercase(),
+                                    style = AppTypography.headline,
+                                    color = AppColors.brandPrimary
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = org.text("name"),
+                                    style = AppTypography.headline,
+                                    color = AppColors.textPrimary
+                                )
+                                Text(
+                                    text = org.text("slug"),
+                                    style = AppTypography.caption1,
+                                    color = AppColors.textSecondary
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(Icons.Default.Check, "Selected", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = AppColors.borderSubtle, thickness = 0.5.dp)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { showJoinModal = true },
+                        modifier = Modifier.weight(1f).testTag("btn_join_workspace")
+                    ) {
+                        Icon(Icons.Default.PersonAdd, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Join", maxLines = 1)
+                    }
+
+                    Button(
+                        onClick = { showCreateModal = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary),
+                        modifier = Modifier.weight(1f).testTag("btn_create_workspace")
+                    ) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("New", maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showJoinModal) {
+        JoinWorkspaceModal(
+            api = api,
+            vm = vm,
+            onDismiss = { showJoinModal = false },
+            onJoined = {
+                showJoinModal = false
+                onDismiss()
+            }
+        )
+    }
+
+    if (showCreateModal) {
+        CreateWorkspaceModal(
+            api = api,
+            vm = vm,
+            onDismiss = { showCreateModal = false },
+            onCreated = {
+                showCreateModal = false
+                onDismiss()
+            }
+        )
+    }
+}
+
+@Composable
+fun JoinWorkspaceModal(
+    api: ApiClient,
+    vm: AppViewModel,
+    onDismiss: () -> Unit,
+    onJoined: () -> Unit
+) {
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var inviteCode by rememberSaveable { mutableStateOf("") }
+    var requestStatus by rememberSaveable { mutableStateOf<String?>(null) }
+    val action = rememberAction()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("join_workspace_modal"),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Join Workspace", style = AppTypography.title2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("btn_close_join")) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                ActionStatus(action)
+                requestStatus?.let {
+                    Text(it, color = AppColors.statusSuccess, style = AppTypography.caption1)
+                }
+
+                // Search section
+                Text("Search Workspaces", style = AppTypography.headline)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search by name…") },
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = AppColors.textTertiary) },
+                    modifier = Modifier.fillMaxWidth().testTag("tf_search_workspace"),
+                    singleLine = true
+                )
+
+                if (searchQuery.isNotBlank()) {
+                    val searchResults = rememberRemote(api, "/api/organizations/search", query = mapOf("query" to searchQuery))
+                    RemoteStatus(searchResults)
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 140.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(searchResults.data.rows(), key = { it.id }) { org ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(AppRadius.small))
+                                    .background(AppColors.surfaceElevated)
+                                    .padding(10.dp)
+                                    .testTag("search_org_item_${org.id}"),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(org.text("name"), style = AppTypography.subheadline, modifier = Modifier.weight(1f))
+                                Button(
+                                    onClick = {
+                                        action.run {
+                                            api.request("/api/organizations/${org.id}/join", "POST")
+                                            requestStatus = "Join request sent!"
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("btn_request_join_${org.id}")
+                                ) {
+                                    Text("Request")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = AppColors.borderSubtle, thickness = 0.5.dp)
+
+                // Invite code section
+                Text("Have an Invite Code?", style = AppTypography.headline)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = inviteCode,
+                        onValueChange = { inviteCode = it },
+                        placeholder = { Text("Enter invite ID") },
+                        modifier = Modifier.weight(1f).testTag("tf_invite_code"),
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = {
+                            action.run {
+                                api.request("/api/organizations/invites/${inviteCode.trim()}/accept", "POST")
+                                vm.changed()
+                                onJoined()
+                            }
+                        },
+                        enabled = inviteCode.isNotBlank() && !action.busy,
+                        modifier = Modifier.testTag("btn_accept_invite_code")
+                    ) {
+                        Text("Accept")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CreateWorkspaceModal(
+    api: ApiClient,
+    vm: AppViewModel,
+    onDismiss: () -> Unit,
+    onCreated: () -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    val action = rememberAction()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("create_workspace_modal"),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("New Workspace", style = AppTypography.title2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("btn_close_create_workspace")) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                ActionStatus(action)
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Workspace Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("tf_new_workspace_name")
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth().testTag("tf_new_workspace_desc")
+                )
+
+                Button(
+                    onClick = {
+                        action.run {
+                            val org = api.request("/api/organizations", "POST", json("name" to name.trim(), "description" to description.trim())).data.obj()
+                            vm.changed()
+                            vm.selectWorkspace(org)
+                            onCreated()
+                        }
+                    },
+                    enabled = name.isNotBlank() && !action.busy,
+                    modifier = Modifier.fillMaxWidth().testTag("btn_submit_create_workspace"),
+                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                ) {
+                    Text("Create Workspace")
                 }
             }
         }

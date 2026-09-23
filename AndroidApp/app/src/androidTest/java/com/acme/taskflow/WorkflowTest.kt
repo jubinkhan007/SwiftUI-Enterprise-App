@@ -43,6 +43,9 @@ class WorkflowTest {
     private val meetings = CopyOnWriteArrayList<JsonObject>()
     private val meetingParticipants = CopyOnWriteArrayList<JsonObject>()
     private val callParticipants = CopyOnWriteArrayList<JsonObject>()
+    private val orgMembers = CopyOnWriteArrayList<JsonObject>()
+    private val orgInvites = CopyOnWriteArrayList<JsonObject>()
+    private val orgJoinRequests = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
     private lateinit var callTicketData: JsonObject
     private lateinit var meetingData: JsonObject
@@ -62,6 +65,29 @@ class WorkflowTest {
         convMembers.clear()
         convMembers += json("id" to "cm-1", "user_id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com", "role" to "owner", "status" to "active")
         convMembers += json("id" to "cm-2", "user_id" to "user-b", "display_name" to "Sarah Connor", "email" to "sarah@example.com", "role" to "member", "status" to "active")
+
+        orgMembers.clear()
+        orgMembers += listOf(
+            json("id" to "member-a", "user_id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com", "role" to "owner"),
+            json("id" to "member-b", "user_id" to "user-b", "display_name" to "Sarah Connor", "email" to "sarah@example.com", "role" to "member"),
+            json("id" to "member-c", "user_id" to "user-c", "display_name" to "John Wick", "email" to "john@example.com", "role" to "member")
+        )
+        orgInvites.clear()
+        orgInvites += json(
+            "id" to "inv-1",
+            "email" to "invited@example.com",
+            "role" to "member",
+            "status" to "pending",
+            "expires_at" to "2026-10-01T00:00:00Z"
+        )
+        orgJoinRequests.clear()
+        orgJoinRequests += json(
+            "id" to "req-1",
+            "user_display_name" to "Neo Anderson",
+            "user_email" to "neo@matrix.org",
+            "message" to "Requesting access to mobile project",
+            "status" to "pending"
+        )
 
         conversationData = json(
             "id" to "conversation-a",
@@ -234,11 +260,61 @@ class WorkflowTest {
                     path == "/api/organizations" -> listOf(workspace)
                     path == "/api/me" -> json("user" to json("id" to "user-a"), "role" to "owner", "permissions" to json("permissions" to listOf("members.invite")))
                     path == "/api/hierarchy" -> json("spaces" to listOf(json("space" to json("id" to "space-a", "name" to "Ex1 Space"), "projects" to listOf(json("project" to json("id" to "project-a", "name" to "Mobile"), "lists" to listOf(json("id" to "list-a", "name" to "Release")))))))
-                    path == "/api/organizations/org-a/members" -> listOf(
-                        json("id" to "member-a", "user_id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com", "role" to "owner"),
-                        json("id" to "member-b", "user_id" to "user-b", "display_name" to "Sarah Connor", "email" to "sarah@example.com", "role" to "member"),
-                        json("id" to "member-c", "user_id" to "user-c", "display_name" to "John Wick", "email" to "john@example.com", "role" to "member")
+                    path == "/api/organizations/org-a/members" && request.method == "GET" -> orgMembers.toList()
+                    path.startsWith("/api/organizations/org-a/members/") && request.method == "PATCH" -> {
+                        val mId = path.substringAfterLast("/")
+                        val m = orgMembers.firstOrNull { it.id == mId }
+                        if (m != null && payload.has("role")) {
+                            m.addProperty("role", payload.text("role"))
+                        }
+                        m ?: json("success" to true)
+                    }
+                    path.startsWith("/api/organizations/org-a/members/") && request.method == "DELETE" -> {
+                        val mId = path.substringAfterLast("/")
+                        orgMembers.removeAll { it.id == mId }
+                        json("success" to true)
+                    }
+                    path == "/api/organizations/org-a/invites" && request.method == "GET" -> orgInvites.toList()
+                    path == "/api/organizations/org-a/invites" && request.method == "POST" -> {
+                        val newInv = json(
+                            "id" to "inv-new",
+                            "email" to payload.text("email"),
+                            "role" to payload.text("role", "member"),
+                            "status" to "pending",
+                            "expires_at" to "2026-10-15T00:00:00Z"
+                        )
+                        orgInvites.add(0, newInv)
+                        newInv
+                    }
+                    path.startsWith("/api/organizations/org-a/invites/") && request.method == "DELETE" -> {
+                        val invId = path.substringAfterLast("/")
+                        orgInvites.removeAll { it.id == invId }
+                        json("success" to true)
+                    }
+                    path == "/api/organizations/org-a/join-requests" && request.method == "GET" -> orgJoinRequests.toList()
+                    path.startsWith("/api/organizations/org-a/join-requests/") && request.method == "POST" -> {
+                        val reqId = path.substringAfterLast("/")
+                        val req = orgJoinRequests.firstOrNull { it.id == reqId }
+                        val act = payload.text("action")
+                        if (req != null) {
+                            orgJoinRequests.remove(req)
+                            if (act == "accept") {
+                                orgMembers += json(
+                                    "id" to "member-${req.id}",
+                                    "user_id" to "user-${req.id}",
+                                    "display_name" to req.text("user_display_name"),
+                                    "email" to req.text("user_email"),
+                                    "role" to "member"
+                                )
+                            }
+                        }
+                        json("success" to true, "action" to act)
+                    }
+                    path == "/api/organizations/search" -> listOf(
+                        json("id" to "org-external", "name" to "External Acme Org", "slug" to "external-acme")
                     )
+                    path.startsWith("/api/organizations/") && path.endsWith("/join") && request.method == "POST" -> json("success" to true, "message" to "Join request submitted")
+                    path.startsWith("/api/organizations/invites/") && path.endsWith("/accept") && request.method == "POST" -> json("success" to true, "message" to "Invite accepted")
                     path == "/api/tasks/move-multiple" && request.method == "POST" -> {
                         val target = payload.text("targetStatus")
                         payload.list("moves").forEach { m ->
@@ -1126,6 +1202,95 @@ class WorkflowTest {
 
         // Hang up
         compose.onNodeWithTag("btn_call_hangup").performClick()
+        compose.waitForIdle()
+    }
+
+    @Test fun teamMembersAndInviteWorkflow() {
+        login()
+        // Navigate to Team
+        compose.onNodeWithTag("nav_item_team").performScrollTo().performClick()
+        waitFor("Team")
+        waitFor("Alex Chen")
+        waitFor("Sarah Connor")
+        screenshot("android_team_members")
+
+        // Open Invite Member Modal
+        compose.onNodeWithTag("btn_invite_member").performClick()
+        waitFor("Invite Member")
+        compose.onNodeWithTag("tf_invite_email").performTextInput("newhire@example.com")
+        compose.onNodeWithTag("chip_role_admin").performClick()
+        screenshot("android_team_invite_sheet")
+
+        // Send invite
+        compose.onNodeWithTag("btn_send_invite").performClick()
+        compose.waitForIdle()
+
+        // Switch to Invites tab
+        compose.onNodeWithTag("team_tab_1").performClick()
+        waitFor("newhire@example.com")
+        waitFor("invited@example.com")
+        screenshot("android_team_invites_tab")
+
+        // Copy Invite ID
+        compose.onNodeWithTag("btn_copy_invite_inv-1").performClick()
+        compose.waitForIdle()
+        waitFor("Invite ID copied to clipboard!")
+    }
+
+    @Test fun teamJoinRequestsAndRoleEditWorkflow() {
+        login()
+        compose.onNodeWithTag("nav_item_team").performScrollTo().performClick()
+        waitFor("Team")
+
+        // Switch to Requests tab
+        compose.onNodeWithTag("team_tab_2").performClick()
+        waitFor("Neo Anderson")
+        waitFor("neo@matrix.org")
+        screenshot("android_team_join_requests_tab")
+
+        // Accept request
+        compose.onNodeWithTag("btn_accept_request_req-1").performClick()
+        compose.waitForIdle()
+
+        // Switch back to Members tab and verify Neo is now a member
+        compose.onNodeWithTag("team_tab_0").performClick()
+        waitFor("Neo Anderson")
+
+        // Edit Sarah Connor's role
+        compose.onNodeWithTag("btn_edit_role_member-b").performClick()
+        waitFor("Edit Member Role")
+        compose.onNodeWithTag("edit_chip_role_admin").performClick()
+        compose.onNodeWithTag("btn_update_role").performClick()
+        compose.waitForIdle()
+
+        // Remove John Wick
+        compose.onNodeWithTag("btn_remove_member_member-c").performClick()
+        waitFor("Remove member?")
+        compose.onNodeWithText("Confirm").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/organizations/org-a/members/member-c" })
+        }
+    }
+
+    @Test fun workspaceSwitcherAndJoinWorkflow() {
+        login()
+        // Open Navigation / Drawer and click workspace header
+        compose.onNodeWithTag("workspace_header_switcher").performClick()
+        waitFor("Workspaces")
+        waitFor("Acme Workspace")
+        screenshot("android_workspace_switcher")
+
+        // Click Join Workspace
+        compose.onNodeWithTag("btn_join_workspace").performClick()
+        waitFor("Join Workspace")
+        compose.onNodeWithTag("tf_search_workspace").performTextInput("External")
+        waitFor("External Acme Org")
+        compose.onNodeWithTag("btn_request_join_org-external").performClick()
+        waitFor("Join request sent!")
+
+        // Close Join Modal
+        compose.onNodeWithTag("btn_close_join").performClick()
         compose.waitForIdle()
     }
 }

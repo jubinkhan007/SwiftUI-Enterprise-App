@@ -1,6 +1,7 @@
 package com.acme.taskflow.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,7 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.acme.taskflow.data.*
 import com.acme.taskflow.ui.components.*
 import com.acme.taskflow.ui.theme.*
@@ -207,63 +213,327 @@ fun SessionsScreen(vm: AppViewModel, api: ApiClient) {
 
 @Composable
 fun TeamScreen(vm: AppViewModel, api: ApiClient) {
-    val remote = rememberRemote(api, "/api/organizations/${api.orgId}/members", vm.revision)
+    val members = rememberRemote(api, "/api/organizations/${api.orgId}/members", vm.revision)
+    val invites = rememberRemote(api, "/api/organizations/${api.orgId}/invites", vm.revision)
+    val joinRequests = rememberRemote(api, "/api/organizations/${api.orgId}/join-requests", vm.revision)
     val me = rememberRemote(api, "/api/me", query = mapOf("org_id" to api.orgId))
     val permissions = me.data.obj().child("permissions").getAsJsonArray("permissions")?.map { it.asString }.orEmpty()
-    var editor by remember { mutableStateOf<Pair<String, JsonObject>?>(null) }
+    val canInvite = "members.invite" in permissions || me.data.obj().text("role") in listOf("owner", "admin")
+    val canManageRoles = "members.manage" in permissions || me.data.obj().text("role") in listOf("owner", "admin")
+    val canRemoveMembers = "members.remove" in permissions || me.data.obj().text("role") in listOf("owner", "admin")
+
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Members, 1 = Invites, 2 = Requests
+    var showInviteModal by remember { mutableStateOf(false) }
+    var memberBeingEdited by remember { mutableStateOf<JsonObject?>(null) }
+    var memberToRemove by remember { mutableStateOf<JsonObject?>(null) }
+    var inviteToRevoke by remember { mutableStateOf<JsonObject?>(null) }
     val action = rememberAction()
-    val admin = me.data.obj().text("role") in listOf("owner", "admin")
+    val clipboardManager = LocalClipboardManager.current
+    var copiedToast by remember { mutableStateOf<String?>(null) }
+
+    fun roleBadgeColor(role: String): Color = when (role.lowercase()) {
+        "owner" -> Color(0xFF6E56CF) // Purple
+        "admin" -> Color(0xFF007AFF) // Blue
+        "manager" -> Color(0xFFFF9500) // Amber
+        "member" -> Color(0xFF34C759) // Green
+        "guest" -> Color(0xFF8E8E93) // Gray
+        else -> Color(0xFF8E8E93)
+    }
+
+    fun inviteStatusColor(status: String): Color = when (status.lowercase()) {
+        "pending" -> Color(0xFFFF9500)
+        "accepted" -> Color(0xFF34C759)
+        "revoked" -> Color(0xFFFF3B30)
+        else -> Color(0xFF8E8E93)
+    }
 
     Column(Modifier.fillMaxSize().background(AppColors.backgroundPrimary)) {
+        // Header
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(AppColors.surfacePrimary)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Team Management", style = AppTypography.largeTitle, color = AppColors.textPrimary, modifier = Modifier.weight(1f))
-                if ("members.invite" in permissions) {
+                Text(
+                    text = "Team",
+                    style = AppTypography.largeTitle,
+                    color = AppColors.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                if (canInvite) {
                     IconButton(
-                        onClick = { editor = "Invite member" to JsonObject() },
+                        onClick = { showInviteModal = true },
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                            .testTag("btn_invite_member")
                     ) {
                         Icon(Icons.Default.PersonAdd, "Invite member", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
                     }
                 }
             }
-            Text("${remote.data.rows().size} team members", style = AppTypography.caption1, color = AppColors.textSecondary)
+
+            // Segmented 3-Tab Picker (matching TeamManagementView.swift)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(AppRadius.medium))
+                    .background(AppColors.surfaceElevated)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                val tabTitles = listOf(
+                    "Members (${members.data.rows().size})",
+                    "Invites (${invites.data.rows().size})",
+                    "Requests (${joinRequests.data.rows().size})"
+                )
+                tabTitles.forEachIndexed { index, title ->
+                    val isSelected = selectedTab == index
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(AppRadius.small))
+                            .background(if (isSelected) AppColors.surfacePrimary else Color.Transparent)
+                            .clickable { selectedTab = index }
+                            .padding(vertical = 8.dp)
+                            .testTag("team_tab_$index"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = title,
+                            style = AppTypography.subheadline,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) AppColors.textPrimary else AppColors.textSecondary,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
         }
         HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
 
-        RemoteStatus(remote)
+        RemoteStatus(if (selectedTab == 0) members else if (selectedTab == 1) invites else joinRequests)
         ActionStatus(action)
+        copiedToast?.let {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(AppColors.statusSuccess.copy(alpha = 0.15f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(it, style = AppTypography.caption1, color = AppColors.statusSuccess)
+            }
+        }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(remote.data.rows(), key = { it.id }) { member ->
-                IosCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AppAvatar(member.text("display_name"))
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(member.text("display_name"), style = AppTypography.headline)
-                            Text(member.text("email"), style = AppTypography.caption1, color = AppColors.textSecondary)
-                            IosPill(label(member.text("role")), selected = member.text("role") in listOf("owner", "admin"))
+        when (selectedTab) {
+            0 -> {
+                // MEMBERS TAB
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().testTag("team_members_list"),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (!members.loading && members.error == null && members.data.rows().isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.Group, null, tint = AppColors.textTertiary, modifier = Modifier.size(48.dp))
+                                    Text("No members yet", style = AppTypography.headline, color = AppColors.textSecondary)
+                                }
+                            }
                         }
-                        if (admin && member.text("user_id") != vm.user?.id) {
-                            IconButton(onClick = { editor = "Edit member" to member }) {
-                                Icon(Icons.Default.MoreVert, "Actions", tint = AppColors.textTertiary)
+                    }
+                    items(members.data.rows(), key = { it.id }) { member ->
+                        val role = member.text("role")
+                        val isCurrentUser = member.text("user_id") == vm.user?.id
+                        val isOwner = role.equals("owner", true)
+                        IosCard(modifier = Modifier.fillMaxWidth().testTag("member_row_${member.id}")) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AppAvatar(member.text("display_name"))
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(member.text("display_name"), style = AppTypography.headline)
+                                    Text(member.text("email"), style = AppTypography.caption1, color = AppColors.textSecondary)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(AppRadius.small))
+                                                .background(roleBadgeColor(role).copy(alpha = 0.12f))
+                                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                        ) {
+                                            Text(
+                                                text = label(role).replaceFirstChar { it.uppercase() },
+                                                style = AppTypography.caption2,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = roleBadgeColor(role)
+                                            )
+                                        }
+                                        if (isCurrentUser) {
+                                            Text("(You)", style = AppTypography.caption2, color = AppColors.textTertiary)
+                                        }
+                                    }
+                                }
+                                if (canManageRoles && !isOwner) {
+                                    IconButton(
+                                        onClick = { memberBeingEdited = member },
+                                        modifier = Modifier.testTag("btn_edit_role_${member.id}")
+                                    ) {
+                                        Icon(Icons.Default.Edit, "Edit role", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                                if (canRemoveMembers && !isOwner && !isCurrentUser) {
+                                    IconButton(
+                                        onClick = { memberToRemove = member },
+                                        modifier = Modifier.testTag("btn_remove_member_${member.id}")
+                                    ) {
+                                        Icon(Icons.Default.PersonRemove, "Remove member", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            1 -> {
+                // INVITES TAB
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().testTag("team_invites_list"),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (!invites.loading && invites.error == null && invites.data.rows().isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.MailOutline, null, tint = AppColors.textTertiary, modifier = Modifier.size(48.dp))
+                                    Text("No invitations", style = AppTypography.headline, color = AppColors.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                    items(invites.data.rows(), key = { it.id }) { invite ->
+                        val status = invite.text("status", "pending")
+                        val role = invite.text("role", "member")
+                        IosCard(modifier = Modifier.fillMaxWidth().testTag("invite_row_${invite.id}")) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(inviteStatusColor(status).copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.MailOutline, null, tint = inviteStatusColor(status), modifier = Modifier.size(22.dp))
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(invite.text("email"), style = AppTypography.headline)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(label(role).replaceFirstChar { it.uppercase() }, style = AppTypography.caption1, color = AppColors.textSecondary)
+                                        Text("•", color = AppColors.textTertiary)
+                                        Text(status.replaceFirstChar { it.uppercase() }, style = AppTypography.caption1, color = inviteStatusColor(status))
+                                    }
+                                    if (invite.text("expires_at").isNotBlank()) {
+                                        Text("Expires ${dateLabel(invite.text("expires_at"))}", style = AppTypography.caption2, color = AppColors.textTertiary)
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(invite.id))
+                                        copiedToast = "Invite ID copied to clipboard!"
+                                    },
+                                    modifier = Modifier.testTag("btn_copy_invite_${invite.id}")
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, "Copy ID", tint = AppColors.brandPrimary, modifier = Modifier.size(18.dp))
+                                }
+                                if (canManageRoles && status.equals("pending", true)) {
+                                    IconButton(
+                                        onClick = { inviteToRevoke = invite },
+                                        modifier = Modifier.testTag("btn_revoke_invite_${invite.id}")
+                                    ) {
+                                        Icon(Icons.Default.Cancel, "Revoke", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            2 -> {
+                // JOIN REQUESTS TAB
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().testTag("team_requests_list"),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (!joinRequests.loading && joinRequests.error == null && joinRequests.data.rows().isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.HourglassEmpty, null, tint = AppColors.textTertiary, modifier = Modifier.size(48.dp))
+                                    Text("No pending requests", style = AppTypography.headline, color = AppColors.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                    items(joinRequests.data.rows(), key = { it.id }) { req ->
+                        IosCard(modifier = Modifier.fillMaxWidth().testTag("request_row_${req.id}")) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(AppColors.statusWarning.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = req.text("user_display_name", req.text("name", "U")).take(1).uppercase(),
+                                        style = AppTypography.headline,
+                                        color = AppColors.statusWarning
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(req.text("user_display_name", req.text("name", "User")), style = AppTypography.headline)
+                                    Text(req.text("user_email", req.text("email")), style = AppTypography.caption1, color = AppColors.textSecondary)
+                                    if (req.text("message").isNotBlank()) {
+                                        Text("\"${req.text("message")}\"", style = AppTypography.caption2, color = AppColors.textTertiary)
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            action.run {
+                                                api.request("/api/organizations/${api.orgId}/join-requests/${req.id}", "POST", json("action" to "reject"))
+                                                joinRequests.refresh()
+                                                vm.changed()
+                                            }
+                                        },
+                                        modifier = Modifier.testTag("btn_reject_request_${req.id}")
+                                    ) {
+                                        Icon(Icons.Default.Cancel, "Reject", tint = AppColors.statusError, modifier = Modifier.size(24.dp))
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            action.run {
+                                                api.request("/api/organizations/${api.orgId}/join-requests/${req.id}", "POST", json("action" to "accept"))
+                                                joinRequests.refresh()
+                                                members.refresh()
+                                                vm.changed()
+                                            }
+                                        },
+                                        modifier = Modifier.testTag("btn_accept_request_${req.id}")
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, "Accept", tint = AppColors.statusSuccess, modifier = Modifier.size(24.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -272,20 +542,231 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
         }
     }
 
-    editor?.let { (title, member) ->
-        val fields = if (title == "Invite member") listOf(
-            FormField("email", "Email", required = true),
-            FormField("role", "Role", "member", required = true, options = choices("member", "admin", "viewer"))
-        ) else listOf(
-            FormField("role", "Role", member.text("role"), required = true, options = choices("member", "admin", "viewer"))
-        )
-        EditorDialog(title, fields, { editor = null }) { payload ->
-            if (title == "Invite member") {
-                api.request("/api/organizations/${api.orgId}/invites", "POST", payload)
-            } else {
-                api.request("/api/organizations/${api.orgId}/members/${member.id}", "PATCH", payload)
+    // Invite Member Modal
+    if (showInviteModal) {
+        InviteMemberModal(
+            api = api,
+            onDismiss = { showInviteModal = false },
+            onInvited = {
+                showInviteModal = false
+                invites.refresh()
+                vm.changed()
             }
+        )
+    }
+
+    // Role Edit Modal
+    memberBeingEdited?.let { member ->
+        RoleEditModal(
+            member = member,
+            api = api,
+            onDismiss = { memberBeingEdited = null },
+            onUpdated = {
+                memberBeingEdited = null
+                members.refresh()
+                vm.changed()
+            }
+        )
+    }
+
+    // Remove Member Confirmation
+    memberToRemove?.let { member ->
+        ConfirmDialog(
+            title = "Remove member?",
+            message = "Are you sure you want to remove ${member.text("display_name")} from this organization?",
+            onDismiss = { memberToRemove = null }
+        ) {
+            api.request("/api/organizations/${api.orgId}/members/${member.id}", "DELETE")
+            memberToRemove = null
+            members.refresh()
             vm.changed()
+        }
+    }
+
+    // Revoke Invite Confirmation
+    inviteToRevoke?.let { invite ->
+        ConfirmDialog(
+            title = "Revoke invitation?",
+            message = "This invitation to ${invite.text("email")} will no longer be valid.",
+            onDismiss = { inviteToRevoke = null }
+        ) {
+            api.request("/api/organizations/${api.orgId}/invites/${invite.id}", "DELETE")
+            inviteToRevoke = null
+            invites.refresh()
+            vm.changed()
+        }
+    }
+}
+
+@Composable
+private fun InviteMemberModal(
+    api: ApiClient,
+    onDismiss: () -> Unit,
+    onInvited: () -> Unit
+) {
+    var email by rememberSaveable { mutableStateOf("") }
+    var selectedRole by rememberSaveable { mutableStateOf("member") }
+    val action = rememberAction()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Invite Member", style = AppTypography.title2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                ActionStatus(action)
+
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email Address") },
+                    placeholder = { Text("colleague@example.com") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("tf_invite_email")
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Role", style = AppTypography.subheadline, color = AppColors.textSecondary)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("guest", "member", "manager", "admin").forEach { r ->
+                            val isSel = selectedRole == r
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(AppRadius.small))
+                                    .background(if (isSel) AppColors.brandPrimary else AppColors.surfaceElevated)
+                                    .clickable { selectedRole = r }
+                                    .padding(vertical = 8.dp)
+                                    .testTag("chip_role_$r"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = r.replaceFirstChar { it.uppercase() },
+                                    style = AppTypography.caption1,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSel) Color.White else AppColors.textSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = {
+                        action.run {
+                            api.request("/api/organizations/${api.orgId}/invites", "POST", json("email" to email.trim(), "role" to selectedRole))
+                            onInvited()
+                        }
+                    },
+                    enabled = email.trim().isNotBlank() && !action.busy,
+                    modifier = Modifier.fillMaxWidth().testTag("btn_send_invite"),
+                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                ) {
+                    Text("Send Invite")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoleEditModal(
+    member: JsonObject,
+    api: ApiClient,
+    onDismiss: () -> Unit,
+    onUpdated: () -> Unit
+) {
+    var selectedRole by rememberSaveable { mutableStateOf(member.text("role", "member")) }
+    val action = rememberAction()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Edit Member Role", style = AppTypography.title2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                ActionStatus(action)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(AppRadius.medium)).background(AppColors.surfaceElevated).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppAvatar(member.text("display_name"))
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(member.text("display_name"), style = AppTypography.headline)
+                        Text(member.text("email"), style = AppTypography.caption1, color = AppColors.textSecondary)
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Select Role", style = AppTypography.subheadline, color = AppColors.textSecondary)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("guest", "member", "manager", "admin").forEach { r ->
+                            val isSel = selectedRole == r
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(AppRadius.small))
+                                    .background(if (isSel) AppColors.brandPrimary else AppColors.surfaceElevated)
+                                    .clickable { selectedRole = r }
+                                    .padding(vertical = 8.dp)
+                                    .testTag("edit_chip_role_$r"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = r.replaceFirstChar { it.uppercase() },
+                                    style = AppTypography.caption1,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSel) Color.White else AppColors.textSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = {
+                        action.run {
+                            api.request("/api/organizations/${api.orgId}/members/${member.id}", "PATCH", json("role" to selectedRole))
+                            onUpdated()
+                        }
+                    },
+                    enabled = !action.busy,
+                    modifier = Modifier.fillMaxWidth().testTag("btn_update_role"),
+                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                ) {
+                    Text("Update Role")
+                }
+            }
         }
     }
 }
