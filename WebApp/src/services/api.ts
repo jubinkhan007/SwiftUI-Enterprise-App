@@ -339,6 +339,13 @@ class ApiService {
     }
   }
 
+  async updateConversationPreferences(conversationId: string, preferences: { notificationPreference?: string; isMuted?: boolean }): Promise<void> {
+    await this.request(`/api/conversations/${conversationId}/preferences`, {
+      method: 'PATCH',
+      body: JSON.stringify(preferences),
+    });
+  }
+
   // --- Messaging & Channels ---
   async getOrgMembers(): Promise<OrgMemberDTO[]> {
     if (!this.selectedOrgId) {

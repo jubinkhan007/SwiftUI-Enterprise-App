@@ -139,7 +139,7 @@ export const App: React.FC = () => {
         <main className="flex-1 flex flex-col h-full overflow-hidden">
           {currentNav === 'all_tasks' && <KanbanBoardScreen myTasksOnly={false} />}
           {currentNav === 'my_tasks' && <KanbanBoardScreen myTasksOnly={true} />}
-          {currentNav === 'inbox' && <InboxScreen />}
+          {currentNav === 'inbox' && <InboxScreen onNavigate={setCurrentNav} />}
           {currentNav === 'messages' && (
             <ChatScreen onStartCall={(convId) => setActiveCallConvId(convId)} />
           )}
