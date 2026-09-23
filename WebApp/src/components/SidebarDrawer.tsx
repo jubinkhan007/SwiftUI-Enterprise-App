@@ -15,10 +15,12 @@ import {
   List,
   LogOut,
   Plus,
+  Users,
   X
 } from 'lucide-react';
 import { HierarchyTreeDTO, NavDestination, UserDTO } from '../types';
 import { api } from '../services/api';
+import { WorkspaceSwitcherModal } from './WorkspaceSwitcherModal';
 
 export interface SidebarDrawerProps {
   isOpen?: boolean;
@@ -58,6 +60,8 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
 
   const [showCreateListModal, setShowCreateListModal] = useState<string | null>(null); // projectId
   const [createListName, setCreateListName] = useState('');
+
+  const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
 
   const refreshHierarchy = async () => {
     try {
@@ -134,6 +138,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
     { id: 'inbox', label: 'Inbox', icon: Mail },
     { id: 'messages', label: 'Messages & Channels', icon: MessageSquare },
     { id: 'meetings', label: 'Meetings & Time', icon: Calendar },
+    { id: 'team', label: 'Team & Organization', icon: Users },
     { id: 'productivity', label: 'Productivity Hub', icon: Zap },
     { id: 'sessions', label: 'Security Sessions', icon: ShieldCheck },
   ];
@@ -162,17 +167,24 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
 
         {/* Workspace Banner */}
         <div className="p-4">
-          <div className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-between shadow-lg shadow-black/20">
+          <div 
+            onClick={() => setShowWorkspaceSwitcher(true)}
+            className="p-3.5 rounded-xl bg-slate-800/50 hover:bg-slate-800/80 border border-slate-700/50 flex items-center justify-between shadow-lg shadow-black/20 cursor-pointer transition group"
+            title="Switch Workspace"
+          >
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-teal-500 flex items-center justify-center shadow-md">
                 <Building2 className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-bold text-slate-100">Acme Corp</span>
+                <span className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition">Acme Corp</span>
                 <span className="text-[11px] font-semibold text-teal-400">Pro Tier Workspace</span>
               </div>
             </div>
-            <CheckCircle2 className="w-4 h-4 text-teal-400" />
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-teal-400" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition" />
+            </div>
           </div>
         </div>
 
@@ -453,6 +465,11 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
           </div>
         </div>
       )}
+      {/* Workspace Switcher Modal */}
+      <WorkspaceSwitcherModal
+        isOpen={showWorkspaceSwitcher}
+        onClose={() => setShowWorkspaceSwitcher(false)}
+      />
     </>
   );
 };

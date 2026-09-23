@@ -8,6 +8,7 @@ import { KanbanBoardScreen } from './screens/KanbanBoardScreen';
 import { InboxScreen } from './screens/InboxScreen';
 import { ChatScreen } from './screens/ChatScreen';
 import { MeetingsScreen } from './screens/MeetingsScreen';
+import { TeamScreen } from './screens/TeamScreen';
 import { ProductivityScreen } from './screens/ProductivityScreen';
 import { SessionAuditScreen } from './screens/SessionAuditScreen';
 import { InCallScreen } from './screens/InCallScreen';
@@ -143,6 +144,7 @@ export const App: React.FC = () => {
             <ChatScreen onStartCall={(convId) => setActiveCallConvId(convId)} />
           )}
           {currentNav === 'meetings' && <MeetingsScreen />}
+          {currentNav === 'team' && <TeamScreen />}
           {currentNav === 'productivity' && <ProductivityScreen />}
           {currentNav === 'sessions' && <SessionAuditScreen />}
         </main>

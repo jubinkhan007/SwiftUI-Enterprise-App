@@ -181,6 +181,79 @@ export interface UserSessionDTO {
   createdAt?: string;
 }
 
+export interface OrgInviteDTO {
+  id: string;
+  orgId: string;
+  email: string;
+  role: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  expiresAt?: string;
+  createdAt?: string;
+}
+
+export interface OrgJoinRequestDTO {
+  id: string;
+  orgId: string;
+  userId: string;
+  userDisplayName?: string;
+  userEmail?: string;
+  message?: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt?: string;
+}
+
+export interface WorkspaceDTO {
+  id: string;
+  name: string;
+  subscriptionTier?: string;
+  memberCount?: number;
+  currentUserRole?: string;
+}
+
+export interface MeetingActionItemDTO {
+  id: string;
+  text: string;
+  dueAt?: string;
+  linkedTaskId?: string;
+  isCompleted?: boolean;
+}
+
+export interface MeetingSummaryDTO {
+  meetingId: string;
+  source: string;
+  summaryText: string;
+  recordingUrl?: string;
+  actionItems: MeetingActionItemDTO[];
+}
+
+export interface CallParticipantDTO {
+  id: string;
+  userId: string;
+  displayName: string;
+  role: string;
+  isAudioMuted: boolean;
+  isVideoMuted: boolean;
+  isScreenSharing: boolean;
+  isSpeaking?: boolean;
+}
+
+export interface SubtaskDTO {
+  id: string;
+  taskId: string;
+  title: string;
+  isCompleted: boolean;
+  position?: number;
+}
+
+export interface TaskDependencyDTO {
+  id: string;
+  taskId: string;
+  relatedTaskId: string;
+  relationType: 'blocked_by' | 'blocking';
+  relatedTaskTitle?: string;
+  relatedTaskStatus?: TaskStatus;
+}
+
 export type NavDestination = 
   | 'all_tasks' 
   | 'my_tasks' 
@@ -188,4 +261,5 @@ export type NavDestination =
   | 'messages' 
   | 'meetings' 
   | 'productivity' 
-  | 'sessions';
+  | 'sessions'
+  | 'team';

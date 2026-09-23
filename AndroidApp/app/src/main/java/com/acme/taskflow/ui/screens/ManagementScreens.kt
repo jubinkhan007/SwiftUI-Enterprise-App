@@ -33,17 +33,32 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.time.Instant
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @Composable
 fun InboxScreen(vm: AppViewModel, api: ApiClient) {
-    var unread by rememberSaveable { mutableStateOf(false) }
-    val remote = rememberRemote(api, "/api/notifications", vm.revision, query = mapOf("unread" to unread.toString()), paged = true)
+    var unreadOnly by rememberSaveable { mutableStateOf(false) }
+    var selectedCategory by rememberSaveable { mutableStateOf("All") }
+    val remote = rememberRemote(api, "/api/notifications", vm.revision, query = mapOf("unread" to unreadOnly.toString()), paged = true)
     val action = rememberAction()
+
+    val categories = listOf("All", "Mentions", "Assignments", "Updates")
 
     LaunchedEffect(Unit) {
         while (kotlinx.coroutines.currentCoroutineContext().isActive) {
             kotlinx.coroutines.delay(3000)
             vm.changed()
+        }
+    }
+
+    val allRows = remote.data.rows()
+    val filteredRows = allRows.filter { item ->
+        val itemType = item.text("type").lowercase()
+        when (selectedCategory) {
+            "Mentions" -> itemType.contains("mention")
+            "Assignments" -> itemType.contains("assign")
+            "Updates" -> itemType.contains("update") || itemType.contains("status")
+            else -> true
         }
     }
 
@@ -69,12 +84,62 @@ fun InboxScreen(vm: AppViewModel, api: ApiClient) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Unread only", style = AppTypography.caption1, color = AppColors.textSecondary)
-                    Switch(
-                        checked = unread,
-                        onCheckedChange = { unread = it },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppColors.brandPrimary)
+                    IconButton(
+                        onClick = {
+                            action.run {
+                                api.request("/api/notifications/mark-all-read", "POST")
+                                vm.changed()
+                            }
+                        },
+                        enabled = !action.busy,
+                        modifier = Modifier.testTag("InboxMarkAllReadButton")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Mark All Read",
+                            tint = AppColors.brandPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    FilterChip(
+                        selected = unreadOnly,
+                        onClick = { unreadOnly = !unreadOnly },
+                        label = { Text("Unread", style = AppTypography.caption1) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AppColors.brandPrimary,
+                            selectedLabelColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("InboxUnreadToggle")
                     )
+                }
+            }
+
+            // Horizontal Filter Chips (matching iOS filterChips)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                categories.forEach { category ->
+                    val isSelected = selectedCategory == category
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (isSelected) AppColors.brandPrimary else AppColors.surfaceElevated)
+                            .clickable { selectedCategory = category }
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .testTag("InboxFilterChip_$category"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = category,
+                            style = AppTypography.subheadline,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) Color.White else AppColors.textSecondary
+                        )
+                    }
                 }
             }
         }
@@ -84,30 +149,57 @@ fun InboxScreen(vm: AppViewModel, api: ApiClient) {
         ActionStatus(action)
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().testTag("InboxLazyColumn"),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (!remote.loading && remote.error == null && remote.data.rows().isEmpty()) {
+            if (!remote.loading && remote.error == null && filteredRows.isEmpty()) {
                 item {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.NotificationsNone, null, tint = AppColors.brandPrimary, modifier = Modifier.size(44.dp))
-                            Text("All caught up!", style = AppTypography.headline)
-                            Text("You have no notifications.", style = AppTypography.caption1, color = AppColors.textSecondary)
+                    Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .background(AppColors.surfaceElevated),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.NotificationsNone,
+                                    null,
+                                    tint = AppColors.brandPrimary,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                            Text("All caught up!", style = AppTypography.title3, color = AppColors.textPrimary)
+                            Text(
+                                if (unreadOnly) "No unread notifications right now." else "You have no notifications yet.",
+                                style = AppTypography.subheadline,
+                                color = AppColors.textSecondary
+                            )
                         }
                     }
                 }
             }
-            items(remote.data.rows(), key = { it.id }) { item ->
+            items(filteredRows, key = { it.id }) { item ->
                 val payload = runCatching { JsonParser.parseString(item.text("payload_json")).obj() }.getOrDefault(JsonObject())
                 val isUnread = item.text("read_at").isBlank()
                 val callerName = payload.text("actorName", "Team Member")
                 val itemType = item.text("type")
-                val titleText = if (itemType == "call.incoming") "Incoming Video Call" else item.text("title").ifBlank { payload.text("title", label(itemType)) }
+                val titleText = when {
+                    itemType.contains("assign", ignoreCase = true) -> "New Assignment"
+                    itemType.contains("update", ignoreCase = true) || itemType.contains("status", ignoreCase = true) -> "Task Updated"
+                    itemType.contains("mention", ignoreCase = true) -> "You were mentioned"
+                    itemType == "call.incoming" -> "Incoming Video Call"
+                    else -> item.text("title").ifBlank { payload.text("title", label(itemType)) }
+                }
                 val bodyText = if (itemType == "call.incoming") "$callerName is calling you..." else item.text("body").ifBlank { payload.text("body", payload.text("message")) }
 
-                IosCard(modifier = Modifier.fillMaxWidth()) {
+                IosCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("InboxItemCard_${item.id}")
+                ) {
                     Row(verticalAlignment = Alignment.Top) {
                         if (isUnread) {
                             Box(
@@ -141,11 +233,159 @@ fun InboxScreen(vm: AppViewModel, api: ApiClient) {
                                         vm.changed()
                                     }
                                 },
-                                enabled = !action.busy
+                                enabled = !action.busy,
+                                modifier = Modifier.testTag("InboxItemReadButton_${item.id}")
                             ) {
                                 Icon(Icons.Default.Done, "Mark read", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationPreferencesModal(
+    conversationId: String,
+    conversationTitle: String = "Conversation",
+    onDismiss: () -> Unit,
+    api: ApiClient,
+    onSaved: () -> Unit = {}
+) {
+    var isMuted by rememberSaveable { mutableStateOf(false) }
+    var selectedPreference by rememberSaveable { mutableStateOf("all") }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary),
+            modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("NotificationPreferencesModal")
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Notifications",
+                        style = AppTypography.headline,
+                        color = AppColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                // Section 1: Mute Conversation
+                Text("Conversation", style = AppTypography.caption1, color = AppColors.textSecondary)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(AppRadius.medium))
+                        .background(AppColors.surfaceElevated)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Mute this conversation",
+                        style = AppTypography.subheadline,
+                        color = AppColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = isMuted,
+                        onCheckedChange = { isMuted = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppColors.brandPrimary),
+                        modifier = Modifier.testTag("MuteSwitch")
+                    )
+                }
+
+                // Section 2: Alert Frequency
+                Text("Notify me", style = AppTypography.caption1, color = AppColors.textSecondary)
+                val options = listOf(
+                    "all" to "All messages",
+                    "mentions" to "Mentions only",
+                    "none" to "Nothing"
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(AppRadius.medium))
+                        .background(AppColors.surfaceElevated)
+                ) {
+                    options.forEachIndexed { index, (value, title) ->
+                        val isSelected = selectedPreference == value
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedPreference = value }
+                                .padding(horizontal = 14.dp, vertical = 12.dp)
+                                .testTag("PrefOption_$value"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = title,
+                                style = AppTypography.subheadline,
+                                color = if (isSelected) AppColors.brandPrimary else AppColors.textPrimary,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Icon(Icons.Default.Check, null, tint = AppColors.brandPrimary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        if (index < options.lastIndex) {
+                            HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+                        }
+                    }
+                }
+
+                errorMessage?.let {
+                    Text(it, style = AppTypography.caption1, color = AppColors.statusError)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = AppColors.textSecondary)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            isSaving = true
+                            errorMessage = null
+                            scope.launch {
+                                try {
+                                    val body = JsonObject().apply {
+                                        addProperty("notification_preference", selectedPreference)
+                                        addProperty("is_muted", isMuted)
+                                    }
+                                    api.request("/api/conversations/$conversationId/preferences", "PATCH", body)
+                                    onSaved()
+                                    onDismiss()
+                                } catch (e: Exception) {
+                                    errorMessage = e.message ?: "Failed to save preferences"
+                                } finally {
+                                    isSaving = false
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary),
+                        enabled = !isSaving,
+                        modifier = Modifier.testTag("SavePreferencesButton")
+                    ) {
+                        Text(if (isSaving) "Saving..." else "Save")
                     }
                 }
             }

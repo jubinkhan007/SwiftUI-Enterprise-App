@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TaskItemDTO, TaskPriority, TaskStatus, TaskType } from '../types';
+import { TaskItemDTO, TaskPriority, TaskStatus, TaskType, SubtaskDTO, TaskDependencyDTO } from '../types';
 import { api } from '../services/api';
 import { 
   Plus, 
@@ -25,7 +25,14 @@ import {
   X,
   Tag,
   Hash,
-  Sparkles
+  Sparkles,
+  CheckSquare,
+  Square,
+  Link2,
+  Calendar,
+  Target,
+  BarChart3,
+  ShieldAlert
 } from 'lucide-react';
 
 interface KanbanBoardScreenProps {
@@ -212,6 +219,9 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
   const [movingTask, setMovingTask] = useState<TaskItemDTO | null>(null);
   const [targetStatus, setTargetStatus] = useState<TaskStatus>('todo');
 
+  // View Mode: Kanban, Epics, Timeline
+  const [viewMode, setViewMode] = useState<'board' | 'epics' | 'timeline'>('board');
+
   // Full Task Edit Modal State
   const [editingTask, setEditingTask] = useState<TaskItemDTO | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -223,6 +233,15 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
   const [editAssigneeId, setEditAssigneeId] = useState('');
   const [editLabels, setEditLabels] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Subtasks & Dependencies State
+  const [subtasks, setSubtasks] = useState<SubtaskDTO[]>([]);
+  const [loadingSubtasks, setLoadingSubtasks] = useState(false);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [dependencies, setDependencies] = useState<TaskDependencyDTO[]>([]);
+  const [loadingDeps, setLoadingDeps] = useState(false);
+  const [selectedDepTaskId, setSelectedDepTaskId] = useState('');
+  const [depRelationType, setDepRelationType] = useState<'blocked_by' | 'blocking'>('blocked_by');
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -304,7 +323,7 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
     }
   };
 
-  const openEditModal = (task: TaskItemDTO) => {
+  const openEditModal = async (task: TaskItemDTO) => {
     setEditingTask(task);
     setEditTitle(task.title);
     setEditDesc(task.description || '');
@@ -314,6 +333,58 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
     setEditStoryPoints(task.storyPoints ?? 1);
     setEditAssigneeId(task.assigneeId || '');
     setEditLabels(task.labels ? task.labels.join(', ') : '');
+    setNewSubtaskTitle('');
+    setSelectedDepTaskId('');
+
+    setLoadingSubtasks(true);
+    setLoadingDeps(true);
+    try {
+      const [st, dep] = await Promise.all([
+        api.getSubtasks(task.id).catch(() => []),
+        api.getTaskDependencies(task.id).catch(() => []),
+      ]);
+      setSubtasks(st);
+      setDependencies(dep);
+    } finally {
+      setLoadingSubtasks(false);
+      setLoadingDeps(false);
+    }
+  };
+
+  const handleAddSubtask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask || !newSubtaskTitle.trim()) return;
+    try {
+      const created = await api.addSubtask(editingTask.id, newSubtaskTitle.trim());
+      setSubtasks(prev => [...prev, created]);
+      setNewSubtaskTitle('');
+    } catch (err: any) {
+      alert(`Failed to add subtask: ${err.message}`);
+    }
+  };
+
+  const handleToggleSubtask = async (subtask: SubtaskDTO) => {
+    if (!editingTask) return;
+    const nextState = !subtask.isCompleted;
+    setSubtasks(prev => prev.map(s => s.id === subtask.id ? { ...s, isCompleted: nextState } : s));
+    try {
+      await api.toggleSubtask(editingTask.id, subtask.id, nextState);
+    } catch (err: any) {
+      console.error('Failed to toggle subtask:', err);
+      setSubtasks(prev => prev.map(s => s.id === subtask.id ? { ...s, isCompleted: !nextState } : s));
+    }
+  };
+
+  const handleAddDependency = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask || !selectedDepTaskId) return;
+    try {
+      const created = await api.addTaskDependency(editingTask.id, selectedDepTaskId, depRelationType);
+      setDependencies(prev => [...prev, created]);
+      setSelectedDepTaskId('');
+    } catch (err: any) {
+      alert(`Failed to link dependency: ${err.message}`);
+    }
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -382,6 +453,46 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
         </div>
 
         <div className="flex items-center gap-3">
+          {/* View Mode Switcher */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 gap-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('board')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                viewMode === 'board'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Board
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('epics')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                viewMode === 'epics'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Target className="w-3.5 h-3.5" />
+              Epics
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('timeline')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                viewMode === 'timeline'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              Timeline
+            </button>
+          </div>
+
           <button
             onClick={handleResetColumns}
             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition border border-slate-700 flex items-center gap-2 text-xs font-medium cursor-pointer"
@@ -470,6 +581,201 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
           <div className="p-4 rounded-xl bg-red-950/40 border border-red-800 text-red-300 max-w-md mx-auto my-8">
             <p className="font-semibold">Error</p>
             <p className="text-sm">{error}</p>
+          </div>
+        ) : viewMode === 'epics' ? (
+          <div className="max-w-6xl mx-auto space-y-6 w-full">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-indigo-400" />
+                  Epic Roadmap & Deliverables
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Track major feature initiatives, milestone completion, and associated work items
+                </p>
+              </div>
+              <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl font-medium">
+                {tasks.filter(t => t.taskType === 'epic').length} Active Epics
+              </span>
+            </div>
+
+            {tasks.filter(t => t.taskType === 'epic').length === 0 ? (
+              <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-3">
+                  <Target className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-semibold text-slate-200">No Epics Created Yet</h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  Epics group related tasks into large feature initiatives. Create a task with type "Epic" or edit an existing task to turn it into an Epic.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {tasks.filter(t => t.taskType === 'epic').map(epic => {
+                  const childTasks = tasks.filter(t => t.id !== epic.id && (
+                    (t.labels && epic.labels && t.labels.some(l => epic.labels?.includes(l))) ||
+                    (epic.issueKey && t.title.toLowerCase().includes(epic.issueKey.toLowerCase()))
+                  ));
+                  const completedChild = childTasks.filter(t => t.status === 'done').length;
+                  const totalChild = childTasks.length;
+                  const percent = totalChild > 0 ? Math.round((completedChild / totalChild) * 100) : (epic.status === 'done' ? 100 : 0);
+
+                  return (
+                    <div 
+                      key={epic.id}
+                      className="bg-slate-900/60 border border-slate-800 hover:border-indigo-500/40 rounded-2xl p-5 space-y-4 transition shadow-lg"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-[10px] font-mono font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2 py-0.5 rounded">
+                              {epic.issueKey || `EPIC-${epic.id.slice(0, 4)}`}
+                            </span>
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border uppercase ${getPriorityBadgeClass(epic.priority)}`}>
+                              {epic.priority}
+                            </span>
+                          </div>
+                          <h3 
+                            onClick={() => openEditModal(epic)}
+                            className="text-base font-bold text-slate-100 hover:text-indigo-400 cursor-pointer transition"
+                          >
+                            {epic.title}
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(epic)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {epic.description && (
+                        <p className="text-xs text-slate-400 line-clamp-2">
+                          {epic.description}
+                        </p>
+                      )}
+
+                      {/* Progress Bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs text-slate-400 font-medium">
+                          <span>Progress</span>
+                          <span className="text-slate-200 font-semibold">{percent}%</span>
+                        </div>
+                        <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full transition-all duration-300"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Child tasks breakdown */}
+                      <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                          Associated Work Items ({childTasks.length})
+                        </div>
+                        {childTasks.length === 0 ? (
+                          <p className="text-xs text-slate-500 italic">No tasks tagged with matching labels.</p>
+                        ) : (
+                          <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                            {childTasks.slice(0, 5).map(ct => (
+                              <div 
+                                key={ct.id}
+                                onClick={() => openEditModal(ct)}
+                                className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800/60 hover:border-slate-700 cursor-pointer text-xs"
+                              >
+                                <span className={`truncate max-w-[220px] ${ct.status === 'done' ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                                  {ct.title}
+                                </span>
+                                <span className="text-[10px] font-semibold text-slate-400 uppercase">
+                                  {ct.status}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : viewMode === 'timeline' ? (
+          <div className="max-w-6xl mx-auto space-y-6 w-full">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-indigo-400" />
+                  Timeline & Sprint Roadmap
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Visual milestone schedule showing task progression across delivery phases
+                </p>
+              </div>
+              <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl font-medium">
+                {filteredTasks.length} Scheduled Tasks
+              </span>
+            </div>
+
+            {/* Timeline Phases Grid */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-6 shadow-xl">
+              <div className="grid grid-cols-4 gap-4 pb-3 border-b border-slate-800 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">
+                <div className="text-slate-400">Backlog / To Do</div>
+                <div className="text-blue-400">Sprint Execution</div>
+                <div className="text-amber-400">Review & QA</div>
+                <div className="text-emerald-400">Completed & Released</div>
+              </div>
+
+              <div className="space-y-3">
+                {filteredTasks.map(task => {
+                  const phaseCol = task.status === 'done' ? 4 : task.status === 'in_review' || (task.status as string) === 'review' ? 3 : task.status === 'in_progress' ? 2 : 1;
+                  
+                  return (
+                    <div 
+                      key={task.id}
+                      onClick={() => openEditModal(task)}
+                      className="group p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 transition cursor-pointer flex items-center justify-between gap-4"
+                    >
+                      <div className="w-1/4 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-indigo-400">
+                            {task.issueKey || `TASK-${task.id.slice(0, 4)}`}
+                          </span>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border uppercase ${getPriorityBadgeClass(task.priority)}`}>
+                            {task.priority}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-semibold text-slate-200 mt-1 truncate group-hover:text-indigo-300">
+                          {task.title}
+                        </h4>
+                      </div>
+
+                      {/* Visual Gantt Bar Span */}
+                      <div className="flex-1 grid grid-cols-4 gap-4 items-center">
+                        <div className={`col-span-4 flex items-center h-8 rounded-lg px-3 text-xs font-semibold transition shadow-sm ${
+                          phaseCol === 1 ? 'bg-slate-800/80 text-slate-300 border border-slate-700 w-1/4' :
+                          phaseCol === 2 ? 'bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-white w-2/4 ml-[25%]' :
+                          phaseCol === 3 ? 'bg-gradient-to-r from-amber-600/80 to-orange-600/80 text-white w-3/4 ml-[50%]' :
+                          'bg-emerald-600/80 text-white w-full'
+                        }`}>
+                          <span className="truncate">
+                            {phaseCol === 1 ? 'Scheduled' : phaseCol === 2 ? 'In Development' : phaseCol === 3 ? 'In Review' : 'Shipped'}
+                          </span>
+                          {task.storyPoints !== undefined && (
+                            <span className="ml-auto text-[10px] bg-black/30 px-1.5 py-0.5 rounded font-mono">
+                              {task.storyPoints} pts
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="flex gap-6 h-full min-w-full pb-4 items-start">
@@ -794,6 +1100,187 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
                   onChange={(e) => setEditLabels(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 mt-1"
                 />
+              </div>
+
+              {/* Subtasks Section */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-indigo-400" />
+                    <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                      Subtasks Checklist
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {subtasks.filter(s => s.isCompleted).length} of {subtasks.length} completed
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                {subtasks.length > 0 && (
+                  <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                    <div 
+                      className="bg-indigo-500 h-full transition-all duration-300"
+                      style={{ 
+                        width: `${Math.round((subtasks.filter(s => s.isCompleted).length / subtasks.length) * 100)}%` 
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Subtask items */}
+                {loadingSubtasks ? (
+                  <div className="flex items-center gap-2 py-2 text-xs text-slate-400">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                    Loading subtasks...
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {subtasks.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic py-1">No subtasks added yet.</p>
+                    ) : (
+                      subtasks.map(s => (
+                        <div 
+                          key={s.id} 
+                          onClick={() => handleToggleSubtask(s)}
+                          className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition cursor-pointer group"
+                        >
+                          <button 
+                            type="button"
+                            className="text-slate-400 group-hover:text-indigo-400 transition"
+                          >
+                            {s.isCompleted ? (
+                              <CheckSquare className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-500" />
+                            )}
+                          </button>
+                          <span className={`text-xs flex-1 transition ${
+                            s.isCompleted ? 'text-slate-500 line-through' : 'text-slate-200'
+                          }`}>
+                            {s.title}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* Add Subtask Input */}
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    placeholder="Add a new subtask..."
+                    value={newSubtaskTitle}
+                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddSubtask(e);
+                      }
+                    }}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddSubtask}
+                    disabled={!newSubtaskTitle.trim()}
+                    className="px-3 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Task Dependencies Section */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="w-4 h-4 text-indigo-400" />
+                    <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                      Task Dependencies
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {dependencies.length} link{dependencies.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {loadingDeps ? (
+                  <div className="flex items-center gap-2 py-2 text-xs text-slate-400">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                    Loading dependencies...
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {dependencies.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic py-1">No dependencies linked.</p>
+                    ) : (
+                      dependencies.map(d => (
+                        <div 
+                          key={d.id}
+                          className="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            {d.relationType === 'blocked_by' ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                                <ShieldAlert className="w-3 h-3" />
+                                Blocked By
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />
+                                Blocks
+                              </span>
+                            )}
+                            <span className="text-slate-200 font-medium truncate max-w-[200px]">
+                              {d.relatedTaskTitle || `Task #${d.relatedTaskId.slice(0, 6)}`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase bg-slate-800 px-2 py-0.5 rounded">
+                            {d.relatedTaskStatus || 'todo'}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* Add Dependency Controls */}
+                <div className="flex items-center gap-2 pt-1 flex-wrap sm:flex-nowrap">
+                  <select
+                    value={depRelationType}
+                    onChange={(e) => setDepRelationType(e.target.value as 'blocked_by' | 'blocking')}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="blocked_by">Blocked by</option>
+                    <option value="blocking">Blocks</option>
+                  </select>
+
+                  <select
+                    value={selectedDepTaskId}
+                    onChange={(e) => setSelectedDepTaskId(e.target.value)}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer truncate"
+                  >
+                    <option value="">Select related task...</option>
+                    {tasks.filter(t => t.id !== editingTask.id).map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.issueKey ? `[${t.issueKey}] ` : ''}{t.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={handleAddDependency}
+                    disabled={!selectedDepTaskId}
+                    className="px-3 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition shrink-0 cursor-pointer"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    Link
+                  </button>
+                </div>
               </div>
             </div>
 

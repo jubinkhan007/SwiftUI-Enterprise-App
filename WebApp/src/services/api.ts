@@ -15,7 +15,13 @@ import {
   TimeLogDTO,
   UserDTO,
   UserSessionDTO,
-  CallTicketDTO
+  CallTicketDTO,
+  OrgInviteDTO,
+  OrgJoinRequestDTO,
+  WorkspaceDTO,
+  MeetingSummaryDTO,
+  SubtaskDTO,
+  TaskDependencyDTO
 } from '../types';
 
 class ApiService {
@@ -680,6 +686,194 @@ class ApiService {
   async revokeSession(sessionId: string): Promise<void> {
     await this.request(`/api/me/sessions/${sessionId}`, {
       method: 'DELETE',
+    });
+  }
+
+  // --- Team & Organization ---
+  async getInvites(): Promise<OrgInviteDTO[]> {
+    const orgId = this.selectedOrgId || 'org-a';
+    const raw = await this.request<any>(`/api/organizations/${orgId}/invites`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((i: any) => ({
+      id: i.id,
+      orgId: i.org_id || i.orgId || orgId,
+      email: i.email,
+      role: i.role || 'member',
+      status: i.status || 'pending',
+      expiresAt: i.expires_at || i.expiresAt,
+      createdAt: i.created_at || i.createdAt,
+    }));
+  }
+
+  async createInvite(email: string, role: string): Promise<OrgInviteDTO> {
+    const orgId = this.selectedOrgId || 'org-a';
+    return await this.request<OrgInviteDTO>(`/api/organizations/${orgId}/invites`, {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    });
+  }
+
+  async revokeInvite(inviteId: string): Promise<void> {
+    const orgId = this.selectedOrgId || 'org-a';
+    await this.request(`/api/organizations/${orgId}/invites/${inviteId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getJoinRequests(): Promise<OrgJoinRequestDTO[]> {
+    const orgId = this.selectedOrgId || 'org-a';
+    const raw = await this.request<any>(`/api/organizations/${orgId}/join-requests`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((r: any) => ({
+      id: r.id,
+      orgId: r.org_id || r.orgId || orgId,
+      userId: r.user_id || r.userId,
+      userDisplayName: r.user_display_name || r.userDisplayName,
+      userEmail: r.user_email || r.userEmail,
+      message: r.message,
+      status: r.status || 'pending',
+      createdAt: r.created_at || r.createdAt,
+    }));
+  }
+
+  async acceptJoinRequest(requestId: string): Promise<void> {
+    const orgId = this.selectedOrgId || 'org-a';
+    await this.request(`/api/organizations/${orgId}/join-requests/${requestId}/accept`, {
+      method: 'POST',
+    });
+  }
+
+  async rejectJoinRequest(requestId: string): Promise<void> {
+    const orgId = this.selectedOrgId || 'org-a';
+    await this.request(`/api/organizations/${orgId}/join-requests/${requestId}/reject`, {
+      method: 'POST',
+    });
+  }
+
+  async updateMemberRole(memberId: string, role: string): Promise<void> {
+    const orgId = this.selectedOrgId || 'org-a';
+    await this.request(`/api/organizations/${orgId}/members/${memberId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  async removeMember(memberId: string): Promise<void> {
+    const orgId = this.selectedOrgId || 'org-a';
+    await this.request(`/api/organizations/${orgId}/members/${memberId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // --- Workspaces ---
+  async getWorkspaces(): Promise<WorkspaceDTO[]> {
+    const raw = await this.request<any>('/api/organizations');
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((w: any) => ({
+      id: w.id,
+      name: w.name,
+      subscriptionTier: w.subscription_tier || w.subscriptionTier || 'pro',
+      memberCount: w.member_count || w.memberCount || 1,
+      currentUserRole: w.current_user_role || w.currentUserRole || 'owner',
+    }));
+  }
+
+  async searchWorkspaces(query: string): Promise<WorkspaceDTO[]> {
+    const raw = await this.request<any>(`/api/organizations/search?q=${encodeURIComponent(query)}`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((w: any) => ({
+      id: w.id,
+      name: w.name,
+      subscriptionTier: w.subscription_tier || w.subscriptionTier || 'pro',
+      memberCount: w.member_count || w.memberCount || 1,
+      currentUserRole: w.current_user_role || w.currentUserRole,
+    }));
+  }
+
+  async joinWorkspace(orgId: string, inviteCode?: string): Promise<void> {
+    await this.request(`/api/organizations/${orgId}/join`, {
+      method: 'POST',
+      body: JSON.stringify({ inviteCode }),
+    });
+  }
+
+  async createWorkspace(name: string): Promise<WorkspaceDTO> {
+    return await this.request<WorkspaceDTO>('/api/organizations', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  // --- Meetings & AI Summary ---
+  async getMeetingSummary(meetingId: string): Promise<MeetingSummaryDTO> {
+    const raw = await this.request<any>(`/api/meetings/${meetingId}/summary`);
+    const s = raw?.data || raw || {};
+    return {
+      meetingId: s.meeting_id || s.meetingId || meetingId,
+      source: s.source || 'ai',
+      summaryText: s.summary_text || s.summaryText || 'The team aligned on sprint priorities and key architecture changes.',
+      recordingUrl: s.recording_url || s.recordingUrl,
+      actionItems: (s.action_items || s.actionItems || []).map((a: any) => ({
+        id: a.id,
+        text: a.text,
+        dueAt: a.due_at || a.dueAt,
+        linkedTaskId: a.linked_task_id || a.linkedTaskId,
+        isCompleted: a.is_completed ?? a.isCompleted ?? false,
+      })),
+    };
+  }
+
+  async updateMeetingHostControls(meetingId: string, action: string, targetParticipantId?: string): Promise<void> {
+    await this.request(`/api/meetings/${meetingId}/controls`, {
+      method: 'POST',
+      body: JSON.stringify({ action, targetParticipantId }),
+    });
+  }
+
+  // --- Subtasks & Dependencies ---
+  async getSubtasks(taskId: string): Promise<SubtaskDTO[]> {
+    const raw = await this.request<any>(`/api/tasks/${taskId}/subtasks`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((sub: any) => ({
+      id: sub.id,
+      taskId: sub.task_id || sub.taskId || taskId,
+      title: sub.title,
+      isCompleted: sub.is_completed ?? sub.isCompleted ?? false,
+      position: sub.position,
+    }));
+  }
+
+  async addSubtask(taskId: string, title: string): Promise<SubtaskDTO> {
+    return await this.request<SubtaskDTO>(`/api/tasks/${taskId}/subtasks`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  async toggleSubtask(taskId: string, subtaskId: string, isCompleted: boolean): Promise<void> {
+    await this.request(`/api/tasks/${taskId}/subtasks/${subtaskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isCompleted }),
+    });
+  }
+
+  async getTaskDependencies(taskId: string): Promise<TaskDependencyDTO[]> {
+    const raw = await this.request<any>(`/api/tasks/${taskId}/dependencies`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((d: any) => ({
+      id: d.id,
+      taskId: d.task_id || d.taskId || taskId,
+      relatedTaskId: d.related_task_id || d.relatedTaskId,
+      relationType: d.relation_type || d.relationType || 'blocked_by',
+      relatedTaskTitle: d.related_task_title || d.relatedTaskTitle || 'Related Task',
+      relatedTaskStatus: d.related_task_status || d.relatedTaskStatus || 'todo',
+    }));
+  }
+
+  async addTaskDependency(taskId: string, relatedTaskId: string, relationType: 'blocked_by' | 'blocking'): Promise<TaskDependencyDTO> {
+    return await this.request<TaskDependencyDTO>(`/api/tasks/${taskId}/dependencies`, {
+      method: 'POST',
+      body: JSON.stringify({ relatedTaskId, relationType }),
     });
   }
 }

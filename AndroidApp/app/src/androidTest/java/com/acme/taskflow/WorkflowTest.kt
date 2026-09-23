@@ -46,6 +46,7 @@ class WorkflowTest {
     private val orgMembers = CopyOnWriteArrayList<JsonObject>()
     private val orgInvites = CopyOnWriteArrayList<JsonObject>()
     private val orgJoinRequests = CopyOnWriteArrayList<JsonObject>()
+    private val mockNotifications = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
     private lateinit var callTicketData: JsonObject
     private lateinit var meetingData: JsonObject
@@ -87,6 +88,34 @@ class WorkflowTest {
             "user_email" to "neo@matrix.org",
             "message" to "Requesting access to mobile project",
             "status" to "pending"
+        )
+        mockNotifications.clear()
+        mockNotifications += json(
+            "id" to "notif-1",
+            "type" to "mention",
+            "title" to "",
+            "body" to "Alex, please review the latest sprint designs",
+            "payload_json" to json("message" to "Alex, please review the latest sprint designs", "actorName" to "Taylor").toString(),
+            "read_at" to "",
+            "created_at" to "2026-09-23T10:00:00Z"
+        )
+        mockNotifications += json(
+            "id" to "notif-2",
+            "type" to "task.assigned",
+            "title" to "",
+            "body" to "You have been assigned to Auth Backend V2",
+            "payload_json" to json("message" to "You have been assigned to Auth Backend V2").toString(),
+            "read_at" to "",
+            "created_at" to "2026-09-23T09:30:00Z"
+        )
+        mockNotifications += json(
+            "id" to "notif-3",
+            "type" to "task.updated",
+            "title" to "",
+            "body" to "Task PROJ-100 moved to In Progress",
+            "payload_json" to json("message" to "Task PROJ-100 moved to In Progress").toString(),
+            "read_at" to "2026-09-23T08:00:00Z",
+            "created_at" to "2026-09-23T08:00:00Z"
         )
 
         conversationData = json(
@@ -552,6 +581,26 @@ class WorkflowTest {
                         }
                         callSessionData.add("participants", com.google.gson.Gson().toJsonTree(callParticipants))
                         callSessionData
+                    }
+                    path == "/api/notifications" && request.method == "GET" -> {
+                        val unreadQuery = request.requestUrl?.queryParameter("unread")?.toBoolean() ?: false
+                        if (unreadQuery) {
+                            mockNotifications.filter { it.text("read_at").isBlank() }
+                        } else {
+                            mockNotifications
+                        }
+                    }
+                    path.startsWith("/api/notifications/") && path.endsWith("/read") && request.method == "POST" -> {
+                        val id = path.removePrefix("/api/notifications/").removeSuffix("/read")
+                        mockNotifications.firstOrNull { it.id == id }?.addProperty("read_at", "2026-09-23T11:00:00Z")
+                        json("success" to true)
+                    }
+                    path == "/api/notifications/mark-all-read" && request.method == "POST" -> {
+                        mockNotifications.forEach { it.addProperty("read_at", "2026-09-23T11:00:00Z") }
+                        json("success" to true)
+                    }
+                    path.startsWith("/api/conversations/") && path.endsWith("/preferences") && request.method == "PATCH" -> {
+                        json("success" to true, "notification_preference" to payload.text("notification_preference", "all"), "is_muted" to payload.flag("is_muted"))
                     }
                     else -> emptyList<JsonObject>()
                 }
@@ -1292,6 +1341,51 @@ class WorkflowTest {
         // Close Join Modal
         compose.onNodeWithTag("btn_close_join").performClick()
         compose.waitForIdle()
+    }
+
+    @Test fun inboxFilteringAndMarkAllReadWorkflow() {
+        login()
+        compose.onNodeWithTag("nav_item_inbox").performScrollTo().performClick()
+        waitFor("Inbox")
+
+        // Verify initial notifications listed with type headers
+        compose.onNodeWithText("You were mentioned").assertIsDisplayed()
+        compose.onNodeWithText("New Assignment").assertIsDisplayed()
+        compose.onNodeWithText("Task Updated").assertIsDisplayed()
+        screenshot("android_inbox_all")
+
+        // Filter by Mentions
+        compose.onNodeWithTag("InboxFilterChip_Mentions").performClick()
+        compose.onNodeWithText("You were mentioned").assertIsDisplayed()
+        compose.onNodeWithText("New Assignment").assertDoesNotExist()
+        compose.onNodeWithText("Task Updated").assertDoesNotExist()
+        screenshot("android_inbox_mentions_chip")
+
+        // Filter by Assignments
+        compose.onNodeWithTag("InboxFilterChip_Assignments").performClick()
+        compose.onNodeWithText("New Assignment").assertIsDisplayed()
+        compose.onNodeWithText("You were mentioned").assertDoesNotExist()
+
+        // Filter by Updates
+        compose.onNodeWithTag("InboxFilterChip_Updates").performClick()
+        compose.onNodeWithText("Task Updated").assertIsDisplayed()
+        compose.onNodeWithText("You were mentioned").assertDoesNotExist()
+
+        // Switch back to All
+        compose.onNodeWithTag("InboxFilterChip_All").performClick()
+        compose.onNodeWithText("You were mentioned").assertIsDisplayed()
+
+        // Mark single notification read
+        compose.onNodeWithTag("InboxItemReadButton_notif-1").performClick()
+
+        // Mark All Read
+        compose.onNodeWithTag("InboxMarkAllReadButton").performClick()
+
+        // Toggle unread only -> should show "All caught up!" empty state
+        compose.onNodeWithTag("InboxUnreadToggle").performClick()
+        waitFor("All caught up!")
+        compose.onNodeWithText("All caught up!").assertIsDisplayed()
+        screenshot("android_inbox_all_caught_up")
     }
 }
 
