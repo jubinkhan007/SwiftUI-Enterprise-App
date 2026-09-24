@@ -21,7 +21,8 @@ import {
   WorkspaceDTO,
   MeetingSummaryDTO,
   SubtaskDTO,
-  TaskDependencyDTO
+  TaskDependencyDTO,
+  OrganizationDetailsDTO
 } from '../types';
 
 class ApiService {
@@ -57,6 +58,10 @@ class ApiService {
     } else {
       localStorage.removeItem('taskflow_org_id');
     }
+  }
+
+  getSelectedOrgId(): string | null {
+    return this.selectedOrgId;
   }
 
   setCurrentUser(user: UserDTO | null) {
@@ -882,6 +887,38 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ relatedTaskId, relationType }),
     });
+  }
+
+  // --- Organization & Billing ---
+  async getOrganization(orgId: string): Promise<OrganizationDetailsDTO> {
+    const raw = await this.request<any>(`/api/organizations/${orgId}`);
+    const org = raw?.data || raw || {};
+    return {
+      id: org.id,
+      name: org.name || 'Workspace',
+      slug: org.slug,
+      description: org.description,
+      memberCount: org.member_count ?? org.memberCount ?? 1,
+      subscriptionTier: org.subscription_tier || org.subscriptionTier || 'free',
+      subscriptionStatus: org.subscription_status || org.subscriptionStatus || 'active',
+      stripeCustomerId: org.stripe_customer_id || org.stripeCustomerId,
+      stripeSubscriptionId: org.stripe_subscription_id || org.stripeSubscriptionId,
+      createdAt: org.created_at || org.createdAt,
+    };
+  }
+
+  async getBillingCheckoutUrl(): Promise<string> {
+    const resp = await this.request<{ url: string }>('/api/org/billing/checkout', {
+      method: 'POST',
+    });
+    return resp.url;
+  }
+
+  async getBillingPortalUrl(): Promise<string> {
+    const resp = await this.request<{ url: string }>('/api/org/billing/portal', {
+      method: 'POST',
+    });
+    return resp.url;
   }
 }
 

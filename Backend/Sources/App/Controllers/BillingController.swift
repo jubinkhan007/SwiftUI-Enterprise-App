@@ -34,10 +34,7 @@ struct BillingController: RouteCollection {
             }
             // Local fallback mock link
             let mockRedirect = "http://localhost:5173/org/billing?mock_checkout=success&org_id=\(ctx.orgId.uuidString)"
-            struct CheckoutResponse: Content {
-                let url: String
-            }
-            return try await CheckoutResponse(url: mockRedirect).encodeResponse(for: req)
+            return try await BillingRedirectResponse(url: mockRedirect).encodeResponse(for: req)
         }
 
         // Call live Stripe Sandbox
@@ -76,10 +73,7 @@ struct BillingController: RouteCollection {
         }
 
         let session = try stripeResponse.content.decode(StripeSession.self)
-        struct CheckoutResponse: Content {
-            let url: String
-        }
-        return try await CheckoutResponse(url: session.url).encodeResponse(for: req)
+        return try await BillingRedirectResponse(url: session.url).encodeResponse(for: req)
     }
 
     // MARK: - POST /api/org/billing/portal
@@ -101,10 +95,7 @@ struct BillingController: RouteCollection {
             req.logger.info("Mock sandbox portal: downgraded org \(ctx.orgId) to Free.")
 
             let mockRedirect = "http://localhost:5173/org/billing?mock_portal=downgrade"
-            struct PortalResponse: Content {
-                let url: String
-            }
-            return try await PortalResponse(url: mockRedirect).encodeResponse(for: req)
+            return try await BillingRedirectResponse(url: mockRedirect).encodeResponse(for: req)
         }
 
         guard let customerId = org.stripeCustomerId, !customerId.isEmpty else {
@@ -132,10 +123,23 @@ struct BillingController: RouteCollection {
         }
 
         let portal = try stripeResponse.content.decode(StripePortal.self)
-        struct PortalResponse: Content {
+        return try await BillingRedirectResponse(url: portal.url).encodeResponse(for: req)
+    }
+
+    struct BillingRedirectResponse: Content {
+        let success: Bool
+        let url: String
+        let data: URLData
+
+        struct URLData: Content {
             let url: String
         }
-        return try await PortalResponse(url: portal.url).encodeResponse(for: req)
+
+        init(url: String) {
+            self.success = true
+            self.url = url
+            self.data = URLData(url: url)
+        }
     }
 
     // MARK: - POST /api/org/billing/webhook

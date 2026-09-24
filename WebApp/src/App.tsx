@@ -12,6 +12,7 @@ import { TeamScreen } from './screens/TeamScreen';
 import { ProductivityScreen } from './screens/ProductivityScreen';
 import { SessionAuditScreen } from './screens/SessionAuditScreen';
 import { InCallScreen } from './screens/InCallScreen';
+import { BillingScreen } from './screens/BillingScreen';
 import { Video, PhoneOff } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -144,7 +145,8 @@ export const App: React.FC = () => {
             <ChatScreen onStartCall={(convId) => setActiveCallConvId(convId)} />
           )}
           {currentNav === 'meetings' && <MeetingsScreen />}
-          {currentNav === 'team' && <TeamScreen />}
+          {currentNav === 'team' && <TeamScreen onNavigate={setCurrentNav} />}
+          {currentNav === 'billing' && <BillingScreen onNavigate={setCurrentNav} />}
           {currentNav === 'productivity' && <ProductivityScreen />}
           {currentNav === 'sessions' && <SessionAuditScreen />}
         </main>

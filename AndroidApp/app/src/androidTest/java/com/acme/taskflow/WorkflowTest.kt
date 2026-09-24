@@ -344,6 +344,9 @@ class WorkflowTest {
                     )
                     path.startsWith("/api/organizations/") && path.endsWith("/join") && request.method == "POST" -> json("success" to true, "message" to "Join request submitted")
                     path.startsWith("/api/organizations/invites/") && path.endsWith("/accept") && request.method == "POST" -> json("success" to true, "message" to "Invite accepted")
+                    path == "/api/organizations/org-a" -> json("id" to "org-a", "name" to "Acme Workspace", "subscription_tier" to "free", "member_count" to 3)
+                    path == "/api/org/billing/checkout" && request.method == "POST" -> json("url" to "https://checkout.stripe.com/c/pay/cs_test_mock_123")
+                    path == "/api/org/billing/portal" && request.method == "POST" -> json("url" to "https://billing.stripe.com/p/session/portal_test_mock_123")
                     path == "/api/tasks/move-multiple" && request.method == "POST" -> {
                         val target = payload.text("targetStatus")
                         payload.list("moves").forEach { m ->
@@ -1386,6 +1389,53 @@ class WorkflowTest {
         waitFor("All caught up!")
         compose.onNodeWithText("All caught up!").assertIsDisplayed()
         screenshot("android_inbox_all_caught_up")
+    }
+
+    @Test fun billingSettingsAndStripeRedirectWorkflow() {
+        login()
+        // Navigate to Team
+        compose.onNodeWithTag("nav_item_team").performScrollTo().performClick()
+        waitFor("Team")
+        waitFor("Alex Chen")
+
+        // Open Billing Settings Modal
+        compose.onNodeWithTag("btn_billing_settings").performClick()
+        waitFor("Subscription & Billing")
+        compose.onNodeWithText("Subscription & Billing").assertIsDisplayed()
+
+        // Verify Current Plan card and Quota gauge
+        compose.onNodeWithTag("card_current_subscription").assertIsDisplayed()
+        compose.onNodeWithText("Team Members Quota").assertIsDisplayed()
+
+        // Verify 3 Plan Tiers are displayed
+        compose.onNodeWithTag("tier_free").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("tier_pro").performScrollTo().assertIsDisplayed()
+        screenshot("android_billing_plans_modal")
+
+        compose.onNodeWithTag("tier_enterprise").performScrollTo().assertIsDisplayed()
+
+        // Trigger Upgrade to Pro
+        compose.onNodeWithTag("btn_action_tier_pro").performScrollTo().performClick()
+
+        // Verify POST /api/org/billing/checkout was dispatched
+        compose.waitUntil(10000) {
+            writes.any { it.first == "/api/org/billing/checkout" }
+        }
+        val checkoutCall = writes.firstOrNull { it.first == "/api/org/billing/checkout" }
+        assertNotNull("Expected checkout API call", checkoutCall)
+
+        // Verify Redirect URL displayed in UI
+        compose.waitUntil(10000) {
+            runCatching {
+                compose.onNodeWithTag("txt_checkout_url").assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        }
+        screenshot("android_billing_checkout_redirect")
+
+        // Close Billing Modal
+        compose.onNodeWithTag("btn_close_billing").performClick()
+        compose.onNodeWithTag("modal_billing_settings").assertDoesNotExist()
     }
 }
 

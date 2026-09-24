@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { OrgInviteDTO, OrgJoinRequestDTO, OrgMemberDTO } from '../types';
+import { NavDestination, OrgInviteDTO, OrgJoinRequestDTO, OrgMemberDTO } from '../types';
 import { api } from '../services/api';
 import { 
   Users, 
@@ -16,10 +16,15 @@ import {
   CheckCircle2, 
   RefreshCw,
   MoreVertical,
-  Edit2
+  Edit2,
+  CreditCard
 } from 'lucide-react';
 
-export const TeamScreen: React.FC = () => {
+interface TeamScreenProps {
+  onNavigate?: (dest: NavDestination) => void;
+}
+
+export const TeamScreen: React.FC<TeamScreenProps> = ({ onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'members' | 'invites' | 'requests'>('members');
   const [members, setMembers] = useState<OrgMemberDTO[]>([]);
   const [invites, setInvites] = useState<OrgInviteDTO[]>([]);
@@ -188,6 +193,16 @@ export const TeamScreen: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {onNavigate && (
+            <button
+              onClick={() => onNavigate('billing')}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-2 text-xs font-semibold shadow-sm cursor-pointer"
+            >
+              <CreditCard className="w-4 h-4 text-indigo-400" />
+              Manage Subscription &amp; Billing
+            </button>
+          )}
+
           <button
             onClick={() => setShowInviteModal(true)}
             className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition flex items-center gap-2 text-xs font-semibold shadow-lg shadow-indigo-600/30 cursor-pointer"

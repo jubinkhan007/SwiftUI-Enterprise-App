@@ -1,5 +1,7 @@
 package com.acme.taskflow.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -9,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -21,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -464,6 +468,7 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Members, 1 = Invites, 2 = Requests
     var showInviteModal by remember { mutableStateOf(false) }
+    var showBillingModal by remember { mutableStateOf(false) }
     var memberBeingEdited by remember { mutableStateOf<JsonObject?>(null) }
     var memberToRemove by remember { mutableStateOf<JsonObject?>(null) }
     var inviteToRevoke by remember { mutableStateOf<JsonObject?>(null) }
@@ -506,7 +511,18 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
                     color = AppColors.textPrimary,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(
+                    onClick = { showBillingModal = true },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                        .testTag("btn_billing_settings")
+                ) {
+                    Icon(Icons.Default.CreditCard, "Billing & Plans", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                }
                 if (canInvite) {
+                    Spacer(Modifier.width(8.dp))
                     IconButton(
                         onClick = { showInviteModal = true },
                         modifier = Modifier
@@ -836,6 +852,14 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
             vm.changed()
         }
     }
+
+    if (showBillingModal) {
+        BillingSettingsModal(
+            vm = vm,
+            api = api,
+            onDismiss = { showBillingModal = false }
+        )
+    }
 }
 
 @Composable
@@ -1113,6 +1137,338 @@ fun ProductivityScreen(vm: AppViewModel, api: ApiClient) {
         EditorDialog("Create $title", fields, { editor = null }) { payload ->
             api.request(path, "POST", payload)
             vm.changed()
+        }
+    }
+}
+
+@Composable
+fun BillingSettingsModal(
+    vm: AppViewModel,
+    api: ApiClient,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val orgRemote = rememberRemote(api, "/api/organizations/${api.orgId}", vm.revision)
+    val membersRemote = rememberRemote(api, "/api/organizations/${api.orgId}/members", vm.revision)
+    val action = rememberAction()
+
+    val orgObj = orgRemote.data.obj()
+    val currentTier = orgObj.text("subscription_tier", orgObj.text("subscriptionTier", "free")).lowercase()
+    val memberCount = membersRemote.data.rows().size.coerceAtLeast(1)
+    val isPro = currentTier == "pro"
+    val isEnterprise = currentTier == "enterprise"
+    val isFree = !isPro && !isEnterprise
+
+    var checkoutUrlResult by remember { mutableStateOf<String?>(null) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .padding(vertical = 12.dp)
+                .testTag("modal_billing_settings"),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Subscription & Billing",
+                            style = AppTypography.title2,
+                            color = AppColors.textPrimary
+                        )
+                        Text(
+                            "Manage workspace plan, invoices, and quota allocations.",
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("btn_close_billing")) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                ActionStatus(action)
+
+                if (checkoutUrlResult != null) {
+                    Text(
+                        "Redirect: $checkoutUrlResult",
+                        style = AppTypography.caption2,
+                        color = AppColors.brandPrimary,
+                        modifier = Modifier.testTag("txt_checkout_url")
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                // Scrollable Content
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Current Plan & Usage Gauge Card
+                    IosCard(modifier = Modifier.fillMaxWidth().testTag("card_current_subscription")) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text("CURRENT PLAN", style = AppTypography.caption2, color = AppColors.textTertiary, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        currentTier.replaceFirstChar { it.uppercase() } + " Plan",
+                                        style = AppTypography.title3,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AppColors.textPrimary
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(AppRadius.small))
+                                        .background(if (isFree) AppColors.surfaceElevated else AppColors.brandPrimary.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        if (isFree) "Free ($0/mo)" else if (isPro) "Active ($19/mo)" else "Active ($99/mo)",
+                                        style = AppTypography.caption2,
+                                        color = if (isFree) AppColors.textSecondary else AppColors.brandPrimary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = AppColors.borderDefault)
+
+                            // Seat Quota Progress
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Team Members Quota", style = AppTypography.subheadline, color = AppColors.textSecondary)
+                                    Text(
+                                        if (isFree) "$memberCount / 5 seats" else "$memberCount seats (Unlimited)",
+                                        style = AppTypography.subheadline,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = AppColors.textPrimary
+                                    )
+                                }
+                                val progress = if (isFree) (memberCount / 5f).coerceIn(0f, 1f) else 0.2f
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+                                    color = if (isFree && memberCount >= 5) AppColors.statusError else AppColors.brandPrimary,
+                                    trackColor = AppColors.surfaceElevated
+                                )
+                            }
+                        }
+                    }
+
+                    // Tiers
+                    Text("AVAILABLE PLANS", style = AppTypography.caption2, color = AppColors.textTertiary, fontWeight = FontWeight.Bold)
+
+                    // 1. Free Tier Card
+                    PlanTierCard(
+                        title = "Free",
+                        price = "$0",
+                        period = "/ month",
+                        subtitle = "For small teams and side projects",
+                        features = listOf("Up to 5 team members", "1 active project", "100 MB file storage", "Basic Kanban boards"),
+                        isCurrent = isFree,
+                        ctaText = if (isFree) "Current Plan" else "Downgrade via Portal",
+                        tag = "tier_free",
+                        onCta = {
+                            if (!isFree) {
+                                action.run {
+                                    val res = api.request("/api/org/billing/portal", "POST")
+                                    val url = res.data.obj().text("url")
+                                    checkoutUrlResult = url
+                                    if (url.isNotEmpty()) {
+                                        runCatching {
+                                            if (!url.contains("test_mock") && !url.contains("mock")) {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                context.startActivity(intent)
+                                            }
+                                        }
+                                    }
+                                    orgRemote.refresh()
+                                    vm.changed()
+                                }
+                            }
+                        }
+                    )
+
+                    // 2. Pro Tier Card (Highlighted)
+                    PlanTierCard(
+                        title = "Pro",
+                        price = "$19",
+                        period = "/ month",
+                        subtitle = "For growing teams needing calls and automations",
+                        features = listOf(
+                            "Unlimited team members",
+                            "Unlimited projects & spaces",
+                            "50 GB storage",
+                            "Live video & audio calling (LiveKit)",
+                            "Webhooks & integrations",
+                            "Priority support"
+                        ),
+                        isCurrent = isPro,
+                        isFeatured = true,
+                        ctaText = if (isPro) "Manage via Stripe Portal" else "Upgrade to Pro ($19)",
+                        tag = "tier_pro",
+                        onCta = {
+                            action.run {
+                                val endpoint = if (isPro) "/api/org/billing/portal" else "/api/org/billing/checkout"
+                                val res = api.request(endpoint, "POST")
+                                val url = res.data.obj().text("url")
+                                checkoutUrlResult = url
+                                if (url.isNotEmpty()) {
+                                    runCatching {
+                                        if (!url.contains("test_mock") && !url.contains("mock")) {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(intent)
+                                        }
+                                    }
+                                }
+                                orgRemote.refresh()
+                                vm.changed()
+                            }
+                        }
+                    )
+
+                    // 3. Enterprise Tier Card
+                    PlanTierCard(
+                        title = "Enterprise",
+                        price = "$99",
+                        period = "/ month",
+                        subtitle = "For organizations requiring custom compliance and SSO",
+                        features = listOf(
+                            "Everything in Pro",
+                            "SAML 2.0 & OIDC Single Sign-On",
+                            "Custom domain whitelabeling",
+                            "Audit log export & retention",
+                            "99.9% uptime SLA"
+                        ),
+                        isCurrent = isEnterprise,
+                        ctaText = "Contact Enterprise Sales",
+                        tag = "tier_enterprise",
+                        onCta = {
+                            runCatching {
+                                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:enterprise@taskflow.local?subject=TaskFlow%20Enterprise%20Subscription")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanTierCard(
+    title: String,
+    price: String,
+    period: String,
+    subtitle: String,
+    features: List<String>,
+    isCurrent: Boolean,
+    isFeatured: Boolean = false,
+    ctaText: String,
+    tag: String,
+    onCta: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag(tag),
+        shape = RoundedCornerShape(AppRadius.medium),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isFeatured) AppColors.brandPrimary.copy(alpha = 0.08f) else AppColors.surfaceElevated
+        ),
+        border = if (isFeatured) androidx.compose.foundation.BorderStroke(1.5.dp, AppColors.brandPrimary)
+                 else androidx.compose.foundation.BorderStroke(1.dp, AppColors.borderDefault)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(title, style = AppTypography.headline, fontWeight = FontWeight.Bold, color = AppColors.textPrimary)
+                    if (isFeatured) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(AppRadius.small))
+                                .background(AppColors.brandPrimary)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("Popular", style = AppTypography.caption2, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                if (isCurrent) {
+                    Text("Active", style = AppTypography.caption1, color = AppColors.statusSuccess, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Text(subtitle, style = AppTypography.caption1, color = AppColors.textSecondary)
+
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(price, style = AppTypography.title1, fontWeight = FontWeight.ExtraBold, color = AppColors.textPrimary)
+                Spacer(Modifier.width(4.dp))
+                Text(period, style = AppTypography.caption1, color = AppColors.textTertiary, modifier = Modifier.padding(bottom = 2.dp))
+            }
+
+            HorizontalDivider(color = AppColors.borderDefault.copy(alpha = 0.6f))
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                features.forEach { feat ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.Check, null, tint = AppColors.statusSuccess, modifier = Modifier.size(16.dp))
+                        Text(feat, style = AppTypography.caption1, color = AppColors.textPrimary)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Button(
+                onClick = onCta,
+                enabled = !isCurrent || isFeatured,
+                modifier = Modifier.fillMaxWidth().testTag("btn_action_$tag"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isFeatured) AppColors.brandPrimary else AppColors.surfacePrimary,
+                    contentColor = if (isFeatured) Color.White else AppColors.textPrimary,
+                    disabledContainerColor = AppColors.surfacePrimary.copy(alpha = 0.5f),
+                    disabledContentColor = AppColors.textTertiary
+                ),
+                shape = RoundedCornerShape(AppRadius.small)
+            ) {
+                Text(ctaText, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

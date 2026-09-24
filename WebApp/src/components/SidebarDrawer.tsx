@@ -16,7 +16,8 @@ import {
   LogOut,
   Plus,
   Users,
-  X
+  X,
+  CreditCard
 } from 'lucide-react';
 import { HierarchyTreeDTO, NavDestination, UserDTO } from '../types';
 import { api } from '../services/api';
@@ -139,6 +140,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
     { id: 'messages', label: 'Messages & Channels', icon: MessageSquare },
     { id: 'meetings', label: 'Meetings & Time', icon: Calendar },
     { id: 'team', label: 'Team & Organization', icon: Users },
+    { id: 'billing', label: 'Billing & Plans', icon: CreditCard },
     { id: 'productivity', label: 'Productivity Hub', icon: Zap },
     { id: 'sessions', label: 'Security Sessions', icon: ShieldCheck },
   ];

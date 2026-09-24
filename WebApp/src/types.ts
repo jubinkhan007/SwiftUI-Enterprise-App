@@ -254,6 +254,21 @@ export interface TaskDependencyDTO {
   relatedTaskStatus?: TaskStatus;
 }
 
+export type BillingTier = 'free' | 'pro' | 'enterprise';
+
+export interface OrganizationDetailsDTO {
+  id: string;
+  name: string;
+  slug?: string;
+  description?: string;
+  memberCount?: number;
+  subscriptionTier?: string;
+  subscriptionStatus?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  createdAt?: string;
+}
+
 export type NavDestination = 
   | 'all_tasks' 
   | 'my_tasks' 
@@ -262,4 +277,5 @@ export type NavDestination =
   | 'meetings' 
   | 'productivity' 
   | 'sessions'
-  | 'team';
+  | 'team'
+  | 'billing';
