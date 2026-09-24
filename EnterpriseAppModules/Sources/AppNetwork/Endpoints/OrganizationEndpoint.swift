@@ -31,6 +31,8 @@ public enum OrganizationEndpoint {
     case requestToJoin(orgId: UUID, configuration: APIConfiguration)
     case listJoinRequests(orgId: UUID, configuration: APIConfiguration)
     case respondToJoinRequest(requestId: UUID, payload: RespondToJoinRequestRequest, configuration: APIConfiguration)
+    case billingCheckout(orgId: UUID, configuration: APIConfiguration)
+    case billingPortal(orgId: UUID, configuration: APIConfiguration)
 }
 
 extension OrganizationEndpoint: APIEndpoint {
@@ -43,7 +45,8 @@ extension OrganizationEndpoint: APIEndpoint {
              .removeMember(_, _, let c), .revokeInvite(_, _, let c),
              .auditLog(_, let c), .searchOrganizations(_, let c),
              .requestToJoin(_, let c), .listJoinRequests(_, let c),
-             .respondToJoinRequest(_, _, let c):
+             .respondToJoinRequest(_, _, let c),
+             .billingCheckout(_, let c), .billingPortal(_, let c):
             return c.baseURL
         }
     }
@@ -87,6 +90,10 @@ extension OrganizationEndpoint: APIEndpoint {
             return "/api/organizations/\(orgId.uuidString)/join-requests"
         case .respondToJoinRequest(let requestId, _, _):
             return "/api/organizations/join-requests/\(requestId.uuidString)/respond"
+        case .billingCheckout:
+            return "/api/org/billing/checkout"
+        case .billingPortal:
+            return "/api/org/billing/portal"
         }
     }
 
@@ -98,7 +105,7 @@ extension OrganizationEndpoint: APIEndpoint {
         case .updateProfile:
             return .patch
         case .createOrg, .createInvite, .acceptInvite, .revokeInvite,
-             .requestToJoin, .respondToJoinRequest:
+             .requestToJoin, .respondToJoinRequest, .billingCheckout, .billingPortal:
             return .post
         case .updateMemberRole:
             return .put
@@ -112,8 +119,13 @@ extension OrganizationEndpoint: APIEndpoint {
         if let token = TokenStore.shared.token {
             h["Authorization"] = "Bearer \(token)"
         }
-        if let orgId = OrganizationContext.shared.orgId {
+        switch self {
+        case .billingCheckout(let orgId, _), .billingPortal(let orgId, _):
             h["X-Org-Id"] = orgId.uuidString
+        default:
+            if let orgId = OrganizationContext.shared.orgId {
+                h["X-Org-Id"] = orgId.uuidString
+            }
         }
         return h
     }

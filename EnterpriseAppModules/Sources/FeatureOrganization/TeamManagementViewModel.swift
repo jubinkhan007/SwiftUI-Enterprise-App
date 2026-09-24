@@ -26,6 +26,9 @@ public final class TeamManagementViewModel: ObservableObject {
     @Published public var inviteRole: UserRole = .member
     @Published public var isSendingInvite = false
 
+    // Billing sheet state
+    @Published public var showBillingSheet = false
+
     // Role editing
     @Published public var memberBeingEdited: OrganizationMemberDTO? = nil
     @Published public var editedRole: UserRole = .member

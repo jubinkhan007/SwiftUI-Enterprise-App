@@ -236,3 +236,15 @@ public struct MeResponse: Codable, Sendable, Equatable {
         self.organizations = organizations
     }
 }
+
+// MARK: - Billing Redirect DTO
+
+/// Response payload for Stripe Checkout & Customer Portal session redirects.
+public struct BillingRedirectDTO: Codable, Sendable, Equatable {
+    public let url: String
+
+    public init(url: String) {
+        self.url = url
+    }
+}
+

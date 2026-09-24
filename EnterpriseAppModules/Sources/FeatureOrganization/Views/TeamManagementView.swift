@@ -72,6 +72,15 @@ public struct TeamManagementView: View {
             .navigationBarTitleDisplayMode(.large)
             #endif
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        viewModel.showBillingSheet = true
+                    } label: {
+                        Image(systemName: "creditcard")
+                            .foregroundColor(AppColors.brandPrimary)
+                    }
+                }
+
                 if viewModel.canInvite {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
@@ -82,6 +91,9 @@ public struct TeamManagementView: View {
                         }
                     }
                 }
+            }
+            .sheet(isPresented: $viewModel.showBillingSheet) {
+                BillingSettingsView(orgId: viewModel.orgId)
             }
             .sheet(isPresented: $viewModel.showInviteSheet) {
                 inviteSheet
