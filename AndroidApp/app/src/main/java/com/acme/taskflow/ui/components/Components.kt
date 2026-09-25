@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -219,7 +220,8 @@ fun IosTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     leadingIcon: (@Composable () -> Unit)? = null,
-    trailingIcon: (@Composable () -> Unit)? = null
+    trailingIcon: (@Composable () -> Unit)? = null,
+    testTag: String? = null
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -288,7 +290,7 @@ fun IosTextField(
                         BasicTextField(
                             value = value,
                             onValueChange = onValueChange,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
                             textStyle = AppTypography.body.copy(color = AppColors.textPrimary),
                             singleLine = singleLine,
                             minLines = minLines,

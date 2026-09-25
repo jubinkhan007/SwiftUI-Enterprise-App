@@ -865,8 +865,8 @@ class WorkflowTest {
         // Click Save Current View
         compose.onNodeWithText("Save Current View").performClick()
         waitFor("View Name")
-        compose.onAllNodes(hasSetTextAction() and hasText("")).onLast().performTextInput("Sprint Priority View")
-        compose.onAllNodesWithText("Save").onLast().performClick()
+        compose.onNodeWithTag("input_save_view_name").performTextInput("Sprint Priority View")
+        compose.onNodeWithTag("btn_save_view_confirm").performClick()
         compose.waitForIdle()
         compose.runOnIdle {
             assertTrue(writes.any { it.first == "/api/views" && it.second.text("name") == "Sprint Priority View" })

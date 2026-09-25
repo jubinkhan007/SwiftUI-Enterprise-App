@@ -2638,7 +2638,8 @@ fun SavedViewsModal(
                         label = "View Name",
                         value = viewName,
                         onValueChange = { viewName = it },
-                        singleLine = true
+                        singleLine = true,
+                        testTag = "input_save_view_name"
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = isDefault, onCheckedChange = { isDefault = it })
@@ -2653,6 +2654,7 @@ fun SavedViewsModal(
             confirmButton = {
                 TextButton(
                     enabled = viewName.isNotBlank(),
+                    modifier = Modifier.testTag("btn_save_view_confirm"),
                     onClick = {
                         coroutineScope.launch {
                             val filtersObj = json(
