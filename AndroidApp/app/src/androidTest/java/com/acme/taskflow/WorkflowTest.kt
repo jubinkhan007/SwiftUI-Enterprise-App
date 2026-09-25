@@ -1144,7 +1144,7 @@ class WorkflowTest {
 
     @Test fun callInitiationAndInCallControlsWorkflow() {
         login()
-        compose.onNodeWithText("Calls").performClick()
+        compose.onNodeWithTag("nav_item_calls").performScrollTo().performClick()
         waitFor("Calls")
         waitFor("Mobile team")
 
@@ -1182,7 +1182,7 @@ class WorkflowTest {
 
     @Test fun callHostControlsAndRoomLockWorkflow() {
         login()
-        compose.onNodeWithText("Calls").performClick()
+        compose.onNodeWithTag("nav_item_calls").performScrollTo().performClick()
         waitFor("Calls")
 
         // Start call
@@ -1235,7 +1235,7 @@ class WorkflowTest {
 
     @Test fun incomingCallAcceptWorkflow() {
         login()
-        compose.onNodeWithText("Calls").performClick()
+        compose.onNodeWithTag("nav_item_calls").performScrollTo().performClick()
         waitFor("Calls")
 
         // Simulate incoming call

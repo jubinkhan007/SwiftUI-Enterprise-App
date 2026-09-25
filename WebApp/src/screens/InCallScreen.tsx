@@ -13,7 +13,11 @@ import {
   X, 
   Shield, 
   UserMinus, 
-  Radio
+  Radio,
+  Hand,
+  Smile,
+  Check,
+  UserCheck
 } from 'lucide-react';
 import { CallParticipantDTO } from '../types';
 
@@ -65,6 +69,15 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
   const [showHostControls, setShowHostControls] = useState(false);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
 
+  // Hand raise, reactions & waiting room
+  const [isHandRaised, setIsHandRaised] = useState(false);
+  const [activeReaction, setActiveReaction] = useState<string | null>(null);
+  const [showReactionsBar, setShowReactionsBar] = useState(false);
+  const [waitingQueue, setWaitingQueue] = useState<{ id: string; name: string }[]>([
+    { id: 'wq-1', name: 'John Doe (Guest)' },
+    { id: 'wq-2', name: 'Dr. Evelyn Reed' }
+  ]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCallDurationSeconds(prev => prev + 1);
@@ -97,6 +110,38 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
     setParticipants(prev =>
       prev.map(p => (p.id === 'cp-self' ? { ...p, isScreenSharing: !isScreenSharing } : p))
     );
+  };
+
+  const handleTriggerReaction = (emoji: string) => {
+    setActiveReaction(emoji);
+    setTimeout(() => setActiveReaction(null), 2500);
+  };
+
+  const handleMuteAll = () => {
+    setParticipants(prev =>
+      prev.map(p => (p.id !== 'cp-self' ? { ...p, isAudioMuted: true } : p))
+    );
+  };
+
+  const handleAdmitWaiting = (id: string, name: string) => {
+    setWaitingQueue(prev => prev.filter(w => w.id !== id));
+    setParticipants(prev => [
+      ...prev,
+      {
+        id: `cp-${id}`,
+        userId: `user-${id}`,
+        displayName: name,
+        role: 'participant',
+        isAudioMuted: false,
+        isVideoMuted: false,
+        isScreenSharing: false,
+        isSpeaking: false,
+      }
+    ]);
+  };
+
+  const handleDenyWaiting = (id: string) => {
+    setWaitingQueue(prev => prev.filter(w => w.id !== id));
   };
 
   const handleRemoteMuteAudio = (participantId: string) => {
@@ -152,7 +197,7 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
               )}
             </h2>
             <p className="text-xs text-slate-400">
-              WebRTC Audio & HD Video Bridge
+              WebRTC Audio & HD Video Bridge ({conversationId})
             </p>
           </div>
         </div>
@@ -160,6 +205,11 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
         <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs text-slate-300">
           <Users className="w-4 h-4 text-indigo-400" />
           <span className="font-semibold">{participants.length} Active Participants</span>
+          {waitingQueue.length > 0 && (
+            <span className="ml-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+              {waitingQueue.length} Waiting
+            </span>
+          )}
         </div>
       </div>
 
@@ -208,6 +258,11 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
 
               {/* Top-right status pills */}
               <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                {p.id === 'cp-self' && isHandRaised && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950 flex items-center gap-1 shadow-md animate-bounce">
+                    ✋ Hand Raised
+                  </span>
+                )}
                 {p.isSpeaking && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500 text-slate-950 flex items-center gap-1 animate-pulse">
                     <Radio className="w-3 h-3" /> Speaking
@@ -228,6 +283,13 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
           );
         })}
       </div>
+
+      {/* Floating Active Reaction Display */}
+      {activeReaction && (
+        <div className="fixed bottom-28 z-50 text-5xl animate-bounce drop-shadow-2xl">
+          {activeReaction}
+        </div>
+      )}
 
       {/* Floating In-Call Controls Dock */}
       <div className="flex items-center gap-3 bg-slate-900/90 border border-slate-800 p-3 rounded-2xl shadow-2xl backdrop-blur-xl shrink-0">
@@ -267,10 +329,50 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
           <Monitor className="w-5 h-5" />
         </button>
 
+        {/* Hand Raise Button */}
+        <button
+          onClick={() => setIsHandRaised(!isHandRaised)}
+          className={`p-3.5 rounded-xl border transition cursor-pointer ${
+            isHandRaised
+              ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+              : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+          }`}
+          title={isHandRaised ? 'Lower Hand' : 'Raise Hand'}
+        >
+          <Hand className="w-5 h-5" />
+        </button>
+
+        {/* Emoji Reactions Popover Trigger */}
+        <div className="relative">
+          <button
+            onClick={() => setShowReactionsBar(!showReactionsBar)}
+            className="p-3.5 rounded-xl border bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 transition cursor-pointer"
+            title="Send Emoji Reaction"
+          >
+            <Smile className="w-5 h-5" />
+          </button>
+          {showReactionsBar && (
+            <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 p-2 rounded-2xl shadow-2xl flex items-center gap-1.5 backdrop-blur-xl">
+              {['👍', '❤️', '👏', '🚀', '🎉'].map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    handleTriggerReaction(emoji);
+                    setShowReactionsBar(false);
+                  }}
+                  className="w-9 h-9 rounded-xl hover:bg-slate-800 flex items-center justify-center text-lg hover:scale-125 transition cursor-pointer"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Host Controls Toggle */}
         <button
           onClick={() => setShowHostControls(!showHostControls)}
-          className={`p-3.5 rounded-xl border transition cursor-pointer ${
+          className={`p-3.5 rounded-xl border transition cursor-pointer relative ${
             showHostControls
               ? 'bg-indigo-600 text-white border-indigo-500'
               : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
@@ -278,6 +380,9 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
           title="Host Controls"
         >
           <Shield className="w-5 h-5" />
+          {waitingQueue.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full animate-ping" />
+          )}
         </button>
 
         <div className="w-px h-8 bg-slate-800 mx-1" />
@@ -308,29 +413,67 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
               </button>
             </div>
 
-            {/* Room Lock */}
-            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
-              <div className="flex items-center gap-2.5">
-                {isRoomLocked ? <Lock className="w-4 h-4 text-amber-400" /> : <Unlock className="w-4 h-4 text-slate-400" />}
-                <div>
-                  <span className="text-xs font-bold text-slate-200 block">Lock Call Room</span>
-                  <span className="text-[11px] text-slate-400">Block new callers from entering</span>
-                </div>
-              </div>
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setIsRoomLocked(!isRoomLocked)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition ${
-                  isRoomLocked ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                className={`p-3 rounded-2xl border text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  isRoomLocked
+                    ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                {isRoomLocked ? 'Locked' : 'Unlocked'}
+                {isRoomLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                {isRoomLocked ? 'Room Locked' : 'Lock Room'}
+              </button>
+
+              <button
+                onClick={handleMuteAll}
+                className="p-3 rounded-2xl border bg-slate-950 border-slate-800 hover:bg-red-500/20 hover:border-red-500/40 text-slate-300 hover:text-red-300 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <MicOff className="w-4 h-4" />
+                Mute All
               </button>
             </div>
 
+            {/* Waiting Room Queue */}
+            {waitingQueue.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider block flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5" />
+                  Waiting Room Queue ({waitingQueue.length})
+                </span>
+
+                {waitingQueue.map(w => (
+                  <div
+                    key={w.id}
+                    className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between"
+                  >
+                    <span className="text-xs font-bold text-slate-200">{w.name}</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleAdmitWaiting(w.id, w.name)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer transition flex items-center gap-1"
+                      >
+                        <Check className="w-3 h-3" />
+                        Admit
+                      </button>
+                      <button
+                        onClick={() => handleDenyWaiting(w.id)}
+                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-[11px] font-semibold cursor-pointer"
+                      >
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Remote Participants Moderation */}
-            <div className="space-y-2">
+            <div className="space-y-2 pt-2 border-t border-slate-800">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
-                Manage Remote Attendees
+                Manage Remote Attendees ({participants.length - 1})
               </span>
 
               {participants
@@ -400,3 +543,4 @@ export const InCallScreen: React.FC<InCallScreenProps> = ({ conversationId, onEn
     </div>
   );
 };
+

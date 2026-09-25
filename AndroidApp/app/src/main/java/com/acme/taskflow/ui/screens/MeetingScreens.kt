@@ -1177,6 +1177,35 @@ fun MeetingSummaryModal(
                                                 }
                                                 if (item.text("linked_task_id").isNotBlank()) {
                                                     Text("Linked to task", style = AppTypography.caption2, color = AppColors.statusSuccess)
+                                                } else {
+                                                    var isConverting by remember { mutableStateOf(false) }
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            scope.launch {
+                                                                isConverting = true
+                                                                try {
+                                                                    api.request("/api/tasks", "POST", json(
+                                                                        "title" to item.text("text"),
+                                                                        "description" to "Converted from meeting action item"
+                                                                    ))
+                                                                    summaryRemote.refresh()
+                                                                } finally {
+                                                                    isConverting = false
+                                                                }
+                                                            }
+                                                        },
+                                                        shape = RoundedCornerShape(AppRadius.small),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                        modifier = Modifier.height(28.dp).testTag("btn_convert_action_item_${item.text("id")}")
+                                                    ) {
+                                                        if (isConverting) {
+                                                            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                                                        } else {
+                                                            Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp), tint = AppColors.brandPrimary)
+                                                            Spacer(Modifier.width(4.dp))
+                                                            Text("Convert to Task", style = AppTypography.caption2, color = AppColors.brandPrimary)
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -1404,12 +1433,27 @@ private fun MeetingDetail(vm: AppViewModel, api: ApiClient, id: String, onBack: 
                             onClick = { showSummary = true },
                             modifier = Modifier.weight(1f).height(40.dp).testTag("btn_view_summary")
                         )
+                        val context = LocalContext.current
+                        IosButton(
+                            title = "Sync Calendar",
+                            leadingIcon = Icons.Default.Event,
+                            variant = IosButtonVariant.Secondary,
+                            onClick = {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+                                    data = android.provider.CalendarContract.Events.CONTENT_URI
+                                    putExtra(android.provider.CalendarContract.Events.TITLE, meeting.text("title"))
+                                    putExtra(android.provider.CalendarContract.Events.DESCRIPTION, meeting.text("description"))
+                                }
+                                runCatching { context.startActivity(intent) }
+                            },
+                            modifier = Modifier.weight(1f).height(40.dp).testTag("btn_sync_calendar")
+                        )
                         if (host && meeting.text("status") != "ended") {
                             IosButton(
                                 title = "Cancel",
                                 variant = IosButtonVariant.Destructive,
                                 onClick = { showCancelConfirm = true },
-                                modifier = Modifier.width(90.dp).height(40.dp)
+                                modifier = Modifier.width(80.dp).height(40.dp)
                             )
                         }
                     }

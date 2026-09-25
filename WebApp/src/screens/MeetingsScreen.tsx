@@ -22,10 +22,16 @@ import {
   X,
   Play,
   Sparkles,
-  Repeat
+  Repeat,
+  Download,
+  CheckSquare
 } from 'lucide-react';
 
-export const MeetingsScreen: React.FC = () => {
+interface MeetingsScreenProps {
+  onStartCall?: (roomId: string) => void;
+}
+
+export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall }) => {
   const [meetings, setMeetings] = useState<MeetingDTO[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -155,6 +161,16 @@ export const MeetingsScreen: React.FC = () => {
     setWaitingAttendees([]);
   };
 
+  const handleDownloadICS = (meeting: MeetingDTO) => {
+    const url = api.getMeetingICSUrl(meeting.id);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `meeting-${meeting.id}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950 text-slate-100">
       {/* Top Header */}
@@ -260,6 +276,13 @@ export const MeetingsScreen: React.FC = () => {
                       <Shield className="w-3.5 h-3.5 text-indigo-400" />
                       Host
                     </button>
+                    <button
+                      onClick={() => handleDownloadICS(meeting)}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs font-semibold flex items-center gap-1.5 cursor-pointer border border-slate-700"
+                      title="Export to iCalendar (.ics)"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -348,8 +371,11 @@ export const MeetingsScreen: React.FC = () => {
               </button>
               <button
                 onClick={() => {
-                  alert('Joined meeting audio/video session!');
+                  const mId = lobbyMeeting?.id;
                   setLobbyMeeting(null);
+                  if (mId && onStartCall) {
+                    onStartCall(mId);
+                  }
                 }}
                 className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 cursor-pointer"
               >
@@ -381,12 +407,28 @@ export const MeetingsScreen: React.FC = () => {
               <span className="text-[11px] text-indigo-400">Moderated Waiting Queue</span>
             </div>
 
-            <button
-              onClick={() => setWaitingMeeting(null)}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
-            >
-              Leave Waiting Room
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => {
+                  const mId = waitingMeeting.id;
+                  setWaitingMeeting(null);
+                  if (onStartCall) {
+                    onStartCall(mId);
+                  }
+                }}
+                className="w-full px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                Host Admitted You — Enter Meeting
+              </button>
+
+              <button
+                onClick={() => setWaitingMeeting(null)}
+                className="w-full px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+              >
+                Leave Waiting Room
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -547,21 +589,23 @@ export const MeetingsScreen: React.FC = () => {
                     {summaryData.actionItems.map(item => (
                       <div
                         key={item.id}
-                        onClick={() => handleToggleActionItem(item.id)}
-                        className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition ${
+                        className={`p-3 rounded-xl border flex items-center gap-3 transition ${
                           item.isCompleted
                             ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
-                            : 'bg-slate-950 border-slate-800 hover:bg-slate-800/40'
+                            : 'bg-slate-950 border-slate-800'
                         }`}
                       >
-                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center ${
-                          item.isCompleted
-                            ? 'bg-emerald-600 border-emerald-500 text-white'
-                            : 'border-slate-600 bg-slate-900'
-                        }`}>
+                        <div
+                          onClick={() => handleToggleActionItem(item.id)}
+                          className={`w-5 h-5 rounded-md border flex items-center justify-center cursor-pointer ${
+                            item.isCompleted
+                              ? 'bg-emerald-600 border-emerald-500 text-white'
+                              : 'border-slate-600 bg-slate-900'
+                          }`}
+                        >
                           {item.isCompleted && <Check className="w-3.5 h-3.5" />}
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 cursor-pointer" onClick={() => handleToggleActionItem(item.id)}>
                           <span className={`text-xs font-semibold block ${item.isCompleted ? 'line-through text-slate-400' : 'text-slate-200'}`}>
                             {item.text}
                           </span>
@@ -569,6 +613,35 @@ export const MeetingsScreen: React.FC = () => {
                             <span className="text-[10px] text-slate-500 font-mono">
                               Due: {new Date(item.dueAt).toLocaleDateString()}
                             </span>
+                          )}
+                        </div>
+
+                        <div>
+                          {item.linkedTaskId ? (
+                            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                              ✓ Linked to Task
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const newTask = await api.createTask(item.text);
+                                  setSummaryData({
+                                    ...summaryData,
+                                    actionItems: summaryData.actionItems.map(ai =>
+                                      ai.id === item.id ? { ...ai, linkedTaskId: newTask.id } : ai
+                                    )
+                                  });
+                                } catch (err: any) {
+                                  alert(`Failed to convert action item to task: ${err.message}`);
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-[10px] font-semibold border border-indigo-500/30 flex items-center gap-1 cursor-pointer transition"
+                            >
+                              <CheckSquare className="w-3 h-3" />
+                              Convert to Task
+                            </button>
                           )}
                         </div>
                       </div>

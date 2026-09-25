@@ -920,6 +920,41 @@ class ApiService {
     });
     return resp.url;
   }
+
+  async createTask(title: string, listId?: string, description?: string): Promise<TaskItemDTO> {
+    const raw = await this.request<any>('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        list_id: listId,
+        description,
+      }),
+    });
+    const t = raw.data || raw;
+    return {
+      id: t.id,
+      orgId: t.org_id || t.orgId,
+      listId: t.list_id || t.listId,
+      projectId: t.project_id || t.projectId,
+      title: t.title || title || 'New Task',
+      description: t.description || description,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      taskType: t.task_type || t.taskType || 'task',
+      storyPoints: t.story_points ?? t.storyPoints,
+      issueKey: t.issue_key || t.issueKey,
+      labels: t.labels || [],
+      startDate: t.start_date || t.startDate,
+      dueDate: t.due_date || t.dueDate,
+      completedAt: t.completed_at || t.completedAt,
+      assigneeId: t.assignee_id || t.assigneeId,
+      position: t.position || 0,
+    };
+  }
+
+  getMeetingICSUrl(meetingId: string): string {
+    return `/api/meetings/${meetingId}/ics`;
+  }
 }
 
 export const api = new ApiService();

@@ -144,7 +144,9 @@ export const App: React.FC = () => {
           {currentNav === 'messages' && (
             <ChatScreen onStartCall={(convId) => setActiveCallConvId(convId)} />
           )}
-          {currentNav === 'meetings' && <MeetingsScreen />}
+          {currentNav === 'meetings' && (
+            <MeetingsScreen onStartCall={(roomId) => setActiveCallConvId(roomId)} />
+          )}
           {currentNav === 'team' && <TeamScreen onNavigate={setCurrentNav} />}
           {currentNav === 'billing' && <BillingScreen onNavigate={setCurrentNav} />}
           {currentNav === 'productivity' && <ProductivityScreen />}

@@ -100,6 +100,19 @@ public struct MeetingSummaryView: View {
                             }
                         }
                         Spacer()
+                        if item.linkedTaskId == nil {
+                            Button {
+                                Task {
+                                    await session.addActionItem(item.text)
+                                    await session.loadSummary()
+                                }
+                            } label: {
+                                Label("Convert to Task", systemImage: "plus.circle")
+                                    .appFont(AppTypography.caption2)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(AppColors.brandPrimary)
+                        }
                     }
                     .padding(.vertical, 4)
                 }
