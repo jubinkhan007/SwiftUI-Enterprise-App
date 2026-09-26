@@ -95,6 +95,57 @@ final class SyncSquashingTests: XCTestCase {
         let pending = try await store.fetchPending(orgId: orgId)
         XCTAssertTrue(pending.isEmpty)
     }
+
+    func test_syncSquash_putPlusDelete_replacesWithDelete() async throws {
+        let container = try makeInMemoryContainer()
+        let store = await MainActor.run { LocalSyncOperationStore(container: container) }
+
+        let orgId = UUID()
+        let taskId = UUID()
+
+        let update = UpdateTaskRequest(title: "Edited", expectedVersion: 5)
+        let updateJSON = String(decoding: try JSONCoding.encoder.encode(update), as: UTF8.self)
+
+        let putOp = await MainActor.run {
+            LocalSyncOperation(entityType: .task, entityId: taskId, orgId: orgId, operation: .put, payloadJSON: updateJSON)
+        }
+        let deleteOp = await MainActor.run {
+            LocalSyncOperation(entityType: .task, entityId: taskId, orgId: orgId, operation: .delete)
+        }
+
+        try await store.enqueueOrSquash(putOp)
+        try await store.enqueueOrSquash(deleteOp)
+
+        let pending = try await store.fetchPending(orgId: orgId)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending.first?.operation, .delete)
+    }
+
+    func test_syncSquash_deletePlusPut_marksNeedsAttention() async throws {
+        let container = try makeInMemoryContainer()
+        let store = await MainActor.run { LocalSyncOperationStore(container: container) }
+
+        let orgId = UUID()
+        let taskId = UUID()
+
+        let update = UpdateTaskRequest(title: "Zombie Edit")
+        let updateJSON = String(decoding: try JSONCoding.encoder.encode(update), as: UTF8.self)
+
+        let deleteOp = await MainActor.run {
+            LocalSyncOperation(entityType: .task, entityId: taskId, orgId: orgId, operation: .delete)
+        }
+        let putOp = await MainActor.run {
+            LocalSyncOperation(entityType: .task, entityId: taskId, orgId: orgId, operation: .put, payloadJSON: updateJSON)
+        }
+
+        try await store.enqueueOrSquash(deleteOp)
+        try await store.enqueueOrSquash(putOp)
+
+        let attention = try await store.fetchNeedsAttention(orgId: orgId)
+        XCTAssertEqual(attention.count, 1)
+        XCTAssertEqual(attention.first?.needsAttention, true)
+        XCTAssertTrue(attention.first?.lastError?.contains("Invalid offline sequence") == true)
+    }
 }
 
 private func makeInMemoryContainer() throws -> ModelContainer {

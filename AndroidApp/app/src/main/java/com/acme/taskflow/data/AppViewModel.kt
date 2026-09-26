@@ -39,6 +39,14 @@ class AppViewModel @JvmOverloads constructor(
         })
     }
 
+    val syncEngine: SyncEngineManager by lazy {
+        SyncEngineManager(
+            apiProvider = { api },
+            scope = viewModelScope,
+            onLocalUpdate = { changed() }
+        )
+    }
+
     fun authenticate(email: String, password: String, name: String?, endpoint: String) {
         if (busy) return
         val url = endpoint.trim().toHttpUrlOrNull()

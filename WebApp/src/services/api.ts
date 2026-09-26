@@ -98,7 +98,11 @@ class ApiService {
     this.setCurrentUser(null);
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  async deleteTask(taskId: string): Promise<void> {
+    await this.request(`/api/tasks/${taskId}`, { method: 'DELETE' });
+  }
+
+  public async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -130,7 +134,10 @@ class ApiService {
 
       if (!response.ok || json.success === false || json.error === true) {
         const errorMsg = json.reason || json.error?.message || json.message || `Request failed with HTTP ${response.status}`;
-        throw new Error(errorMsg);
+        const errorObj: any = new Error(errorMsg);
+        errorObj.status = response.status;
+        errorObj.data = json.data || json;
+        throw errorObj;
       }
 
       return (json.data !== undefined ? json.data : json) as T;

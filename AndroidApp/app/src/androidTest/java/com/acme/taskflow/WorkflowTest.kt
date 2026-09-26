@@ -1437,6 +1437,53 @@ class WorkflowTest {
         compose.onNodeWithTag("btn_close_billing").performClick()
         compose.onNodeWithTag("modal_billing_settings").assertDoesNotExist()
     }
+
+    @Test fun syncEngineConflictResolutionWorkflow() {
+        login()
+        compose.onNodeWithText("All Tasks").performClick()
+        waitFor("Test Task 26/02 01")
+
+        // Enqueue an operation with conflict into vm.syncEngine
+        compose.runOnIdle {
+            vm.syncEngine.clearAll()
+            val conflictOp = com.acme.taskflow.data.LocalSyncOperation(
+                id = "op-conflict-1",
+                entityType = "task",
+                entityId = "task-a",
+                orgId = "org-a",
+                operation = "PUT",
+                payloadJson = json("title" to "Local Conflict Title", "expectedVersion" to 1).toString(),
+                dirtyFields = listOf("title"),
+                needsAttention = true,
+                lastError = "Conflict: server has newer changes for the same task.",
+                remoteSnapshotJson = json("id" to "task-a", "title" to "Server Title", "version" to 2).toString()
+            )
+            vm.syncEngine.enqueue(conflictOp)
+        }
+
+        // Open Sync Center
+        compose.onNode(hasContentDescription("Sync center")).performClick()
+        waitFor("Sync Center")
+        waitFor("Needs Attention")
+        waitFor("Conflict: server has newer changes for the same task.")
+        screenshot("android_sync_center_conflict")
+
+        // Verify "Use Theirs" and "Keep Mine" buttons exist
+        compose.onNodeWithTag("btn_use_theirs_op-conflict-1").assertExists()
+        compose.onNodeWithTag("btn_keep_mine_op-conflict-1").assertExists()
+
+        // Click Keep Mine to resolve conflict
+        compose.onNodeWithTag("btn_keep_mine_op-conflict-1").performClick()
+        compose.waitForIdle()
+
+        // Verify conflict was cleared and PUT /api/tasks/task-a was dispatched with version 2
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/tasks/task-a" && it.second.number("expectedVersion") == 2 })
+        }
+
+        // Close Sync Center
+        compose.onNodeWithTag("btn_close_sync_center").performClick()
+    }
 }
 
 

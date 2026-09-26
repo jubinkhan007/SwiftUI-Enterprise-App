@@ -2700,7 +2700,9 @@ fun SyncCenterModal(
     onDismiss: () -> Unit
 ) {
     var lastSyncedText by remember { mutableStateOf("Just now") }
-    var isSyncing by remember { mutableStateOf(false) }
+    val pendingOps by vm.syncEngine.pendingOperations.collectAsState()
+    val attentionOps by vm.syncEngine.attentionOperations.collectAsState()
+    val isSyncing by vm.syncEngine.isSyncing.collectAsState()
     val scope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
@@ -2725,15 +2727,13 @@ fun SyncCenterModal(
                     )
                     TextButton(
                         onClick = {
-                            scope.launch {
-                                isSyncing = true
-                                kotlinx.coroutines.delay(600)
-                                vm.changed()
+                            vm.syncEngine.syncNow {
                                 lastSyncedText = "Just now"
-                                isSyncing = false
+                                vm.changed()
                             }
                         },
-                        enabled = !isSyncing
+                        enabled = !isSyncing,
+                        modifier = Modifier.testTag("btn_sync_now")
                     ) {
                         if (isSyncing) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -2754,6 +2754,7 @@ fun SyncCenterModal(
                                     .background(
                                         when {
                                             isSyncing -> Color(0xFF007AFF)
+                                            attentionOps.isNotEmpty() -> Color(0xFFFF3B30)
                                             isLive -> Color(0xFF34C759)
                                             else -> Color(0xFFFF9500)
                                         }
@@ -2762,7 +2763,8 @@ fun SyncCenterModal(
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 text = when {
-                                    isSyncing -> "Syncing"
+                                    isSyncing -> "Syncing (${pendingOps.size})"
+                                    attentionOps.isNotEmpty() -> "Attention Needed"
                                     isLive -> "Online"
                                     else -> "Offline"
                                 },
@@ -2778,22 +2780,140 @@ fun SyncCenterModal(
                         }
                         HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
                         Text(
-                            text = "Pending operations: 0",
+                            text = "Pending operations: ${pendingOps.size}",
                             style = AppTypography.caption1,
-                            color = AppColors.textSecondary
+                            color = AppColors.textSecondary,
+                            modifier = Modifier.testTag("txt_pending_count")
                         )
                         Text(
-                            text = "Needs attention: 0",
+                            text = "Needs attention: ${attentionOps.size}",
                             style = AppTypography.caption1,
-                            color = AppColors.textSecondary
+                            color = if (attentionOps.isNotEmpty()) AppColors.statusError else AppColors.textSecondary,
+                            modifier = Modifier.testTag("txt_attention_count")
                         )
+                    }
+                }
+
+                // Needs Attention Section (Conflicts & Sync Errors)
+                if (attentionOps.isNotEmpty()) {
+                    Text(
+                        text = "Needs Attention",
+                        style = AppTypography.headline,
+                        color = AppColors.statusError
+                    )
+                    IosInsetGroupedCard {
+                        Column(
+                            Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            attentionOps.forEach { op ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("attention_row_${op.id}"),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${op.operation.uppercase()} ${op.entityType.uppercase()}",
+                                            style = AppTypography.headline,
+                                            color = AppColors.textPrimary,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = op.entityId.take(8),
+                                            style = AppTypography.caption2,
+                                            color = AppColors.textTertiary
+                                        )
+                                    }
+                                    if (!op.lastError.isNullOrBlank()) {
+                                        Text(
+                                            text = op.lastError.orEmpty(),
+                                            style = AppTypography.caption1,
+                                            color = AppColors.statusError
+                                        )
+                                    }
+                                    // Conflict Resolution Actions matching iOS SyncCenterSheet.swift
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (op.remoteSnapshotJson != null) {
+                                            OutlinedButton(
+                                                onClick = { vm.syncEngine.resolveConflictUseTheirs(op) },
+                                                modifier = Modifier.weight(1f).testTag("btn_use_theirs_${op.id}")
+                                            ) {
+                                                Text("Use Theirs", style = AppTypography.caption1)
+                                            }
+                                            Button(
+                                                onClick = { vm.syncEngine.resolveConflictKeepMine(op) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary),
+                                                modifier = Modifier.weight(1f).testTag("btn_keep_mine_${op.id}")
+                                            ) {
+                                                Text("Keep Mine", style = AppTypography.caption1, color = Color.White)
+                                            }
+                                        } else {
+                                            OutlinedButton(
+                                                onClick = { vm.syncEngine.retry(op) },
+                                                modifier = Modifier.weight(1f).testTag("btn_retry_${op.id}")
+                                            ) {
+                                                Text("Retry", style = AppTypography.caption1)
+                                            }
+                                            Button(
+                                                onClick = { vm.syncEngine.discard(op) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = AppColors.statusError),
+                                                modifier = Modifier.weight(1f).testTag("btn_discard_${op.id}")
+                                            ) {
+                                                Text("Discard", style = AppTypography.caption1, color = Color.White)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Pending Section
+                if (pendingOps.isNotEmpty()) {
+                    Text(
+                        text = "Pending Operations",
+                        style = AppTypography.headline,
+                        color = AppColors.textPrimary
+                    )
+                    IosInsetGroupedCard {
+                        Column(
+                            Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            pendingOps.forEach { op ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("pending_row_${op.id}"),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${op.operation.uppercase()} ${op.entityType.uppercase()}",
+                                        style = AppTypography.body,
+                                        color = AppColors.textPrimary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = op.entityId.take(8),
+                                        style = AppTypography.caption1,
+                                        color = AppColors.textSecondary
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
                 IosButton(
                     title = "Close",
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("btn_close_sync_center")
                 )
             }
         }

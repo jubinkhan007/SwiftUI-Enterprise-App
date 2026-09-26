@@ -9,6 +9,8 @@ interface WorkspaceHeaderProps {
   currentUser?: UserDTO | null;
   onLogout?: () => void;
   onProfileSaved?: (user: UserDTO) => void;
+  onOpenSyncCenter?: () => void;
+  isLive?: boolean;
 }
 
 export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
@@ -17,6 +19,8 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
   currentUser,
   onLogout,
   onProfileSaved,
+  onOpenSyncCenter,
+  isLive = true,
 }) => {
   const [showProfile, setShowProfile] = useState(false);
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
@@ -57,7 +61,22 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
       </div>
 
       {currentUser && (
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenSyncCenter}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 transition text-xs font-medium"
+            title="Open Sync Center"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isLive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+              }`}
+            />
+            <span className="text-slate-300 text-[11px] font-semibold">
+              {isLive ? 'Live' : 'Offline'}
+            </span>
+          </button>
+
           <button
             onClick={() => {
               setDisplayName(currentUser.displayName);

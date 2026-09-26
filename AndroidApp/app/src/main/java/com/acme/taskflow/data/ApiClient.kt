@@ -33,7 +33,7 @@ fun JsonObject.child(key: String): JsonObject = get(key)?.obj() ?: JsonObject()
 fun JsonObject.list(key: String): List<JsonObject> = get(key)?.rows() ?: emptyList()
 val JsonObject.id: String get() = text("id")
 
-class ApiFailure(val status: Int, message: String) : IOException(message)
+class ApiFailure(val status: Int, message: String, val rawBody: String = "") : IOException(message)
 data class ApiResult(val data: JsonElement, val pagination: JsonObject)
 
 class ApiClient(
@@ -98,10 +98,10 @@ class ApiClient(
                                     envelope.has("error") && envelope.get("error").isJsonPrimitive && !envelope.get("error").asString.equals("true", ignoreCase = true) -> envelope.text("error")
                                     else -> "Request failed (${it.code})"
                                 }
-                                throw ApiFailure(it.code, errorMessage)
+                                throw ApiFailure(it.code, errorMessage, raw)
                             }
                             if (it.code != 204 && !envelope.has("success")) {
-                                throw ApiFailure(it.code, "The server returned an invalid response.")
+                                throw ApiFailure(it.code, "The server returned an invalid response.", raw)
                             }
                             ApiResult(envelope.get("data") ?: JsonNull.INSTANCE, envelope.child("pagination"))
                         }

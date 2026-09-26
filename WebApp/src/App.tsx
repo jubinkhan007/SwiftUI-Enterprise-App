@@ -13,6 +13,7 @@ import { ProductivityScreen } from './screens/ProductivityScreen';
 import { SessionAuditScreen } from './screens/SessionAuditScreen';
 import { InCallScreen } from './screens/InCallScreen';
 import { BillingScreen } from './screens/BillingScreen';
+import { SyncCenterModal } from './components/SyncCenterModal';
 import { Video, PhoneOff } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -20,6 +21,19 @@ export const App: React.FC = () => {
   const [currentNav, setCurrentNav] = useState<NavDestination>('all_tasks');
   const [activeCallConvId, setActiveCallConvId] = useState<string | null>(null);
   const [incomingCallNotification, setIncomingCallNotification] = useState<NotificationDTO | null>(null);
+  const [showSyncCenter, setShowSyncCenter] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const handleLoginSuccess = (user: UserDTO) => {
     setUser(user);
@@ -124,6 +138,8 @@ export const App: React.FC = () => {
         currentUser={user}
         onLogout={handleLogout}
         onProfileSaved={setUser}
+        onOpenSyncCenter={() => setShowSyncCenter(true)}
+        isLive={isOnline}
       />
 
       {/* Main Container with Sidebar + Content */}
@@ -161,6 +177,13 @@ export const App: React.FC = () => {
           onEndCall={() => setActiveCallConvId(null)}
         />
       )}
+
+      {/* Sync Center Modal */}
+      <SyncCenterModal
+        isOpen={showSyncCenter}
+        onClose={() => setShowSyncCenter(false)}
+        isLive={isOnline}
+      />
     </div>
   );
 };
