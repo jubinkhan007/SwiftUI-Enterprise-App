@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TaskItemDTO, TaskPriority, TaskStatus, TaskType, SubtaskDTO, TaskDependencyDTO } from '../types';
+import { TaskItemDTO, TaskPriority, TaskStatus, TaskType, SubtaskDTO, TaskDependencyDTO, NavDestination } from '../types';
 import { api } from '../services/api';
 import { 
   Plus, 
@@ -37,6 +37,7 @@ import {
 
 interface KanbanBoardScreenProps {
   myTasksOnly?: boolean;
+  onNavigate?: (dest: NavDestination) => void;
 }
 
 export interface BoardColumn {
@@ -63,7 +64,7 @@ const DEFAULT_COLUMNS: BoardColumn[] = [
   { id: 'col-done', status: 'done', title: 'Done', color: 'border-emerald-500/30 text-emerald-400' },
 ];
 
-export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnly = false }) => {
+export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnly = false, onNavigate }) => {
   const [tasks, setTasks] = useState<TaskItemDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -491,6 +492,17 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
               <Calendar className="w-3.5 h-3.5" />
               Timeline
             </button>
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate('backlog')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                title="Open Agile Backlog & Sprint Planning"
+              >
+                <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                Backlog
+              </button>
+            )}
           </div>
 
           <button

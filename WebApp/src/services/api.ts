@@ -22,7 +22,9 @@ import {
   MeetingSummaryDTO,
   SubtaskDTO,
   TaskDependencyDTO,
-  OrganizationDetailsDTO
+  OrganizationDetailsDTO,
+  SprintDTO,
+  SprintStatus
 } from '../types';
 
 class ApiService {
@@ -203,6 +205,10 @@ class ApiService {
       completedAt: t.completed_at || t.completedAt,
       assigneeId: t.assignee_id || t.assigneeId,
       position: t.position || 0,
+      version: t.version,
+      sprintId: t.sprint_id ?? t.sprintId ?? null,
+      sprintPosition: t.sprint_position ?? t.sprintPosition,
+      backlogPosition: t.backlog_position ?? t.backlogPosition,
     }));
   }
 
@@ -961,6 +967,173 @@ class ApiService {
 
   getMeetingICSUrl(meetingId: string): string {
     return `/api/meetings/${meetingId}/ics`;
+  }
+
+  // --- Agile Backlog & Sprints ---
+
+  async listSprints(projectId: string): Promise<SprintDTO[]> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/sprints`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((s: any) => ({
+      id: s.id,
+      projectId: s.project_id || s.projectId || projectId,
+      name: s.name,
+      startDate: s.start_date || s.startDate,
+      endDate: s.end_date || s.endDate,
+      status: s.status || 'planned',
+      capacity: s.capacity,
+    }));
+  }
+
+  async createSprint(
+    projectId: string,
+    payload: { name: string; startDate: string; endDate: string; capacity?: number; status?: SprintStatus }
+  ): Promise<SprintDTO> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/sprints`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: payload.name,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        capacity: payload.capacity,
+        status: payload.status || 'planned',
+      }),
+    });
+    const s = raw.data || raw;
+    return {
+      id: s.id,
+      projectId: s.project_id || s.projectId || projectId,
+      name: s.name,
+      startDate: s.start_date || s.startDate || payload.startDate,
+      endDate: s.end_date || s.endDate || payload.endDate,
+      status: s.status || payload.status || 'planned',
+      capacity: s.capacity ?? payload.capacity,
+    };
+  }
+
+  async updateSprint(
+    sprintId: string,
+    payload: { status?: SprintStatus; capacity?: number }
+  ): Promise<SprintDTO> {
+    const raw = await this.request<any>(`/api/sprints/${sprintId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const s = raw.data || raw;
+    return {
+      id: s.id,
+      projectId: s.project_id || s.projectId,
+      name: s.name,
+      startDate: s.start_date || s.startDate,
+      endDate: s.end_date || s.endDate,
+      status: s.status || payload.status,
+      capacity: s.capacity ?? payload.capacity,
+    };
+  }
+
+  async getBacklog(projectId: string): Promise<TaskItemDTO[]> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/backlog`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((t: any) => ({
+      id: t.id,
+      orgId: t.org_id || t.orgId,
+      listId: t.list_id || t.listId,
+      projectId: t.project_id || t.projectId || projectId,
+      title: t.title || 'Untitled Task',
+      description: t.description,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      taskType: t.task_type || t.taskType || 'task',
+      storyPoints: t.story_points ?? t.storyPoints,
+      issueKey: t.issue_key || t.issueKey,
+      labels: t.labels || [],
+      startDate: t.start_date || t.startDate,
+      dueDate: t.due_date || t.dueDate,
+      completedAt: t.completed_at || t.completedAt,
+      assigneeId: t.assignee_id || t.assigneeId,
+      position: t.position || 0,
+      version: t.version,
+      sprintId: t.sprint_id ?? t.sprintId ?? null,
+      sprintPosition: t.sprint_position ?? t.sprintPosition,
+      backlogPosition: t.backlog_position ?? t.backlogPosition,
+    }));
+  }
+
+  async getSprintIssues(sprintId: string): Promise<TaskItemDTO[]> {
+    const raw = await this.request<any>(`/api/sprints/${sprintId}/issues`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((t: any) => ({
+      id: t.id,
+      orgId: t.org_id || t.orgId,
+      listId: t.list_id || t.listId,
+      projectId: t.project_id || t.projectId,
+      title: t.title || 'Untitled Task',
+      description: t.description,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      taskType: t.task_type || t.taskType || 'task',
+      storyPoints: t.story_points ?? t.storyPoints,
+      issueKey: t.issue_key || t.issueKey,
+      labels: t.labels || [],
+      startDate: t.start_date || t.startDate,
+      dueDate: t.due_date || t.dueDate,
+      completedAt: t.completed_at || t.completedAt,
+      assigneeId: t.assignee_id || t.assigneeId,
+      position: t.position || 0,
+      version: t.version,
+      sprintId: t.sprint_id ?? t.sprintId ?? sprintId,
+      sprintPosition: t.sprint_position ?? t.sprintPosition,
+      backlogPosition: t.backlog_position ?? t.backlogPosition,
+    }));
+  }
+
+  async assignTaskToSprint(
+    taskId: string,
+    sprintId: string | null,
+    sprintPosition?: number,
+    backlogPosition?: number,
+    expectedVersion?: number
+  ): Promise<TaskItemDTO> {
+    const body: any = {
+      expectedVersion,
+    };
+    if (sprintId !== undefined) {
+      body.sprintId = sprintId;
+    }
+    if (sprintPosition !== undefined) {
+      body.sprintPosition = sprintPosition;
+    }
+    if (backlogPosition !== undefined) {
+      body.backlogPosition = backlogPosition;
+    }
+    const raw = await this.request<any>(`/api/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    const t = raw.data || raw;
+    return {
+      id: t.id,
+      orgId: t.org_id || t.orgId,
+      listId: t.list_id || t.listId,
+      projectId: t.project_id || t.projectId,
+      title: t.title || 'Untitled Task',
+      description: t.description,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      taskType: t.task_type || t.taskType || 'task',
+      storyPoints: t.story_points ?? t.storyPoints,
+      issueKey: t.issue_key || t.issueKey,
+      labels: t.labels || [],
+      startDate: t.start_date || t.startDate,
+      dueDate: t.due_date || t.dueDate,
+      completedAt: t.completed_at || t.completedAt,
+      assigneeId: t.assignee_id || t.assigneeId,
+      position: t.position || 0,
+      version: t.version,
+      sprintId: t.sprint_id ?? t.sprintId ?? sprintId,
+      sprintPosition: t.sprint_position ?? t.sprintPosition,
+      backlogPosition: t.backlog_position ?? t.backlogPosition,
+    };
   }
 }
 

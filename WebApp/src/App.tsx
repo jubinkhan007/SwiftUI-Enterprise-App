@@ -13,6 +13,7 @@ import { ProductivityScreen } from './screens/ProductivityScreen';
 import { SessionAuditScreen } from './screens/SessionAuditScreen';
 import { InCallScreen } from './screens/InCallScreen';
 import { BillingScreen } from './screens/BillingScreen';
+import { BacklogScreen } from './screens/BacklogScreen';
 import { SyncCenterModal } from './components/SyncCenterModal';
 import { Video, PhoneOff } from 'lucide-react';
 
@@ -154,8 +155,9 @@ export const App: React.FC = () => {
 
         {/* Dynamic Screen View */}
         <main className="flex-1 flex flex-col h-full overflow-hidden">
-          {currentNav === 'all_tasks' && <KanbanBoardScreen myTasksOnly={false} />}
-          {currentNav === 'my_tasks' && <KanbanBoardScreen myTasksOnly={true} />}
+          {currentNav === 'all_tasks' && <KanbanBoardScreen myTasksOnly={false} onNavigate={setCurrentNav} />}
+          {currentNav === 'my_tasks' && <KanbanBoardScreen myTasksOnly={true} onNavigate={setCurrentNav} />}
+          {currentNav === 'backlog' && <BacklogScreen onNavigate={setCurrentNav} />}
           {currentNav === 'inbox' && <InboxScreen onNavigate={setCurrentNav} />}
           {currentNav === 'messages' && (
             <ChatScreen onStartCall={(convId) => setActiveCallConvId(convId)} />

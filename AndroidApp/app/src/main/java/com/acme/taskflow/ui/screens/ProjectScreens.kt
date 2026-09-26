@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.acme.taskflow.data.*
 import com.acme.taskflow.ui.components.*
@@ -50,7 +51,7 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
     var moving by remember { mutableStateOf<JsonObject?>(null) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag("backlog_list"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -59,37 +60,124 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Backlog", Modifier.weight(1f), style = AppTypography.largeTitle)
+                Text(
+                    if (sprint.isBlank()) "Product Backlog" else "Sprint Planning",
+                    Modifier.weight(1f),
+                    style = AppTypography.largeTitle
+                )
                 IconButton(
                     onClick = { create = true },
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
                         .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                        .testTag("btn_create_sprint")
                 ) {
                     Icon(Icons.Default.Add, "Create sprint", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
                 }
             }
             Spacer(Modifier.height(8.dp))
             RemoteStatus(sprints)
-            ChoiceMenu(
-                "Sprint",
-                sprint,
-                listOf(Choice("", "Backlog")) + sprints.data.rows().map { Choice(it.id, "${it.text("name")} (${label(it.text("status"))})") }
-            ) { sprint = it }
+            Box(Modifier.testTag("sprint_selector")) {
+                ChoiceMenu(
+                    "Sprint",
+                    sprint,
+                    listOf(Choice("", "Backlog")) + sprints.data.rows().map { Choice(it.id, "${it.text("name")} (${label(it.text("status"))})") }
+                ) { sprint = it }
+            }
 
             sprints.data.rows().find { it.id == sprint }?.let { item ->
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "${dateLabel(item.text("start_date"))} → ${dateLabel(item.text("end_date"))}",
-                    style = AppTypography.caption1,
-                    color = AppColors.brandPrimary
-                )
-                Spacer(Modifier.height(4.dp))
-                ChoiceMenu("Status", item.text("status"), choices("planned", "active", "completed", "closed")) { status ->
-                    action.run {
-                        api.request("/api/sprints/$sprint", "PATCH", json("status" to status))
-                        vm.changed()
+                val currentRows = issues.data.rows()
+                val totalPoints = currentRows.sumOf { it.number("story_points")?.toDouble() ?: 0.0 }
+                val capacity = item.number("capacity")?.toDouble() ?: 0.0
+                val isOver = capacity > 0 && totalPoints > capacity
+
+                Spacer(Modifier.height(8.dp))
+                IosCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${dateLabel(item.text("start_date"))} → ${dateLabel(item.text("end_date"))}",
+                                style = AppTypography.caption1,
+                                color = AppColors.brandPrimary
+                            )
+                            IosPill(label(item.text("status")))
+                        }
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Story Points Capacity", style = AppTypography.caption1, color = AppColors.textSecondary)
+                            Text(
+                                if (capacity > 0) "${totalPoints.toInt()} / ${capacity.toInt()} pts" else "${totalPoints.toInt()} pts",
+                                modifier = Modifier.testTag("txt_sprint_points"),
+                                style = AppTypography.caption1,
+                                color = if (isOver) AppColors.statusError else AppColors.textPrimary
+                            )
+                        }
+
+                        if (capacity > 0) {
+                            val ratio = (totalPoints / capacity).toFloat().coerceIn(0f, 1f)
+                            LinearProgressIndicator(
+                                progress = { ratio },
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                color = if (isOver) AppColors.statusError else AppColors.brandPrimary,
+                                trackColor = AppColors.surfaceElevated
+                            )
+                        }
+
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (item.text("status") == "planned") {
+                                Button(
+                                    onClick = {
+                                        action.run {
+                                            api.request("/api/sprints/$sprint", "PATCH", json("status" to "active"))
+                                            vm.changed()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).testTag("btn_start_sprint"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, null, Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Start Sprint", style = AppTypography.caption1)
+                                }
+                            } else if (item.text("status") == "active") {
+                                Button(
+                                    onClick = {
+                                        action.run {
+                                            api.request("/api/sprints/$sprint", "PATCH", json("status" to "completed"))
+                                            vm.changed()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).testTag("btn_complete_sprint"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.statusSuccess)
+                                ) {
+                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Complete Sprint", style = AppTypography.caption1)
+                                }
+                            }
+
+                            Box(Modifier.weight(1f)) {
+                                ChoiceMenu("Status", item.text("status"), choices("planned", "active", "completed", "closed")) { status ->
+                                    action.run {
+                                        api.request("/api/sprints/$sprint", "PATCH", json("status" to status))
+                                        vm.changed()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -111,8 +199,15 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
                             Text("${task.text("story_points", "0")} pts", style = AppTypography.caption2, color = AppColors.textTertiary)
                         }
                     }
-                    IconButton(onClick = { moving = task }) {
-                        Icon(Icons.Default.MoveUp, "Move to sprint", tint = AppColors.brandPrimary)
+                    IconButton(
+                        onClick = { moving = task },
+                        modifier = Modifier.testTag("btn_move_task_${task.id}")
+                    ) {
+                        Icon(
+                            if (sprint.isBlank()) Icons.Default.MoveUp else Icons.Default.MoveDown,
+                            "Move task",
+                            tint = AppColors.brandPrimary
+                        )
                     }
                 }
             }
@@ -137,18 +232,29 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
     }
 
     moving?.let { task ->
+        val sprintOptions = listOf(Choice("", "Backlog (Unassigned)")) + sprints.data.rows()
+            .filter { it.text("status") in listOf("planned", "active") }
+            .map { Choice(it.id, it.text("name")) }
+
         EditorDialog(
-            "Move to sprint",
+            "Move task",
             listOf(
                 FormField(
                     "sprint_id",
-                    "Sprint",
-                    required = true,
-                    options = sprints.data.rows().filter { it.text("status") in listOf("planned", "active") }.map { Choice(it.id, it.text("name")) }
+                    "Target Sprint",
+                    required = false,
+                    options = sprintOptions
                 )
             ),
             { moving = null }
         ) {
+            if (it.text("sprint_id").isBlank()) {
+                it.remove("sprint_id")
+                it.add("sprint_id", com.google.gson.JsonNull.INSTANCE)
+                it.addProperty("backlog_position", 1000)
+            } else {
+                it.addProperty("sprint_position", 1000)
+            }
             it.addProperty("expected_version", task.number("version"))
             api.request("/api/tasks/${task.id}", "PATCH", it, version = task.number("version"))
             vm.changed()

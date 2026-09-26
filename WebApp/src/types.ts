@@ -35,6 +35,10 @@ export interface TaskItemDTO {
   completedAt?: string;
   assigneeId?: string;
   position?: number;
+  version?: number;
+  sprintId?: string | null;
+  sprintPosition?: number;
+  backlogPosition?: number;
 }
 
 export interface SpaceDTO {
@@ -256,6 +260,18 @@ export interface TaskDependencyDTO {
 
 export type BillingTier = 'free' | 'pro' | 'enterprise';
 
+export type SprintStatus = 'planned' | 'active' | 'completed' | 'cancelled' | 'closed';
+
+export interface SprintDTO {
+  id: string;
+  projectId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: SprintStatus;
+  capacity?: number;
+}
+
 export interface OrganizationDetailsDTO {
   id: string;
   name: string;
@@ -272,10 +288,11 @@ export interface OrganizationDetailsDTO {
 export type NavDestination = 
   | 'all_tasks' 
   | 'my_tasks' 
+  | 'backlog'
   | 'inbox' 
   | 'messages' 
   | 'meetings' 
   | 'productivity' 
-  | 'sessions'
-  | 'team'
+  | 'sessions' 
+  | 'team' 
   | 'billing';

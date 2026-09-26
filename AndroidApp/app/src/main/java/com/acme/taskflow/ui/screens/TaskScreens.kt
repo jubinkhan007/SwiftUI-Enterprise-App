@@ -366,45 +366,38 @@ fun TasksScreen(
             }
 
             // Status filter chips
-            Row(
-                Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IosFilterChip("All", status.isBlank(), onClick = { status = "" })
-                statuses.forEach { item ->
-                    IosFilterChip(
-                        title = item.label,
-                        isSelected = status == item.value,
-                        onClick = { status = if (status == item.value) "" else item.value }
-                    )
+            if (mode !in listOf("Backlog", "Analytics", "Releases")) {
+                Row(
+                    Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IosFilterChip("All", status.isBlank(), onClick = { status = "" })
+                    statuses.forEach { item ->
+                        IosFilterChip(
+                            title = item.label,
+                            isSelected = status == item.value,
+                            onClick = { status = if (status == item.value) "" else item.value }
+                        )
+                    }
+                    VerticalDivider(Modifier.height(20.dp), color = AppColors.borderSubtle)
+                    priorities.forEach { item ->
+                        IosFilterChip(
+                            title = item.label,
+                            isSelected = priority == item.value,
+                            onClick = { priority = if (priority == item.value) "" else item.value }
+                        )
+                    }
                 }
-                VerticalDivider(Modifier.height(20.dp), color = AppColors.borderSubtle)
-                priorities.forEach { item ->
-                    IosFilterChip(
-                        title = item.label,
-                        isSelected = priority == item.value,
-                        onClick = { priority = if (priority == item.value) "" else item.value }
-                    )
-                }
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
             }
-            HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
         }
 
         if (mode in listOf("Backlog", "Analytics", "Releases")) {
-            if (projectId.isBlank()) {
-                Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        "Select a project from the sidebar to view ${mode.lowercase()}.",
-                        style = AppTypography.body,
-                        color = AppColors.textSecondary
-                    )
-                }
-            } else {
-                ProjectScreen(vm, api, projectId, mode, onTask = { selected = it })
-            }
+            val activeProjectId = projectId.ifBlank { "project-a" }
+            ProjectScreen(vm, api, activeProjectId, mode, onTask = { selected = it })
             return@Column
         }
 

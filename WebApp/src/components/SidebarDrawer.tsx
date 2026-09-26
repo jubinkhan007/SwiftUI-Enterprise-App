@@ -17,7 +17,8 @@ import {
   Plus,
   Users,
   X,
-  CreditCard
+  CreditCard,
+  Layers
 } from 'lucide-react';
 import { HierarchyTreeDTO, NavDestination, UserDTO } from '../types';
 import { api } from '../services/api';
@@ -136,6 +137,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   const navItems: { id: NavDestination; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'all_tasks', label: 'All Tasks', icon: LayoutDashboard },
     { id: 'my_tasks', label: 'My Tasks', icon: User },
+    { id: 'backlog', label: 'Backlog & Sprints', icon: Layers },
     { id: 'inbox', label: 'Inbox', icon: Mail },
     { id: 'messages', label: 'Messages & Channels', icon: MessageSquare },
     { id: 'meetings', label: 'Meetings & Time', icon: Calendar },

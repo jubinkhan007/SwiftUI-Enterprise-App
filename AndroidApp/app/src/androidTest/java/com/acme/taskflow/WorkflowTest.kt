@@ -47,6 +47,8 @@ class WorkflowTest {
     private val orgInvites = CopyOnWriteArrayList<JsonObject>()
     private val orgJoinRequests = CopyOnWriteArrayList<JsonObject>()
     private val mockNotifications = CopyOnWriteArrayList<JsonObject>()
+    private val mockSprints = CopyOnWriteArrayList<JsonObject>()
+    private val mockSprintIssues = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
     private lateinit var callTicketData: JsonObject
     private lateinit var meetingData: JsonObject
@@ -274,6 +276,62 @@ class WorkflowTest {
             "reply_count" to 1,
             "created_at" to "2026-09-14T10:00:00Z"
         )
+
+        mockSprints.clear()
+        mockSprints += json(
+            "id" to "sprint-1",
+            "project_id" to "project-a",
+            "name" to "Sprint 14 - Mobile Parity",
+            "status" to "active",
+            "start_date" to "2026-09-15T00:00:00Z",
+            "end_date" to "2026-09-29T00:00:00Z",
+            "capacity" to 20
+        )
+        mockSprints += json(
+            "id" to "sprint-2",
+            "project_id" to "project-a",
+            "name" to "Sprint 15 - Enterprise Release",
+            "status" to "planned",
+            "start_date" to "2026-09-30T00:00:00Z",
+            "end_date" to "2026-10-14T00:00:00Z",
+            "capacity" to 25
+        )
+
+        mockSprintIssues.clear()
+        mockSprintIssues += json(
+            "id" to "task-s1",
+            "title" to "LiveKit Calling Bridge",
+            "issue_key" to "PROJ-105",
+            "status" to "in_progress",
+            "priority" to "high",
+            "story_points" to 5,
+            "project_id" to "project-a",
+            "sprint_id" to "sprint-1",
+            "version" to 1
+        )
+        mockSprintIssues += json(
+            "id" to "task-s2",
+            "title" to "Sync Squashing Parity",
+            "issue_key" to "PROJ-106",
+            "status" to "todo",
+            "priority" to "medium",
+            "story_points" to 8,
+            "project_id" to "project-a",
+            "sprint_id" to "sprint-1",
+            "version" to 1
+        )
+
+        tasks += json(
+            "id" to "task-backlog-1",
+            "title" to "Groomed Backlog Story",
+            "issue_key" to "PROJ-108",
+            "status" to "todo",
+            "priority" to "high",
+            "story_points" to 3,
+            "project_id" to "project-a",
+            "version" to 1
+        )
+
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -347,6 +405,47 @@ class WorkflowTest {
                     path == "/api/organizations/org-a" -> json("id" to "org-a", "name" to "Acme Workspace", "subscription_tier" to "free", "member_count" to 3)
                     path == "/api/org/billing/checkout" && request.method == "POST" -> json("url" to "https://checkout.stripe.com/c/pay/cs_test_mock_123")
                     path == "/api/org/billing/portal" && request.method == "POST" -> json("url" to "https://billing.stripe.com/p/session/portal_test_mock_123")
+                    path.endsWith("/sprints") && request.method == "GET" -> mockSprints.toList()
+                    path.endsWith("/sprints") && request.method == "POST" -> {
+                        val newS = json(
+                            "id" to "sprint-${mockSprints.size + 1}",
+                            "name" to payload.text("name"),
+                            "status" to "planned",
+                            "start_date" to payload.text("start_date"),
+                            "end_date" to payload.text("end_date"),
+                            "capacity" to if (payload.has("capacity")) payload.number("capacity") else 20
+                        )
+                        mockSprints += newS
+                        newS
+                    }
+                    path.endsWith("/backlog") && request.method == "GET" -> {
+                        tasks.filter { it.id == "task-backlog-1" }
+                    }
+                    path.contains("/sprints/") && path.endsWith("/issues") && request.method == "GET" -> mockSprintIssues.toList()
+                    path.startsWith("/api/sprints/") && request.method == "PATCH" -> {
+                        val sId = path.substringAfterLast("/")
+                        val s = mockSprints.firstOrNull { it.id == sId }
+                        if (s != null && payload.has("status")) {
+                            s.addProperty("status", payload.text("status"))
+                        }
+                        s ?: json("success" to true)
+                    }
+                    path.startsWith("/api/tasks/") && request.method == "PATCH" -> {
+                        val tId = path.substringAfterLast("/")
+                        val t = tasks.firstOrNull { it.id == tId } ?: mockSprintIssues.firstOrNull { it.id == tId }
+                        if (t != null) {
+                            if (payload.has("sprint_id")) {
+                                if (payload.get("sprint_id").isJsonNull) {
+                                    t.remove("sprint_id")
+                                } else {
+                                    t.addProperty("sprint_id", payload.text("sprint_id"))
+                                }
+                            }
+                            if (payload.has("status")) t.addProperty("status", payload.text("status"))
+                            t.addProperty("version", (if (t.has("version")) t.number("version") else 1) + 1)
+                        }
+                        t ?: json("id" to tId, "success" to true)
+                    }
                     path == "/api/tasks/move-multiple" && request.method == "POST" -> {
                         val target = payload.text("targetStatus")
                         payload.list("moves").forEach { m ->
@@ -1483,6 +1582,41 @@ class WorkflowTest {
 
         // Close Sync Center
         compose.onNodeWithTag("btn_close_sync_center").performClick()
+    }
+
+    @Test fun sprintAndBacklogPlanningWorkflow() {
+        login()
+        compose.onNodeWithText("All Tasks").performClick()
+        waitFor("Test Task 26/02 01")
+
+        // Select Backlog view mode
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(2)
+        compose.onNodeWithText("Backlog").performClick()
+
+        // Verify Product Backlog section and item
+        waitFor("Product Backlog")
+        waitFor("Groomed Backlog Story")
+        waitFor("3 pts")
+
+        // Switch sprint selector to Sprint 14
+        compose.onNodeWithTag("sprint_selector").performClick()
+        waitFor("Sprint 14 - Mobile Parity (Active)")
+        compose.onNodeWithText("Sprint 14 - Mobile Parity (Active)").performClick()
+
+        // Verify Sprint Planning card with capacity gauge and tasks
+        waitFor("Sprint Planning")
+        waitFor("Story Points Capacity")
+        waitFor("13 / 20 pts")
+        waitFor("LiveKit Calling Bridge")
+        screenshot("android_agile_backlog_planning")
+
+        // Complete Sprint action
+        compose.onNodeWithTag("btn_complete_sprint").performClick()
+        compose.waitForIdle()
+
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/sprints/sprint-1" && it.second.text("status") == "completed" })
+        }
     }
 }
 
