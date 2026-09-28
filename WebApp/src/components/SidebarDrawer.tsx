@@ -18,7 +18,8 @@ import {
   Users,
   X,
   CreditCard,
-  Layers
+  Layers,
+  Package
 } from 'lucide-react';
 import { HierarchyTreeDTO, NavDestination, UserDTO } from '../types';
 import { api } from '../services/api';
@@ -138,6 +139,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
     { id: 'all_tasks', label: 'All Tasks', icon: LayoutDashboard },
     { id: 'my_tasks', label: 'My Tasks', icon: User },
     { id: 'backlog', label: 'Backlog & Sprints', icon: Layers },
+    { id: 'releases', label: 'Releases & Versions', icon: Package },
     { id: 'inbox', label: 'Inbox', icon: Mail },
     { id: 'messages', label: 'Messages & Channels', icon: MessageSquare },
     { id: 'meetings', label: 'Meetings & Time', icon: Calendar },

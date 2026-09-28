@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TaskItemDTO, TaskPriority, TaskStatus, TaskType, SubtaskDTO, TaskDependencyDTO, NavDestination, TimeLogDTO, ProjectTimeReportDTO } from '../types';
+import { TaskItemDTO, TaskPriority, TaskStatus, TaskType, SubtaskDTO, TaskDependencyDTO, NavDestination, TimeLogDTO, ProjectTimeReportDTO, ReleaseDTO } from '../types';
 import { api } from '../services/api';
 import { 
   Plus, 
@@ -11,6 +11,7 @@ import {
   AlertCircle, 
   User, 
   Layers,
+  Package,
   ChevronRight,
   ChevronLeft,
   ArrowLeft,
@@ -233,6 +234,8 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
   const [editStoryPoints, setEditStoryPoints] = useState<number>(1);
   const [editAssigneeId, setEditAssigneeId] = useState('');
   const [editLabels, setEditLabels] = useState('');
+  const [editAffectedVersionId, setEditAffectedVersionId] = useState('');
+  const [projectReleases, setProjectReleases] = useState<ReleaseDTO[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Subtasks & Dependencies State
@@ -346,6 +349,10 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
     setEditStoryPoints(task.storyPoints ?? 1);
     setEditAssigneeId(task.assigneeId || '');
     setEditLabels(task.labels ? task.labels.join(', ') : '');
+    setEditAffectedVersionId(task.affectedVersionId || '');
+    if (task.projectId) {
+      api.getProjectReleases(task.projectId).then(setProjectReleases).catch(() => {});
+    }
     setNewSubtaskTitle('');
     setSelectedDepTaskId('');
     setLogHours('1.0');
@@ -456,6 +463,7 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
         storyPoints: editStoryPoints,
         assigneeId: editAssigneeId,
         labels: editLabels.split(',').map(l => l.trim()).filter(Boolean),
+        affectedVersionId: editAffectedVersionId || null,
       });
 
       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
@@ -546,15 +554,26 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
               Timeline
             </button>
             {onNavigate && (
-              <button
-                type="button"
-                onClick={() => onNavigate('backlog')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer"
-                title="Open Agile Backlog & Sprint Planning"
-              >
-                <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                Backlog
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('backlog')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                  title="Open Agile Backlog & Sprint Planning"
+                >
+                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                  Backlog
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('releases')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                  title="Open Releases & Version Planning"
+                >
+                  <Package className="w-3.5 h-3.5 text-indigo-400" />
+                  Releases
+                </button>
+              </>
             )}
           </div>
 
@@ -1175,6 +1194,24 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
                   onChange={(e) => setEditLabels(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 mt-1"
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Affected Version / Release
+                </label>
+                <select
+                  value={editAffectedVersionId}
+                  onChange={(e) => setEditAffectedVersionId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 mt-1 cursor-pointer"
+                >
+                  <option value="">None (Unassigned)</option>
+                  {projectReleases.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.status})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Subtasks Section */}

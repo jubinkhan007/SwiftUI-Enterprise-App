@@ -49,6 +49,8 @@ class WorkflowTest {
     private val mockNotifications = CopyOnWriteArrayList<JsonObject>()
     private val mockSprints = CopyOnWriteArrayList<JsonObject>()
     private val mockSprintIssues = CopyOnWriteArrayList<JsonObject>()
+    private val mockReleases = CopyOnWriteArrayList<JsonObject>()
+    private val mockReleaseIssues = CopyOnWriteArrayList<JsonObject>()
     private val timeLogs = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
     private lateinit var callTicketData: JsonObject
@@ -334,6 +336,51 @@ class WorkflowTest {
             "version" to 1
         )
 
+        mockReleases.clear()
+        mockReleases += json(
+            "id" to "release-1",
+            "project_id" to "project-a",
+            "name" to "v2.4.0 - Enterprise Parity",
+            "description" to "Core milestone for parity and release tools",
+            "status" to "unreleased",
+            "release_date" to "2026-10-15T00:00:00Z",
+            "is_locked" to false
+        )
+        mockReleases += json(
+            "id" to "release-2",
+            "project_id" to "project-a",
+            "name" to "v2.3.0 - Foundation",
+            "description" to "Initial architectural layer",
+            "status" to "released",
+            "release_date" to "2026-09-01T00:00:00Z",
+            "released_at" to "2026-09-02T12:00:00Z",
+            "is_locked" to true
+        )
+
+        mockReleaseIssues.clear()
+        mockReleaseIssues += json(
+            "id" to "task-r1",
+            "title" to "Time Tracking Parity",
+            "issue_key" to "PROJ-201",
+            "status" to "done",
+            "priority" to "high",
+            "story_points" to 5,
+            "project_id" to "project-a",
+            "version" to 1
+        )
+        mockReleaseIssues += json(
+            "id" to "task-r2",
+            "title" to "Crash Reporting Hook",
+            "issue_key" to "PROJ-202",
+            "status" to "in_progress",
+            "priority" to "critical",
+            "story_points" to 3,
+            "task_type" to "bug",
+            "bug_severity" to "critical",
+            "project_id" to "project-a",
+            "version" to 1
+        )
+
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -424,6 +471,43 @@ class WorkflowTest {
                         tasks.filter { it.id == "task-backlog-1" }
                     }
                     path.contains("/sprints/") && path.endsWith("/issues") && request.method == "GET" -> mockSprintIssues.toList()
+                    path.endsWith("/releases") && request.method == "GET" -> mockReleases.toList()
+                    path.endsWith("/releases") && request.method == "POST" -> {
+                        val newR = json(
+                            "id" to "release-${mockReleases.size + 1}",
+                            "project_id" to "project-a",
+                            "name" to payload.text("name"),
+                            "description" to payload.text("description"),
+                            "status" to "unreleased",
+                            "release_date" to payload.text("release_date"),
+                            "is_locked" to false
+                        )
+                        mockReleases += newR
+                        newR
+                    }
+                    path.contains("/releases/") && path.endsWith("/progress") && request.method == "GET" -> {
+                        json(
+                            "release_id" to path.substringAfter("/releases/").substringBefore("/progress"),
+                            "total_issues" to 2,
+                            "done_issues" to 1,
+                            "remaining_issues" to 1,
+                            "total_points" to 8,
+                            "done_points" to 5,
+                            "bug_count" to 1,
+                            "critical_bug_count" to 1
+                        )
+                    }
+                    path.contains("/releases/") && path.endsWith("/issues") && request.method == "GET" -> mockReleaseIssues.toList()
+                    path.contains("/releases/") && path.endsWith("/release") && request.method == "POST" -> {
+                        val rId = path.substringAfter("/releases/").substringBefore("/release")
+                        val r = mockReleases.firstOrNull { it.id == rId }
+                        if (r != null) {
+                            r.addProperty("status", "released")
+                            r.addProperty("released_at", "2026-09-28T14:00:00Z")
+                            r.addProperty("is_locked", payload.flag("lock"))
+                        }
+                        r ?: json("success" to true)
+                    }
                     path.startsWith("/api/sprints/") && request.method == "PATCH" -> {
                         val sId = path.substringAfterLast("/")
                         val s = mockSprints.firstOrNull { it.id == sId }
@@ -1714,6 +1798,76 @@ class WorkflowTest {
 
         // Dismiss dialog
         compose.onNodeWithText("Close").performClick()
+    }
+
+    @Test fun releaseManagementWorkflow() {
+        login()
+        compose.onNodeWithText("All Tasks").performClick()
+        waitFor("Test Task 26/02 01")
+
+        // 1. Scroll mode chips and click Releases
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(7)
+        compose.onNodeWithText("Releases").performClick()
+        waitFor("Manage versions, scope progress & release notes")
+        waitFor("v2.4.0 - Enterprise Parity")
+
+        // 2. Verify Releases screen renders list with releases
+        compose.onNodeWithTag("releases_list").assertIsDisplayed()
+        compose.onNodeWithTag("release_card_release-1").assertIsDisplayed()
+
+        // 3. Test Create Release dialog
+        compose.onNodeWithTag("btn_create_release").performClick()
+        waitFor("Create release")
+
+        compose.onNodeWithTag("input_name").performTextInput("v2.5.0 - Cloud Scale")
+        compose.onNodeWithTag("input_description").performTextInput("Multi-region scaling and developer webhooks")
+        compose.onNodeWithTag("btn_save_form").performClick()
+        compose.waitForIdle()
+
+        // Verify newly created release appears
+        waitFor("v2.5.0 - Cloud Scale")
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.endsWith("/releases") })
+        }
+
+        // 4. Select release-1 to open detail & progress
+        compose.onNodeWithTag("release_card_release-1").performClick()
+        waitFor("Release Progress")
+        waitFor("1 / 2 issues complete")
+        waitFor("5 / 8 pts (50%)")
+        waitFor("Linked Issues (2)")
+        waitFor("Time Tracking Parity")
+        waitFor("Crash Reporting Hook")
+
+        // 5. Test Generate Release Notes dialog
+        runCatching { compose.onNodeWithTag("btn_generate_notes").performScrollTo() }
+        compose.onNodeWithTag("btn_generate_notes").performClick()
+        waitFor("Release Notes (Markdown)")
+        waitFor("## Summary")
+        waitFor("- Issues: 1/2 done")
+        waitFor("## Completed")
+        waitFor("Time Tracking Parity")
+
+        // Copy notes
+        compose.onNodeWithTag("btn_copy_notes").performClick()
+        compose.waitForIdle()
+
+        // Close notes dialog
+        compose.onNodeWithText("Close").performClick()
+        compose.waitForIdle()
+
+        // 6. Test Finalize / Ship Release dialog
+        runCatching { compose.onNodeWithTag("btn_finalize_release").performScrollTo() }
+        compose.onNodeWithTag("btn_finalize_release").performClick()
+        waitFor("Finalize Release?")
+        waitFor("Lock release against modifications")
+
+        // Capture screenshot of Android release management with detail & ship dialog active
+        screenshot("android_release_management")
+
+        // Confirm ship
+        compose.onNodeWithTag("btn_confirm_finalize").performClick()
+        compose.waitForIdle()
     }
 }
 

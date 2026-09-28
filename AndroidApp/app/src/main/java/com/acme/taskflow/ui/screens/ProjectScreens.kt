@@ -24,7 +24,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -459,27 +461,103 @@ private fun AnalyticsScreen(vm: AppViewModel, api: ApiClient, projectId: String)
     }
 }
 
+fun buildAndroidReleaseNotesMarkdown(release: JsonObject, progress: JsonObject?, issues: List<JsonObject>): String {
+    val lines = mutableListOf<String>()
+    val name = release.text("name").ifBlank { "Release" }
+    lines.add("# Release Notes — $name")
+
+    val releaseDate = release.text("release_date")
+    if (releaseDate.isNotBlank()) {
+        lines.add("")
+        lines.add("_Planned: ${dateLabel(releaseDate)}_")
+    }
+
+    val releasedAt = release.text("released_at")
+    if (release.text("status") == "released" && releasedAt.isNotBlank()) {
+        lines.add("")
+        lines.add("_Released: ${dateLabel(releasedAt)}_")
+    }
+
+    if (progress != null) {
+        val doneIssues = progress.number("done_issues")
+        val totalIssues = progress.number("total_issues")
+        val donePoints = progress.number("done_points")
+        val totalPoints = progress.number("total_points")
+        val bugCount = progress.number("bug_count")
+        val criticalBugCount = progress.number("critical_bug_count")
+
+        lines.add("")
+        lines.add("## Summary")
+        lines.add("- Issues: $doneIssues/$totalIssues done")
+        lines.add("- Points: $donePoints/$totalPoints done")
+        lines.add("- Bugs: $bugCount (critical: $criticalBugCount)")
+    }
+
+    val done = issues.filter { it.text("status") == "done" || it.text("completed_at").isNotBlank() }
+    val remaining = issues.filter { it.text("status") != "done" && it.text("completed_at").isBlank() }
+
+    fun bullet(task: JsonObject): String {
+        val key = task.text("issue_key").let { if (it.isNotBlank()) "$it — " else "" }
+        return "- $key${task.text("title")}"
+    }
+
+    if (done.isNotEmpty()) {
+        lines.add("")
+        lines.add("## Completed")
+        for (t in done) {
+            lines.add(bullet(t))
+        }
+    }
+
+    if (remaining.isNotEmpty()) {
+        lines.add("")
+        lines.add("## In Progress / Remaining")
+        for (t in remaining) {
+            lines.add(bullet(t))
+        }
+    }
+
+    return lines.joinToString("\n")
+}
+
 @Composable
 private fun ReleasesScreen(vm: AppViewModel, api: ApiClient, projectId: String, onTask: (String) -> Unit) {
     val remote = rememberRemote(api, "/api/projects/$projectId/releases", vm.revision)
+    val action = rememberAction()
     var selected by rememberSaveable(projectId) { mutableStateOf("") }
     var create by remember { mutableStateOf(false) }
     var finalize by remember { mutableStateOf(false) }
+    var finalizeLock by remember { mutableStateOf(true) }
+    var showNotesDialog by remember { mutableStateOf(false) }
+    var generatedNotes by remember { mutableStateOf("") }
+    var copiedToast by remember { mutableStateOf(false) }
+    val clipboardManager = LocalClipboardManager.current
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag("releases_list"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Releases", Modifier.weight(1f), style = AppTypography.largeTitle)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Releases", style = AppTypography.largeTitle)
+                    Text(
+                        "Manage versions, scope progress & release notes",
+                        style = AppTypography.caption1,
+                        color = AppColors.textSecondary
+                    )
+                }
                 IconButton(
                     onClick = { create = true },
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
                         .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                        .testTag("btn_create_release")
                 ) {
                     Icon(Icons.Default.Add, "Create release", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
                 }
@@ -487,21 +565,74 @@ private fun ReleasesScreen(vm: AppViewModel, api: ApiClient, projectId: String, 
             RemoteStatus(remote)
         }
 
-        items(remote.data.rows(), key = { it.id }) { release ->
-            IosCard(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { selected = release.id }
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(release.text("name"), style = AppTypography.headline)
+        val rows = remote.data.rows()
+        if (!remote.loading && remote.error == null && rows.isEmpty()) {
+            item {
+                IosCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Inventory2, null, tint = AppColors.brandPrimary, modifier = Modifier.size(36.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("No releases found", style = AppTypography.headline)
                         Text(
-                            "${label(release.text("status"))} • ${dateLabel(release.text("release_date"))}",
+                            "Create your first release to track progress and generate notes.",
                             style = AppTypography.caption1,
                             color = AppColors.textSecondary
                         )
                     }
-                    IosPill(label(release.text("status")), selected = release.text("status") == "released")
+                }
+            }
+        }
+
+        items(rows, key = { it.id }) { release ->
+            val isSelected = selected == release.id
+            val status = release.text("status").ifBlank { "unreleased" }
+            val isReleased = status == "released"
+            val isLocked = release.flag("is_locked") || release.flag("isLocked")
+
+            IosCard(
+                modifier = Modifier.fillMaxWidth().testTag("release_card_${release.id}"),
+                onClick = { selected = if (isSelected) "" else release.id }
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(release.text("name"), style = AppTypography.headline)
+                                if (isLocked) {
+                                    Icon(Icons.Default.Lock, "Locked", tint = AppColors.statusWarning, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                            val plannedDate = release.text("release_date")
+                            val releasedAt = release.text("released_at")
+                            val dateInfo = when {
+                                isReleased && releasedAt.isNotBlank() -> "Shipped ${dateLabel(releasedAt)}"
+                                plannedDate.isNotBlank() -> "Planned: ${dateLabel(plannedDate)}"
+                                else -> "No planned date"
+                            }
+                            Text(dateInfo, style = AppTypography.caption1, color = AppColors.textSecondary)
+                        }
+
+                        IosPill(
+                            label(status),
+                            selected = isReleased
+                        )
+                    }
+
+                    if (release.text("description").isNotBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            release.text("description"),
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary,
+                            maxLines = 2
+                        )
+                    }
                 }
             }
         }
@@ -513,37 +644,115 @@ private fun ReleasesScreen(vm: AppViewModel, api: ApiClient, projectId: String, 
                 RemoteStatus(progress)
                 RemoteStatus(issues)
 
-                IosCard(Modifier.fillMaxWidth()) {
-                    Text(
-                        "${progress.data.obj().number("done_issues")} / ${progress.data.obj().number("total_issues")} issues complete",
-                        style = AppTypography.headline
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${progress.data.obj().number("critical_bug_count")} critical bugs",
-                        style = AppTypography.caption1,
-                        color = AppColors.statusError
-                    )
-                    Spacer(Modifier.height(12.dp))
+                val selectedRelease = rows.find { it.id == selected }
+                val isSelectedReleased = selectedRelease?.text("status") == "released"
 
-                    issues.data.rows().forEach { task ->
-                        Text(
-                            text = "• ${task.text("title")}",
-                            style = AppTypography.body,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onTask(task.id) }
-                                .padding(vertical = 4.dp)
-                        )
+                IosCard(Modifier.fillMaxWidth().testTag("release_detail_card")) {
+                    val p = progress.data.obj()
+                    val totalIssues = p.number("total_issues")
+                    val doneIssues = p.number("done_issues")
+                    val remainingIssues = p.number("remaining_issues")
+                    val totalPoints = p.number("total_points")
+                    val donePoints = p.number("done_points")
+                    val bugCount = p.number("bug_count")
+                    val criticalBugCount = p.number("critical_bug_count")
+
+                    val ratio = if (totalIssues > 0) doneIssues.toFloat() / totalIssues.toFloat() else 0f
+
+                    Text("Release Progress", style = AppTypography.headline)
+                    Spacer(Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("$doneIssues / $totalIssues issues complete", style = AppTypography.subheadline, fontWeight = FontWeight.SemiBold)
+                        Text("$donePoints / $totalPoints pts (${(ratio * 100).roundToInt()}%)", style = AppTypography.caption1, color = AppColors.brandPrimary, fontWeight = FontWeight.Bold)
                     }
 
-                    if (remote.data.rows().find { it.id == selected }?.text("status") != "released") {
-                        Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { ratio },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).testTag("release_progress_bar"),
+                        color = AppColors.brandPrimary,
+                        trackColor = AppColors.surfaceElevated
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Remaining: $remainingIssues", style = AppTypography.caption2, color = AppColors.textSecondary)
+                        if (bugCount > 0) {
+                            Text("Bugs: $bugCount", style = AppTypography.caption2, color = AppColors.statusWarning)
+                        }
+                        if (criticalBugCount > 0) {
+                            Text("Critical: $criticalBugCount", style = AppTypography.caption2, color = AppColors.statusError, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    val issueList = issues.data.rows()
+
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         IosButton(
-                            title = "Release",
-                            onClick = { finalize = true },
-                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                            title = "Generate Release Notes",
+                            onClick = {
+                                val rel = selectedRelease ?: json("id" to selected, "name" to "Release", "status" to "unreleased")
+                                generatedNotes = buildAndroidReleaseNotesMarkdown(rel, p, issueList)
+                                showNotesDialog = true
+                            },
+                            modifier = Modifier.weight(1f).height(44.dp).testTag("btn_generate_notes")
                         )
+
+                        if (!isSelectedReleased) {
+                            IosButton(
+                                title = "Ship Version",
+                                onClick = { finalize = true },
+                                modifier = Modifier.weight(1f).height(44.dp).testTag("btn_finalize_release")
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+                    Spacer(Modifier.height(12.dp))
+
+                    Text("Linked Issues (${issueList.size})", style = AppTypography.subheadline, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+
+                    if (issueList.isEmpty()) {
+                        Text("No issues linked to this release yet.", style = AppTypography.caption1, color = AppColors.textSecondary)
+                    } else {
+                        issueList.forEach { task ->
+                            val key = task.text("issue_key").let { if (it.isNotBlank()) "[$it] " else "" }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { onTask(task.id) }
+                                    .padding(vertical = 4.dp, horizontal = 2.dp)
+                                    .testTag("task_row_${task.id}"),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "$key${task.text("title")}",
+                                    style = AppTypography.body,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                IosPill(
+                                    label(task.text("status")),
+                                    selected = task.text("status") == "done"
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -565,13 +774,110 @@ private fun ReleasesScreen(vm: AppViewModel, api: ApiClient, projectId: String, 
         }
     }
 
+    if (showNotesDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotesDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Description, null, tint = AppColors.brandPrimary, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Release Notes (Markdown)", style = AppTypography.headline)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 350.dp)
+                        .verticalScroll(rememberScrollState())
+                        .background(AppColors.surfaceElevated, RoundedCornerShape(AppRadius.medium))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = generatedNotes,
+                        style = AppTypography.caption1.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                        color = AppColors.textPrimary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(generatedNotes))
+                        copiedToast = true
+                    },
+                    modifier = Modifier.testTag("btn_copy_notes")
+                ) {
+                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (copiedToast) "Copied!" else "Copy to Clipboard", color = AppColors.brandPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNotesDialog = false }) {
+                    Text("Close", color = AppColors.textSecondary)
+                }
+            },
+            modifier = Modifier.testTag("dialog_release_notes")
+        )
+    }
+
     if (finalize) {
-        ConfirmDialog("Finalize release?", "The release will be locked.", { finalize = false }) {
-            api.request("/api/releases/$selected/release", "POST", json("lock" to true))
-            vm.changed()
-        }
+        AlertDialog(
+            onDismissRequest = { finalize = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.RocketLaunch, null, tint = AppColors.statusSuccess, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Finalize Release?", style = AppTypography.headline)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Shipping this version marks it as released and stamps the completion date.",
+                        style = AppTypography.body,
+                        color = AppColors.textSecondary
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { finalizeLock = !finalizeLock }
+                    ) {
+                        Checkbox(
+                            checked = finalizeLock,
+                            onCheckedChange = { finalizeLock = it },
+                            modifier = Modifier.testTag("checkbox_lock_issues")
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Lock release against modifications", style = AppTypography.caption1, color = AppColors.textPrimary)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        action.run {
+                            api.request("/api/releases/$selected/release", "POST", json("lock" to finalizeLock))
+                            finalize = false
+                            vm.changed()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.statusSuccess),
+                    modifier = Modifier.testTag("btn_confirm_finalize")
+                ) {
+                    Text("Confirm & Ship")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { finalize = false }) {
+                    Text("Cancel", color = AppColors.textSecondary)
+                }
+            },
+            modifier = Modifier.testTag("dialog_finalize_release")
+        )
     }
 }
+
 
 @Composable
 fun ProjectTimeReportDialog(

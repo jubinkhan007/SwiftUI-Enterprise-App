@@ -39,6 +39,7 @@ export interface TaskItemDTO {
   sprintId?: string | null;
   sprintPosition?: number;
   backlogPosition?: number;
+  affectedVersionId?: string | null;
 }
 
 export interface SpaceDTO {
@@ -312,10 +313,47 @@ export interface ProjectTimeReportDTO {
   byTask: TaskTimeReport[];
 }
 
+export type ReleaseStatus = 'unreleased' | 'released' | 'archived';
+
+export interface ReleaseDTO {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  releaseDate?: string;
+  releasedAt?: string;
+  status: ReleaseStatus;
+  isLocked: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateReleaseRequest {
+  name: string;
+  description?: string;
+  releaseDate?: string;
+}
+
+export interface ReleaseProgressDTO {
+  releaseId: string;
+  totalIssues: number;
+  doneIssues: number;
+  remainingIssues: number;
+  totalPoints: number;
+  donePoints: number;
+  bugCount: number;
+  criticalBugCount: number;
+}
+
+export interface FinalizeReleaseRequest {
+  lock?: boolean;
+}
+
 export type NavDestination = 
   | 'all_tasks' 
   | 'my_tasks' 
   | 'backlog'
+  | 'releases'
   | 'inbox' 
   | 'messages' 
   | 'meetings' 
@@ -323,3 +361,4 @@ export type NavDestination =
   | 'sessions' 
   | 'team' 
   | 'billing';
+

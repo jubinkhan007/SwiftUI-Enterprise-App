@@ -25,7 +25,12 @@ import {
   SprintStatus,
   ProjectTimeReportDTO,
   OrganizationDetailsDTO,
-  TaskDependencyDTO
+  TaskDependencyDTO,
+  ReleaseDTO,
+  ReleaseStatus,
+  CreateReleaseRequest,
+  ReleaseProgressDTO,
+  FinalizeReleaseRequest
 } from '../types';
 
 class ApiService {
@@ -1168,8 +1173,215 @@ class ApiService {
       sprintId: t.sprint_id ?? t.sprintId ?? sprintId,
       sprintPosition: t.sprint_position ?? t.sprintPosition,
       backlogPosition: t.backlog_position ?? t.backlogPosition,
+      affectedVersionId: t.affected_version_id ?? t.affectedVersionId,
+    };
+  }
+
+  // MARK: - Releases (Phase 13)
+
+  async getProjectReleases(projectId: string): Promise<ReleaseDTO[]> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/releases`);
+    const list = raw.data || raw || [];
+    return (Array.isArray(list) ? list : []).map((r: any) => ({
+      id: r.id,
+      projectId: r.project_id || r.projectId || projectId,
+      name: r.name || 'Untitled Release',
+      description: r.description,
+      releaseDate: r.release_date || r.releaseDate,
+      releasedAt: r.released_at || r.releasedAt,
+      status: (r.status as ReleaseStatus) || 'unreleased',
+      isLocked: Boolean(r.is_locked ?? r.isLocked),
+      createdAt: r.created_at || r.createdAt,
+      updatedAt: r.updated_at || r.updatedAt,
+    }));
+  }
+
+  async createRelease(projectId: string, payload: CreateReleaseRequest): Promise<ReleaseDTO> {
+    const body: any = {
+      name: payload.name.trim(),
+    };
+    if (payload.description) body.description = payload.description.trim();
+    if (payload.releaseDate) body.releaseDate = payload.releaseDate;
+
+    const raw = await this.request<any>(`/api/projects/${projectId}/releases`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    const r = raw.data || raw;
+    return {
+      id: r.id,
+      projectId: r.project_id || r.projectId || projectId,
+      name: r.name || payload.name,
+      description: r.description,
+      releaseDate: r.release_date || r.releaseDate,
+      releasedAt: r.released_at || r.releasedAt,
+      status: (r.status as ReleaseStatus) || 'unreleased',
+      isLocked: Boolean(r.is_locked ?? r.isLocked),
+      createdAt: r.created_at || r.createdAt,
+      updatedAt: r.updated_at || r.updatedAt,
+    };
+  }
+
+  async getReleaseProgress(releaseId: string): Promise<ReleaseProgressDTO> {
+    const raw = await this.request<any>(`/api/releases/${releaseId}/progress`);
+    const p = raw.data || raw || {};
+    return {
+      releaseId: p.release_id || p.releaseId || releaseId,
+      totalIssues: p.total_issues ?? p.totalIssues ?? 0,
+      doneIssues: p.done_issues ?? p.doneIssues ?? 0,
+      remainingIssues: p.remaining_issues ?? p.remainingIssues ?? 0,
+      totalPoints: p.total_points ?? p.totalPoints ?? 0,
+      donePoints: p.done_points ?? p.donePoints ?? 0,
+      bugCount: p.bug_count ?? p.bugCount ?? 0,
+      criticalBugCount: p.critical_bug_count ?? p.criticalBugCount ?? 0,
+    };
+  }
+
+  async getReleaseIssues(releaseId: string): Promise<TaskItemDTO[]> {
+    const raw = await this.request<any>(`/api/releases/${releaseId}/issues`);
+    const list = raw.data || raw || [];
+    return (Array.isArray(list) ? list : []).map((t: any) => ({
+      id: t.id,
+      orgId: t.org_id || t.orgId,
+      listId: t.list_id || t.listId,
+      projectId: t.project_id || t.projectId,
+      title: t.title || 'Untitled Task',
+      description: t.description,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      taskType: t.task_type || t.taskType || 'task',
+      storyPoints: t.story_points ?? t.storyPoints,
+      issueKey: t.issue_key || t.issueKey,
+      labels: t.labels || [],
+      startDate: t.start_date || t.startDate,
+      dueDate: t.due_date || t.dueDate,
+      completedAt: t.completed_at || t.completedAt,
+      assigneeId: t.assignee_id || t.assigneeId,
+      position: t.position || 0,
+      version: t.version,
+      sprintId: t.sprint_id ?? t.sprintId,
+      sprintPosition: t.sprint_position ?? t.sprintPosition,
+      backlogPosition: t.backlog_position ?? t.backlogPosition,
+      affectedVersionId: t.affected_version_id ?? t.affectedVersionId ?? releaseId,
+    }));
+  }
+
+  async finalizeRelease(releaseId: string, lock?: boolean): Promise<ReleaseDTO> {
+    const raw = await this.request<any>(`/api/releases/${releaseId}/release`, {
+      method: 'POST',
+      body: JSON.stringify({ lock: Boolean(lock) }),
+    });
+    const r = raw.data || raw;
+    return {
+      id: r.id,
+      projectId: r.project_id || r.projectId,
+      name: r.name,
+      description: r.description,
+      releaseDate: r.release_date || r.releaseDate,
+      releasedAt: r.released_at || r.releasedAt,
+      status: (r.status as ReleaseStatus) || 'released',
+      isLocked: Boolean(r.is_locked ?? r.isLocked),
+      createdAt: r.created_at || r.createdAt,
+      updatedAt: r.updated_at || r.updatedAt,
+    };
+  }
+
+  async assignTaskToRelease(
+    taskId: string,
+    releaseId: string | null,
+    expectedVersion?: number
+  ): Promise<TaskItemDTO> {
+    const body: any = {
+      affectedVersionId: releaseId,
+    };
+    if (expectedVersion !== undefined) {
+      body.expectedVersion = expectedVersion;
+    }
+    const raw = await this.request<any>(`/api/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    const t = raw.data || raw;
+    return {
+      id: t.id,
+      orgId: t.org_id || t.orgId,
+      listId: t.list_id || t.listId,
+      projectId: t.project_id || t.projectId,
+      title: t.title || 'Untitled Task',
+      description: t.description,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      taskType: t.task_type || t.taskType || 'task',
+      storyPoints: t.story_points ?? t.storyPoints,
+      issueKey: t.issue_key || t.issueKey,
+      labels: t.labels || [],
+      startDate: t.start_date || t.startDate,
+      dueDate: t.due_date || t.dueDate,
+      completedAt: t.completed_at || t.completedAt,
+      assigneeId: t.assignee_id || t.assigneeId,
+      position: t.position || 0,
+      version: t.version,
+      sprintId: t.sprint_id ?? t.sprintId,
+      sprintPosition: t.sprint_position ?? t.sprintPosition,
+      backlogPosition: t.backlog_position ?? t.backlogPosition,
+      affectedVersionId: t.affected_version_id ?? t.affectedVersionId ?? releaseId,
     };
   }
 }
 
+export function buildReleaseNotesMarkdown(
+  release: ReleaseDTO,
+  progress: ReleaseProgressDTO | null,
+  issues: TaskItemDTO[]
+): string {
+  const lines: string[] = [];
+
+  lines.push(`# Release Notes — ${release.name}`);
+  if (release.releaseDate) {
+    const d = new Date(release.releaseDate);
+    lines.push('');
+    lines.push(`_Planned: ${isNaN(d.getTime()) ? release.releaseDate : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}_`);
+  }
+  if (release.status === 'released' && release.releasedAt) {
+    const d = new Date(release.releasedAt);
+    lines.push('');
+    lines.push(`_Released: ${isNaN(d.getTime()) ? release.releasedAt : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}_`);
+  }
+
+  if (progress) {
+    lines.push('');
+    lines.push('## Summary');
+    lines.push(`- Issues: ${progress.doneIssues}/${progress.totalIssues} done`);
+    lines.push(`- Points: ${progress.donePoints}/${progress.totalPoints} done`);
+    lines.push(`- Bugs: ${progress.bugCount} (critical: ${progress.criticalBugCount})`);
+  }
+
+  const done = issues.filter(t => t.status === 'done');
+  const remaining = issues.filter(t => t.status !== 'done');
+
+  const bullet = (task: TaskItemDTO) => {
+    const key = task.issueKey ? `${task.issueKey} — ` : '';
+    return `- ${key}${task.title}`;
+  };
+
+  if (done.length > 0) {
+    lines.push('');
+    lines.push('## Completed');
+    for (const t of done) {
+      lines.push(bullet(t));
+    }
+  }
+
+  if (remaining.length > 0) {
+    lines.push('');
+    lines.push('## In Progress / Remaining');
+    for (const t of remaining) {
+      lines.push(bullet(t));
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export const api = new ApiService();
+
