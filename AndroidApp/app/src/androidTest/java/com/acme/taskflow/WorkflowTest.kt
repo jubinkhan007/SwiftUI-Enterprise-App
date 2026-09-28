@@ -49,6 +49,7 @@ class WorkflowTest {
     private val mockNotifications = CopyOnWriteArrayList<JsonObject>()
     private val mockSprints = CopyOnWriteArrayList<JsonObject>()
     private val mockSprintIssues = CopyOnWriteArrayList<JsonObject>()
+    private val timeLogs = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
     private lateinit var callTicketData: JsonObject
     private lateinit var meetingData: JsonObject
@@ -65,6 +66,7 @@ class WorkflowTest {
         relations.clear()
         views.clear()
         activities.clear()
+        timeLogs.clear()
         convMembers.clear()
         convMembers += json("id" to "cm-1", "user_id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com", "role" to "owner", "status" to "active")
         convMembers += json("id" to "cm-2", "user_id" to "user-b", "display_name" to "Sarah Connor", "email" to "sarah@example.com", "role" to "member", "status" to "active")
@@ -241,7 +243,7 @@ class WorkflowTest {
         storage.clear()
         vm = AppViewModel(app, storage)
         val description = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc tempus imperdiet velit accumsan fermentum. Sed eleifend vel ex et mi at dignissim. Quisque ut velit vel eros hendrerit aliquet vel et nibh. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Proin a cursus nisl. Cras mollis hendrerit orci quis justo sed dolor iaculis posuere at at lacus. Phasellus eget neque cursus, euismod neque vitae, eleifend diam. Cras bibendum, elit eu porttitor convallis, magna orci molestie dolor, vel fermentum velit diam at mi. Phasellus et vulputate massa. Duis iaculis odio posuere tortor vehicula, eget varius leo lacinia. Vestibulum a orci sed nisl eleifend tristique vitae"
-        tasks += json("id" to "task-a", "title" to "Test Task 26/02 01", "status" to "cancelled", "priority" to "medium", "description" to description, "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a", "start_date" to "2026-09-15T00:00:00Z", "due_date" to "2026-09-20T00:00:00Z")
+        tasks += json("id" to "task-a", "title" to "Test Task 26/02 01", "status" to "cancelled", "priority" to "medium", "description" to description, "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a", "story_points" to 1, "start_date" to "2026-09-15T00:00:00Z", "due_date" to "2026-09-20T00:00:00Z")
         tasks += json("id" to "task-b", "title" to "Kanban Task", "status" to "todo", "priority" to "high", "description" to "Board item", "task_type" to "task", "version" to 1, "list_id" to "list-a", "project_id" to "project-a", "assignee_id" to "user-a", "start_date" to "2026-09-16T00:00:00Z", "due_date" to "2026-09-22T00:00:00Z")
         tasks += json(
             "id" to "epic-1",
@@ -512,7 +514,37 @@ class WorkflowTest {
                         it.addProperty("created_at", "2026-09-14T10:15:00Z")
                         activities += it
                     }
-                    path == "/api/tasks/task-a/time-logs" -> emptyList<JsonObject>()
+                    path == "/api/tasks/task-a/time-logs" && request.method == "GET" -> timeLogs.toList()
+                    path == "/api/tasks/task-a/time-logs" && request.method == "POST" -> payload.also {
+                        val hrs = it.double("hours_logged", it.double("hoursLogged"))
+                        it.addProperty("id", "tl-${timeLogs.size + 1}")
+                        it.addProperty("task_id", "task-a")
+                        it.addProperty("user_id", "user-a")
+                        it.addProperty("user_display_name", "Alex Chen")
+                        it.addProperty("hours_logged", hrs)
+                        it.addProperty("hoursLogged", hrs)
+                        if (!it.has("logged_at")) it.addProperty("logged_at", "2026-09-26T12:00:00Z")
+                        timeLogs += it
+                    }
+                    path == "/api/projects/project-a/time-logs/report" -> {
+                        val totalHours = timeLogs.sumOf { it.double("hours_logged", it.double("hoursLogged")) }
+                        val byUser = listOf(
+                            json("userId" to "user-a", "user_display_name" to "Alex Chen", "userDisplayName" to "Alex Chen", "totalHours" to totalHours, "total_hours" to totalHours)
+                        )
+                        val byTask = listOf(
+                            json("taskId" to "task-a", "task_title" to "Test Task 26/02 01", "taskTitle" to "Test Task 26/02 01", "totalHours" to totalHours, "total_hours" to totalHours)
+                        )
+                        json(
+                            "projectId" to "project-a",
+                            "project_id" to "project-a",
+                            "totalHours" to totalHours,
+                            "total_hours" to totalHours,
+                            "byUser" to byUser,
+                            "by_user" to byUser,
+                            "byTask" to byTask,
+                            "by_task" to byTask
+                        )
+                    }
                     path.startsWith("/api/views") && request.method == "GET" -> views.toList()
                     path.startsWith("/api/views") && request.method == "POST" -> payload.also {
                         it.addProperty("id", "view-${views.size + 1}")
@@ -1617,6 +1649,71 @@ class WorkflowTest {
         compose.runOnIdle {
             assertTrue(writes.any { it.first == "/api/sprints/sprint-1" && it.second.text("status") == "completed" })
         }
+    }
+
+    @Test fun timeTrackingAndWorkLogsWorkflow() {
+        login()
+        compose.onNodeWithText("All Tasks").performClick()
+        waitFor("Test Task 26/02 01")
+
+        // Open Task Detail
+        compose.onNodeWithText("Test Task 26/02 01").performClick()
+        waitFor("Task Details")
+
+        // Scroll down so sections row (tabs) is visible
+        compose.onAllNodes(hasScrollToIndexAction())[0].performScrollToIndex(5)
+        waitFor("Time logs")
+
+        // Switch to Time logs tab
+        compose.onNodeWithTag("tab_time_logs").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onAllNodes(hasScrollToIndexAction())[0].performScrollToIndex(6)
+        waitFor("0.0 of 8.0 hrs logged (0%)")
+
+        // Click Add button to log time
+        compose.onNode(hasContentDescription("Add to Time logs")).performClick()
+        waitFor("Hours")
+
+        // Enter 3.5 hours
+        compose.onNodeWithTag("input_hours_logged").performTextInput("3.5")
+        compose.onNodeWithTag("input_description").performTextInput("Mobile parity time tracking implementation")
+
+        // Save
+        compose.onAllNodesWithText("Save").onLast().performClick()
+        compose.waitForIdle()
+
+        // Verify logged card and progress bar update
+        compose.onAllNodes(hasScrollToIndexAction())[0].performScrollToIndex(6)
+        waitFor("+3.5 hrs")
+        waitFor("Alex Chen")
+        waitFor("Mobile parity time tracking implementation")
+        waitFor("3.5 of 8.0 hrs logged (44%)")
+        screenshot("android_time_tracking_work_logs")
+
+        // Verify POST was dispatched
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/tasks/task-a/time-logs" })
+        }
+
+        // Return to task list
+        compose.onNodeWithTag("btn_task_detail_back").performClick()
+        waitFor("All Tasks")
+
+        // Go to Backlog and open Project Time Report
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(2)
+        compose.onNodeWithText("Backlog").performClick()
+        waitFor("Product Backlog")
+
+        compose.onNodeWithTag("btn_project_time_report").performClick()
+        waitFor("Project Time Report")
+        waitFor("3.5 Hours")
+        waitFor("Time by Contributor")
+        waitFor("Alex Chen")
+        waitFor("3.5 h (100%)")
+        waitFor("Test Task 26/02 01")
+
+        // Dismiss dialog
+        compose.onNodeWithText("Close").performClick()
     }
 }
 

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import com.acme.taskflow.data.*
@@ -1803,6 +1804,7 @@ private fun TaskDetailScreen(
         ) {
             Row(
                 modifier = Modifier
+                    .testTag("btn_task_detail_back")
                     .clickable(onClick = onBack)
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -1964,7 +1966,8 @@ private fun TaskDetailScreen(
                             IosFilterChip(
                                 title = name,
                                 isSelected = tab == name,
-                                onClick = { tab = name }
+                                onClick = { tab = name },
+                                modifier = Modifier.testTag("tab_${name.lowercase().replace(" ", "_")}")
                             )
                         }
                     }
@@ -1984,7 +1987,10 @@ private fun TaskDetailScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(tab, Modifier.weight(1f), style = AppTypography.headline)
-                            IconButton(onClick = { editor = tab }) {
+                            IconButton(
+                                onClick = { editor = tab },
+                                modifier = Modifier.testTag(if (tab == "Time logs") "btn_add_time_log" else "btn_add_$tab")
+                            ) {
                                 Icon(Icons.Default.Add, "Add to $tab", tint = AppColors.brandPrimary)
                             }
                         }
@@ -2055,6 +2061,66 @@ private fun TaskDetailScreen(
                                         color = if (completed == total) AppColors.statusSuccess else AppColors.brandPrimary,
                                         trackColor = AppColors.borderSubtle
                                     )
+                                }
+                            }
+                        }
+
+                        // Time logs estimate vs logged progress bar
+                        if (tab == "Time logs") {
+                            val totalLogged = items.sumOf { it.double("hours_logged", it.double("hoursLogged")) }
+                            val storyPoints = task.double("story_points", task.double("storyPoints"))
+                            val estimatedHours = storyPoints * 8.0
+                            val progress = if (estimatedHours > 0) (totalLogged / estimatedHours).toFloat().coerceIn(0f, 1f) else 0f
+                            val percent = (progress * 100).roundToInt()
+                            val isOverEstimate = estimatedHours > 0 && totalLogged > estimatedHours
+                            val overage = if (isOverEstimate) totalLogged - estimatedHours else 0.0
+
+                            IosCard(modifier = Modifier.fillMaxWidth().testTag("time_tracking_progress_card")) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.Schedule,
+                                            null,
+                                            tint = if (isOverEstimate) AppColors.statusError else AppColors.brandPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = if (estimatedHours > 0) {
+                                                String.format(java.util.Locale.US, "%.1f of %.1f hrs logged (%d%%)", totalLogged, estimatedHours, percent)
+                                            } else {
+                                                String.format(java.util.Locale.US, "%.1f hrs logged (No estimate set)", totalLogged)
+                                            },
+                                            style = AppTypography.caption1.copy(fontWeight = FontWeight.SemiBold),
+                                            color = AppColors.textPrimary,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isOverEstimate) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(AppRadius.small))
+                                                    .background(AppColors.statusError.copy(alpha = 0.12f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = String.format(java.util.Locale.US, "+%.1fh over", overage),
+                                                    style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                                                    color = AppColors.statusError
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (estimatedHours > 0) {
+                                        LinearProgressIndicator(
+                                            progress = { progress },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(6.dp)
+                                                .clip(RoundedCornerShape(3.dp)),
+                                            color = if (isOverEstimate) AppColors.statusError else AppColors.brandPrimary,
+                                            trackColor = AppColors.borderSubtle
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2186,9 +2252,47 @@ private fun TaskDetailScreen(
                                             }
                                         }
                                     }
-                                    "Time logs" -> IosCard(modifier = Modifier.fillMaxWidth()) {
-                                        Text("${item.text("hours_logged")} hours • ${item.text("user_display_name")}", style = AppTypography.headline)
-                                        Text("${item.text("description")}\n${dateLabel(item.text("logged_at"))}", style = AppTypography.caption1, color = AppColors.textSecondary)
+                                    "Time logs" -> {
+                                        val hrs = item.double("hours_logged", item.double("hoursLogged"))
+                                        val userName = item.text("user_display_name", item.text("userDisplayName", "Unknown User"))
+                                        val desc = item.text("description")
+                                        val loggedAt = item.text("logged_at", item.text("loggedAt"))
+                                        IosCard(modifier = Modifier.fillMaxWidth().testTag("time_log_card_${item.id}")) {
+                                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(AppRadius.small))
+                                                            .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Text(
+                                                            String.format(java.util.Locale.US, "+%.1f hrs", hrs),
+                                                            style = AppTypography.caption1.copy(fontWeight = FontWeight.Bold),
+                                                            color = AppColors.brandPrimary
+                                                        )
+                                                    }
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(
+                                                        userName,
+                                                        style = AppTypography.headline.copy(fontSize = 14.sp),
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    Text(
+                                                        dateLabel(loggedAt),
+                                                        style = AppTypography.caption2,
+                                                        color = AppColors.textSecondary
+                                                    )
+                                                }
+                                                if (desc.isNotBlank()) {
+                                                    Text(
+                                                        desc,
+                                                        style = AppTypography.body.copy(fontSize = 13.sp),
+                                                        color = AppColors.textSecondary
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                     else -> {
                                         val actType = item.text("type")
@@ -2439,6 +2543,14 @@ private fun TaskDetailScreen(
                     val hours = payload.text("hours_logged").toDoubleOrNull()
                     require(hours != null && hours > 0 && hours <= 24) { "Enter hours between 0 and 24." }
                     payload.addProperty("hours_logged", hours)
+                    payload.addProperty("hoursLogged", hours)
+                    if (!payload.has("loggedAt") && !payload.has("logged_at")) {
+                        val now = Instant.now().toString()
+                        payload.addProperty("loggedAt", now)
+                        payload.addProperty("logged_at", now)
+                    } else if (payload.has("logged_at")) {
+                        payload.addProperty("loggedAt", payload.get("logged_at").asString)
+                    }
                     api.request("/api/tasks/$taskId/time-logs", "POST", payload)
                 }
                 "Checklist" -> api.request("/api/tasks/$taskId/checklist", "POST", payload)

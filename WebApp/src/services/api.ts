@@ -21,10 +21,11 @@ import {
   WorkspaceDTO,
   MeetingSummaryDTO,
   SubtaskDTO,
-  TaskDependencyDTO,
-  OrganizationDetailsDTO,
   SprintDTO,
-  SprintStatus
+  SprintStatus,
+  ProjectTimeReportDTO,
+  OrganizationDetailsDTO,
+  TaskDependencyDTO
 } from '../types';
 
 class ApiService {
@@ -653,13 +654,27 @@ class ApiService {
     };
   }
 
-  async logTime(taskId?: string, hoursLogged: number = 1.0, description?: string): Promise<TimeLogDTO> {
+  async getTimeLogs(taskId: string): Promise<TimeLogDTO[]> {
+    const raw = await this.request<any>(`/api/tasks/${taskId}/time-logs`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((l: any) => ({
+      id: l.id,
+      taskId: l.task_id || l.taskId || taskId,
+      userId: l.user_id || l.userId,
+      userDisplayName: l.user_display_name || l.userDisplayName || 'Unknown User',
+      hoursLogged: Number(l.hours_logged ?? l.hoursLogged ?? 0),
+      loggedAt: l.logged_at || l.loggedAt || new Date().toISOString(),
+      description: l.description || '',
+      createdAt: l.created_at || l.createdAt,
+    }));
+  }
+
+  async logTime(taskId?: string, hoursLogged: number = 1.0, description?: string, loggedAt?: string): Promise<TimeLogDTO> {
     let targetTaskId = taskId;
     if (!targetTaskId) {
       const tasks = await this.getTasks();
       targetTaskId = tasks[0]?.id;
     }
-
     if (!targetTaskId) {
       throw new Error("No task available to log time against.");
     }
@@ -668,8 +683,8 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({
         hoursLogged,
-        loggedAt: new Date().toISOString(),
-        description
+        loggedAt: loggedAt || new Date().toISOString(),
+        description: description || undefined,
       }),
     });
 
@@ -677,10 +692,30 @@ class ApiService {
       id: l.id,
       taskId: l.task_id || l.taskId || targetTaskId,
       userId: l.user_id || l.userId || this.currentUser?.id || '',
-      orgId: l.org_id || l.orgId,
-      hoursLogged: l.hours_logged ?? l.hoursLogged ?? hoursLogged,
-      loggedAt: l.logged_at || l.loggedAt || new Date().toISOString(),
+      userDisplayName: l.user_display_name || l.userDisplayName || this.currentUser?.displayName || 'Current User',
+      hoursLogged: Number(l.hours_logged ?? l.hoursLogged ?? hoursLogged),
+      loggedAt: l.logged_at || l.loggedAt || loggedAt || new Date().toISOString(),
       description: l.description || description,
+      createdAt: l.created_at || l.createdAt,
+    };
+  }
+
+  async getProjectTimeReport(projectId: string): Promise<ProjectTimeReportDTO> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/time-logs/report`);
+    const data = raw?.data || raw || {};
+    return {
+      projectId: data.project_id || data.projectId || projectId,
+      totalHours: Number(data.total_hours ?? data.totalHours ?? 0),
+      byUser: (data.by_user || data.byUser || []).map((u: any) => ({
+        userId: u.user_id || u.userId,
+        userDisplayName: u.user_display_name || u.userDisplayName || 'Unknown User',
+        totalHours: Number(u.total_hours ?? u.totalHours ?? 0),
+      })),
+      byTask: (data.by_task || data.byTask || []).map((t: any) => ({
+        taskId: t.task_id || t.taskId,
+        taskTitle: t.task_title || t.taskTitle || 'Unknown Task',
+        totalHours: Number(t.total_hours ?? t.totalHours ?? 0),
+      })),
     };
   }
 

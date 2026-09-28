@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.acme.taskflow.data.*
 import com.google.gson.JsonElement
@@ -145,7 +146,7 @@ fun EditorDialog(title: String, fields: List<FormField>, onDismiss: () -> Unit, 
                             }, initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
                         }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Event, null); Text("${field.label}: ${dateLabel(value).ifBlank { "Choose" }}") }
                         else -> OutlinedTextField(value, { values[field.key] = it }, label = { Text(field.label) },
-                            modifier = Modifier.fillMaxWidth(), singleLine = !field.multiline,
+                            modifier = Modifier.fillMaxWidth().testTag("input_${field.key}"), singleLine = !field.multiline,
                             minLines = if (field.multiline) 3 else 1,
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType =
                                 if (field.numeric) androidx.compose.ui.text.input.KeyboardType.Number else androidx.compose.ui.text.input.KeyboardType.Text))
@@ -155,21 +156,25 @@ fun EditorDialog(title: String, fields: List<FormField>, onDismiss: () -> Unit, 
             }
         },
         confirmButton = {
-            TextButton(enabled = !action.busy && fields.all { !it.required || !values[it.key].isNullOrBlank() }, onClick = {
-                action.run {
-                    val payload = JsonObject()
-                    fields.forEach { field ->
-                        val value = values[field.key].orEmpty().trim()
-                        if (field.required || field.emitEmpty || value.isNotBlank()) {
-                            if (field.numeric) payload.addProperty(field.key, value.toIntOrNull() ?: error("${field.label} must be a whole number."))
-                            else if (field.date && value.isNotBlank()) payload.addProperty(field.key, Instant.parse(value).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
-                            else payload.addProperty(field.key, value)
+            TextButton(
+                enabled = !action.busy && fields.all { !it.required || !values[it.key].isNullOrBlank() },
+                modifier = Modifier.testTag("btn_save_form"),
+                onClick = {
+                    action.run {
+                        val payload = JsonObject()
+                        fields.forEach { field ->
+                            val value = values[field.key].orEmpty().trim()
+                            if (field.required || field.emitEmpty || value.isNotBlank()) {
+                                if (field.numeric) payload.addProperty(field.key, value.toIntOrNull() ?: error("${field.label} must be a whole number."))
+                                else if (field.date && value.isNotBlank()) payload.addProperty(field.key, Instant.parse(value).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
+                                else payload.addProperty(field.key, value)
+                            }
                         }
+                        onSubmit(payload)
+                        onDismiss()
                     }
-                    onSubmit(payload)
-                    onDismiss()
                 }
-            }) { Text("Save") }
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(enabled = !action.busy, onClick = onDismiss) { Text("Cancel") } }
     )

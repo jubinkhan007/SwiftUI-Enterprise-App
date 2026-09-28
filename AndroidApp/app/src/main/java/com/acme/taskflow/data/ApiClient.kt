@@ -28,6 +28,7 @@ fun JsonElement.obj(): JsonObject = if (isJsonObject) asJsonObject else JsonObje
 fun JsonElement.rows(): List<JsonObject> = if (isJsonArray) asJsonArray.map { it.asJsonObject } else emptyList()
 fun JsonObject.text(key: String, fallback: String = ""): String = get(key)?.takeUnless { it.isJsonNull }?.asString ?: fallback
 fun JsonObject.number(key: String): Int = get(key)?.takeUnless { it.isJsonNull }?.asInt ?: 0
+fun JsonObject.double(key: String, fallback: Double = 0.0): Double = get(key)?.takeUnless { it.isJsonNull }?.asDouble ?: fallback
 fun JsonObject.flag(key: String): Boolean = get(key)?.takeUnless { it.isJsonNull }?.asBoolean ?: false
 fun JsonObject.child(key: String): JsonObject = get(key)?.obj() ?: JsonObject()
 fun JsonObject.list(key: String): List<JsonObject> = get(key)?.rows() ?: emptyList()

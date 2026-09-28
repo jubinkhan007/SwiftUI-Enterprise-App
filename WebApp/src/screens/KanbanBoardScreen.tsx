@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TaskItemDTO, TaskPriority, TaskStatus, TaskType, SubtaskDTO, TaskDependencyDTO, NavDestination } from '../types';
+import { TaskItemDTO, TaskPriority, TaskStatus, TaskType, SubtaskDTO, TaskDependencyDTO, NavDestination, TimeLogDTO, ProjectTimeReportDTO } from '../types';
 import { api } from '../services/api';
 import { 
   Plus, 
@@ -244,6 +244,18 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
   const [selectedDepTaskId, setSelectedDepTaskId] = useState('');
   const [depRelationType, setDepRelationType] = useState<'blocked_by' | 'blocking'>('blocked_by');
 
+  // Time Tracking State
+  const [timeLogs, setTimeLogs] = useState<TimeLogDTO[]>([]);
+  const [loadingTimeLogs, setLoadingTimeLogs] = useState(false);
+  const [logHours, setLogHours] = useState('1.0');
+  const [logDescription, setLogDescription] = useState('');
+  const [isLoggingTime, setIsLoggingTime] = useState(false);
+
+  // Project Time Report Modal State
+  const [showTimeReportModal, setShowTimeReportModal] = useState(false);
+  const [timeReport, setTimeReport] = useState<ProjectTimeReportDTO | null>(null);
+  const [loadingTimeReport, setLoadingTimeReport] = useState(false);
+
   const fetchTasks = async () => {
     setLoading(true);
     setError(null);
@@ -336,19 +348,60 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
     setEditLabels(task.labels ? task.labels.join(', ') : '');
     setNewSubtaskTitle('');
     setSelectedDepTaskId('');
+    setLogHours('1.0');
+    setLogDescription('');
 
     setLoadingSubtasks(true);
     setLoadingDeps(true);
+    setLoadingTimeLogs(true);
     try {
-      const [st, dep] = await Promise.all([
+      const [st, dep, logs] = await Promise.all([
         api.getSubtasks(task.id).catch(() => []),
         api.getTaskDependencies(task.id).catch(() => []),
+        api.getTimeLogs(task.id).catch(() => []),
       ]);
       setSubtasks(st);
       setDependencies(dep);
+      setTimeLogs(logs);
     } finally {
       setLoadingSubtasks(false);
       setLoadingDeps(false);
+      setLoadingTimeLogs(false);
+    }
+  };
+
+  const handleLogTime = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    const hours = parseFloat(logHours);
+    if (isNaN(hours) || hours <= 0 || hours > 24) {
+      alert("Please enter a valid duration between 0.1 and 24 hours.");
+      return;
+    }
+    setIsLoggingTime(true);
+    try {
+      const newLog = await api.logTime(editingTask.id, hours, logDescription.trim() || undefined);
+      setTimeLogs(prev => [newLog, ...prev]);
+      setLogHours('1.0');
+      setLogDescription('');
+    } catch (err: any) {
+      alert(`Failed to log time: ${err.message}`);
+    } finally {
+      setIsLoggingTime(false);
+    }
+  };
+
+  const handleOpenTimeReport = async () => {
+    setShowTimeReportModal(true);
+    setLoadingTimeReport(true);
+    try {
+      const activeProjectId = tasks[0]?.projectId || 'project-a';
+      const report = await api.getProjectTimeReport(activeProjectId);
+      setTimeReport(report);
+    } catch (err: any) {
+      console.error('Failed to load project time report', err);
+    } finally {
+      setLoadingTimeReport(false);
     }
   };
 
@@ -504,6 +557,16 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
               </button>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={handleOpenTimeReport}
+            className="p-2 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition border border-slate-700 flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+            title="View Project Time Tracking & Work Logs Report"
+          >
+            <Clock className="w-3.5 h-3.5 text-emerald-400" />
+            Time Report
+          </button>
 
           <button
             onClick={handleResetColumns}
@@ -1294,6 +1357,107 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
                   </button>
                 </div>
               </div>
+
+              {/* Time Tracking Section */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                      Time Tracking & Work Logs
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-medium text-slate-400">
+                    Logged: <span className="font-semibold text-slate-200">{timeLogs.reduce((acc, l) => acc + l.hoursLogged, 0).toFixed(1)} hrs</span>
+                    {editingTask.storyPoints ? (
+                      <span> / Est: <span className="text-slate-300">{(editingTask.storyPoints * 8).toFixed(1)} hrs</span></span>
+                    ) : (
+                      <span className="text-slate-500"> (No estimate)</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Estimation vs Logged Progress Bar */}
+                {editingTask.storyPoints ? (() => {
+                  const est = editingTask.storyPoints * 8;
+                  const logged = timeLogs.reduce((acc, l) => acc + l.hoursLogged, 0);
+                  const isOver = est > 0 && logged > est;
+                  const ratio = est > 0 ? Math.min(100, Math.round((logged / est) * 100)) : 0;
+                  return (
+                    <div className="space-y-1">
+                      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-300 ${isOver ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${ratio}%` }}
+                        />
+                      </div>
+                      {isOver && (
+                        <p className="text-[10px] text-rose-400 flex items-center gap-1 font-medium">
+                          <AlertCircle className="w-3 h-3" /> Over estimate by {(logged - est).toFixed(1)} hrs!
+                        </p>
+                      )}
+                    </div>
+                  );
+                })() : null}
+
+                {/* Work Log History */}
+                {loadingTimeLogs ? (
+                  <div className="flex items-center gap-2 py-2 text-xs text-slate-400">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                    Loading work logs...
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {timeLogs.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic py-1">No time logged yet.</p>
+                    ) : (
+                      timeLogs.map(l => (
+                        <div key={l.id} className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs flex items-center justify-between">
+                          <div className="space-y-0.5 min-w-0">
+                            <p className="text-slate-200 font-medium truncate">{l.description || 'Work session'}</p>
+                            <p className="text-[10px] text-slate-400">
+                              {l.userDisplayName || 'Team Member'} • {new Date(l.loggedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0 ml-2">
+                            +{l.hoursLogged.toFixed(1)} h
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* Log Time Quick Form */}
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.1"
+                    max="24"
+                    placeholder="Hours"
+                    value={logHours}
+                    onChange={(e) => setLogHours(e.target.value)}
+                    className="w-20 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="What did you work on? (optional)"
+                    value={logDescription}
+                    onChange={(e) => setLogDescription(e.target.value)}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLogTime}
+                    disabled={isLoggingTime || !logHours}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-sm shadow-emerald-600/30"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {isLoggingTime ? 'Logging...' : 'Log Time'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
@@ -1561,6 +1725,114 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Project Time Report Modal */}
+      {showTimeReportModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-xl shadow-2xl space-y-5 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-100">Project Time Report</h3>
+                  <p className="text-xs text-slate-400">Aggregate team hours and task breakdown</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTimeReportModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loadingTimeReport ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400 text-xs">
+                <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
+                <span>Generating project time report...</span>
+              </div>
+            ) : timeReport ? (
+              <div className="space-y-5">
+                {/* Total Stats Banner */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 to-slate-900 border border-emerald-500/20 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Project Hours</span>
+                    <h2 className="text-2xl font-black text-emerald-400">{timeReport.totalHours.toFixed(1)} hrs</h2>
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {timeReport.byUser.length} Contributors
+                  </span>
+                </div>
+
+                {/* Team Member Breakdown */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <User className="w-4 h-4 text-emerald-400" />
+                    Hours by Team Member
+                  </h4>
+                  <div className="space-y-2">
+                    {timeReport.byUser.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">No contributor hours recorded yet.</p>
+                    ) : (
+                      timeReport.byUser.map(u => {
+                        const pct = timeReport.totalHours > 0 ? Math.round((u.totalHours / timeReport.totalHours) * 100) : 0;
+                        return (
+                          <div key={u.userId} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">{u.userDisplayName}</span>
+                              <span className="font-mono text-emerald-400 font-bold">{u.totalHours.toFixed(1)} h ({pct}%)</span>
+                            </div>
+                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Task Breakdown */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-indigo-400" />
+                    Top Logged Tasks
+                  </h4>
+                  <div className="space-y-2">
+                    {timeReport.byTask.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">No task hours recorded yet.</p>
+                    ) : (
+                      timeReport.byTask.map(t => (
+                        <div key={t.taskId} className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs">
+                          <span className="text-slate-200 font-medium truncate max-w-[340px]">{t.taskTitle}</span>
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0 ml-2">
+                            {t.totalHours.toFixed(1)} h
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 text-center py-8">No time logged for this project yet.</p>
+            )}
+
+            <div className="pt-3 border-t border-slate-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowTimeReportModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

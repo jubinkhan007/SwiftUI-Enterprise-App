@@ -156,10 +156,12 @@ export interface TimeLogDTO {
   id: string;
   taskId?: string;
   userId: string;
+  userDisplayName?: string;
   orgId?: string;
   hoursLogged: number;
   loggedAt: string;
   description?: string;
+  createdAt?: string;
 }
 
 export interface CallSessionDTO {
@@ -283,6 +285,31 @@ export interface OrganizationDetailsDTO {
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   createdAt?: string;
+}
+
+export interface LogTimeRequest {
+  hoursLogged: number;
+  loggedAt?: string;
+  description?: string;
+}
+
+export interface UserTimeReport {
+  userId: string;
+  userDisplayName: string;
+  totalHours: number;
+}
+
+export interface TaskTimeReport {
+  taskId: string;
+  taskTitle: string;
+  totalHours: number;
+}
+
+export interface ProjectTimeReportDTO {
+  projectId: string;
+  totalHours: number;
+  byUser: UserTimeReport[];
+  byTask: TaskTimeReport[];
 }
 
 export type NavDestination = 
