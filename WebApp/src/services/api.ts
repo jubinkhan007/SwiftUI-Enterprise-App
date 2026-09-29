@@ -30,7 +30,14 @@ import {
   ReleaseStatus,
   CreateReleaseRequest,
   ReleaseProgressDTO,
-  FinalizeReleaseRequest
+  FinalizeReleaseRequest,
+  WorkflowBundleDTO,
+  WorkflowStatusDTO,
+  CreateWorkflowStatusRequest,
+  UpdateWorkflowStatusRequest,
+  AutomationRuleDTO,
+  CreateAutomationRuleRequest,
+  UpdateAutomationRuleRequest
 } from '../types';
 
 class ApiService {
@@ -1326,6 +1333,105 @@ class ApiService {
       backlogPosition: t.backlog_position ?? t.backlogPosition,
       affectedVersionId: t.affected_version_id ?? t.affectedVersionId ?? releaseId,
     };
+  }
+
+  // MARK: - Workflow & Automations
+
+  private mapWorkflowStatus(s: any): WorkflowStatusDTO {
+    return {
+      id: s.id,
+      projectId: s.project_id || s.projectId,
+      name: s.name,
+      color: s.color,
+      position: s.position ?? 0,
+      category: s.category || 'backlog',
+      isDefault: s.is_default ?? s.isDefault ?? false,
+      isFinal: s.is_final ?? s.isFinal ?? false,
+      isLocked: s.is_locked ?? s.isLocked ?? false,
+      legacyStatus: s.legacy_status ?? s.legacyStatus ?? null,
+    };
+  }
+
+  private mapAutomationRule(r: any): AutomationRuleDTO {
+    return {
+      id: r.id,
+      projectId: r.project_id || r.projectId,
+      name: r.name,
+      isEnabled: r.is_enabled ?? r.isEnabled ?? true,
+      triggerType: r.trigger_type || r.triggerType,
+      triggerConfigJson: r.trigger_config_json ?? r.triggerConfigJson ?? null,
+      conditionsJson: r.conditions_json ?? r.conditionsJson ?? null,
+      actionsJson: r.actions_json ?? r.actionsJson ?? null,
+      createdAt: r.created_at || r.createdAt,
+      updatedAt: r.updated_at || r.updatedAt,
+    };
+  }
+
+  async getProjectWorkflow(projectId: string): Promise<WorkflowBundleDTO> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/workflow`);
+    const data = raw.data || raw;
+    return {
+      projectId: data.project_id || data.projectId || projectId,
+      workflowVersion: data.workflow_version ?? data.workflowVersion ?? 1,
+      statuses: Array.isArray(data.statuses) ? data.statuses.map((s: any) => this.mapWorkflowStatus(s)) : [],
+      rules: Array.isArray(data.rules) ? data.rules.map((r: any) => this.mapAutomationRule(r)) : [],
+    };
+  }
+
+  async createWorkflowStatus(
+    projectId: string,
+    payload: CreateWorkflowStatusRequest
+  ): Promise<WorkflowStatusDTO> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/statuses`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.mapWorkflowStatus(raw.data || raw);
+  }
+
+  async updateWorkflowStatus(
+    statusId: string,
+    payload: UpdateWorkflowStatusRequest
+  ): Promise<WorkflowStatusDTO> {
+    const raw = await this.request<any>(`/api/statuses/${statusId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return this.mapWorkflowStatus(raw.data || raw);
+  }
+
+  async deleteWorkflowStatus(statusId: string): Promise<void> {
+    await this.request<void>(`/api/statuses/${statusId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async createAutomationRule(
+    projectId: string,
+    payload: CreateAutomationRuleRequest
+  ): Promise<AutomationRuleDTO> {
+    const raw = await this.request<any>(`/api/projects/${projectId}/automation-rules`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.mapAutomationRule(raw.data || raw);
+  }
+
+  async updateAutomationRule(
+    ruleId: string,
+    payload: UpdateAutomationRuleRequest
+  ): Promise<AutomationRuleDTO> {
+    const raw = await this.request<any>(`/api/automation-rules/${ruleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return this.mapAutomationRule(raw.data || raw);
+  }
+
+  async deleteAutomationRule(ruleId: string): Promise<void> {
+    await this.request<void>(`/api/automation-rules/${ruleId}`, {
+      method: 'DELETE',
+    });
   }
 }
 

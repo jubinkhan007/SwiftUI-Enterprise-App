@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,6 +45,7 @@ fun ProjectScreen(vm: AppViewModel, api: ApiClient, projectId: String, mode: Str
             "Backlog" -> BacklogScreen(vm, api, projectId, onTask)
             "Analytics" -> AnalyticsScreen(vm, api, projectId)
             "Releases" -> ReleasesScreen(vm, api, projectId, onTask)
+            "Settings" -> ProjectSettingsScreen(vm, api, projectId)
         }
     }
 }
@@ -1014,5 +1016,627 @@ fun ProjectTimeReportDialog(
                 Text("Close", color = AppColors.brandPrimary)
             }
         }
+    )
+}
+
+@Composable
+private fun ProjectSettingsScreen(vm: AppViewModel, api: ApiClient, projectId: String) {
+    val remote = rememberRemote(api, "/api/projects/$projectId/workflow", vm.revision)
+    val action = rememberAction()
+    var tab by rememberSaveable { mutableStateOf("Statuses") }
+    var showCreateStatus by remember { mutableStateOf(false) }
+    var showCreateRule by remember { mutableStateOf(false) }
+
+    val bundle = remote.data.obj()
+    val workflowVersion = bundle.number("workflowVersion")
+    val statuses = bundle.list("statuses").sortedBy { it.double("position") }
+    val rules = bundle.list("rules")
+
+    val defaultColor = AppColors.brandPrimary
+    val parseHexColor: (String) -> Color = { hex ->
+        try {
+            Color(android.graphics.Color.parseColor(hex))
+        } catch (_: Exception) {
+            defaultColor
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("list_project_settings"),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 48.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Project Settings", style = AppTypography.headline)
+                        if (workflowVersion > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(AppRadius.pill))
+                                    .background(AppColors.brandPrimary.copy(alpha = 0.15f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    "v$workflowVersion",
+                                    style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                                    color = AppColors.brandPrimary
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        "Manage workflow statuses and automation rules",
+                        style = AppTypography.caption1,
+                        color = AppColors.textSecondary
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (tab == "Statuses") {
+                        IconButton(
+                            onClick = { showCreateStatus = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                                .testTag("btn_create_status")
+                        ) {
+                            Icon(Icons.Default.Add, "Add status", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                        }
+                    } else {
+                        IconButton(
+                            onClick = { showCreateRule = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                                .testTag("btn_create_rule")
+                        ) {
+                            Icon(Icons.Default.Add, "Add rule", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Segmented tabs: Statuses vs Automations
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                IosFilterChip(
+                    title = "Workflow Statuses (${statuses.size})",
+                    isSelected = tab == "Statuses",
+                    onClick = { tab = "Statuses" },
+                    modifier = Modifier.testTag("tab_statuses")
+                )
+                IosFilterChip(
+                    title = "Automations (${rules.size})",
+                    isSelected = tab == "Automations",
+                    onClick = { tab = "Automations" },
+                    modifier = Modifier.testTag("tab_automations")
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+            RemoteStatus(remote)
+            ActionStatus(action)
+        }
+
+        if (tab == "Statuses") {
+            if (!remote.loading && remote.error == null && statuses.isEmpty()) {
+                item {
+                    IosCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.Layers, null, tint = AppColors.brandPrimary, modifier = Modifier.size(36.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No statuses configured", style = AppTypography.headline)
+                            Text(
+                                "Add custom statuses to track issue progression.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(statuses, key = { it.id }) { status ->
+                val statusColor = parseHexColor(status.text("color", "#4F46E5"))
+                val isLocked = status.flag("isLocked") || status.flag("is_locked")
+                val isDefault = status.flag("isDefault") || status.flag("is_default")
+                val isFinal = status.flag("isFinal") || status.flag("is_final")
+                val category = status.text("category", "backlog")
+
+                IosCard(
+                    modifier = Modifier.fillMaxWidth().testTag("status_card_${status.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clip(CircleShape)
+                                    .background(statusColor)
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        status.text("name"),
+                                        style = AppTypography.headline.copy(fontSize = 15.sp),
+                                        color = AppColors.textPrimary
+                                    )
+                                    IosPill(category)
+                                    if (isDefault) IosPill("Default")
+                                    if (isFinal) IosPill("Final")
+                                }
+                                if (status.text("legacyStatus").isNotBlank()) {
+                                    Text(
+                                        "Legacy: ${status.text("legacyStatus")}",
+                                        style = AppTypography.caption2,
+                                        color = AppColors.textTertiary
+                                    )
+                                }
+                            }
+                        }
+
+                        if (isLocked) {
+                            Text(
+                                "System",
+                                style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                                color = AppColors.textTertiary,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    action.run {
+                                        api.request("/api/statuses/${status.id}", "DELETE")
+                                        vm.changed()
+                                    }
+                                },
+                                modifier = Modifier.testTag("btn_delete_status_${status.id}")
+                            ) {
+                                Icon(Icons.Default.Delete, "Delete status", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Automations Tab
+            if (!remote.loading && remote.error == null && rules.isEmpty()) {
+                item {
+                    IosCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.Bolt, null, tint = AppColors.brandPrimary, modifier = Modifier.size(36.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No automation rules configured", style = AppTypography.headline)
+                            Text(
+                                "Set up event-triggered rules to automate task transitions.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(rules, key = { it.id }) { rule ->
+                val isEnabled = rule.flag("isEnabled") || rule.flag("is_enabled")
+                val triggerType = rule.text("triggerType", rule.text("trigger_type", "task.status_changed"))
+                val actionsJson = rule.text("actionsJson", rule.text("actions_json", ""))
+
+                IosCard(
+                    modifier = Modifier.fillMaxWidth().testTag("rule_card_${rule.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                rule.text("name"),
+                                style = AppTypography.headline.copy(fontSize = 15.sp),
+                                color = AppColors.textPrimary
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IosPill(triggerType)
+                                if (actionsJson.isNotBlank()) {
+                                    Text(
+                                        actionsJson.take(30),
+                                        style = AppTypography.caption2,
+                                        color = AppColors.textSecondary
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Switch(
+                                checked = isEnabled,
+                                onCheckedChange = { checked ->
+                                    action.run {
+                                        api.request("/api/automation-rules/${rule.id}", "PATCH", json("isEnabled" to checked))
+                                        vm.changed()
+                                    }
+                                },
+                                modifier = Modifier.testTag("btn_toggle_rule_${rule.id}")
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    action.run {
+                                        api.request("/api/automation-rules/${rule.id}", "DELETE")
+                                        vm.changed()
+                                    }
+                                },
+                                modifier = Modifier.testTag("btn_delete_rule_${rule.id}")
+                            ) {
+                                Icon(Icons.Default.Delete, "Delete rule", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreateStatus) {
+        CreateStatusDialog(
+            onDismiss = { showCreateStatus = false },
+            onSubmit = { payload ->
+                action.run {
+                    api.request("/api/projects/$projectId/statuses", "POST", payload)
+                    vm.changed()
+                    showCreateStatus = false
+                }
+            }
+        )
+    }
+
+    if (showCreateRule) {
+        CreateRuleDialog(
+            statuses = statuses,
+            onDismiss = { showCreateRule = false },
+            onSubmit = { payload ->
+                action.run {
+                    api.request("/api/projects/$projectId/automation-rules", "POST", payload)
+                    vm.changed()
+                    showCreateRule = false
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CreateStatusDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (JsonObject) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var color by remember { mutableStateOf("#4F46E5") }
+    var category by remember { mutableStateOf("backlog") }
+    var isDefault by remember { mutableStateOf(false) }
+    var isFinal by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Layers, null, tint = AppColors.brandPrimary, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("New Workflow Status", style = AppTypography.headline)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Status Name *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("input_status_name")
+                )
+
+                OutlinedTextField(
+                    value = color,
+                    onValueChange = { color = it },
+                    label = { Text("Color Hex (#RRGGBB)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("input_status_color")
+                )
+
+                Text("Category", style = AppTypography.caption1, color = AppColors.textSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("backlog", "active", "completed", "cancelled").forEach { cat ->
+                        IosFilterChip(
+                            title = cat.replaceFirstChar { it.uppercase() },
+                            isSelected = category == cat,
+                            onClick = { category = cat },
+                            modifier = Modifier.testTag("chip_cat_$cat")
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Default entry status", style = AppTypography.body)
+                    Switch(checked = isDefault, onCheckedChange = { isDefault = it }, modifier = Modifier.testTag("switch_is_default"))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Final resolution state", style = AppTypography.body)
+                    Switch(checked = isFinal, onCheckedChange = { isFinal = it }, modifier = Modifier.testTag("switch_is_final"))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        onSubmit(
+                            json(
+                                "name" to name.trim(),
+                                "color" to color.trim(),
+                                "category" to category,
+                                "isDefault" to isDefault,
+                                "isFinal" to isFinal
+                            )
+                        )
+                    }
+                },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.testTag("btn_save_status")
+            ) {
+                Text("Create", color = AppColors.brandPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = AppColors.textSecondary)
+            }
+        },
+        modifier = Modifier.testTag("dialog_create_status")
+    )
+}
+
+@Composable
+private fun CreateRuleDialog(
+    statuses: List<JsonObject>,
+    onDismiss: () -> Unit,
+    onSubmit: (JsonObject) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var trigger by remember { mutableStateOf("task.status_changed") }
+    var triggerToStatusId by remember { mutableStateOf("") }
+    var actionType by remember { mutableStateOf("setPriority") }
+    var actionPriority by remember { mutableStateOf("medium") }
+    var actionStatusId by remember { mutableStateOf(statuses.firstOrNull()?.id ?: "") }
+    var actionUserId by remember { mutableStateOf("") }
+    var actionLabel by remember { mutableStateOf("") }
+
+    val triggers = listOf(
+        "task.status_changed" to "Status Changed",
+        "task.created" to "Task Created",
+        "task.updated" to "Task Updated",
+        "task.priority_changed" to "Priority Changed",
+        "task.type_changed" to "Type Changed",
+        "sprint.completed" to "Sprint Completed"
+    )
+
+    val actions = listOf(
+        "setPriority" to "Set Priority",
+        "setStatusId" to "Set Status",
+        "assignUserId" to "Assign User",
+        "addLabel" to "Add Label",
+        "removeLabel" to "Remove Label",
+        "moveUncompletedToNextSprint" to "Move Uncompleted"
+    )
+
+    val triggerConfigJson = if (trigger == "task.status_changed" && triggerToStatusId.isNotBlank()) {
+        json("toStatusId" to triggerToStatusId).toString()
+    } else null
+
+    val actionsJson = when (actionType) {
+        "setPriority" -> "[{\"type\":\"setPriority\",\"value\":\"$actionPriority\"}]"
+        "setStatusId" -> if (actionStatusId.isNotBlank()) "[{\"type\":\"setStatusId\",\"value\":\"$actionStatusId\"}]" else null
+        "assignUserId" -> if (actionUserId.isNotBlank()) "[{\"type\":\"assignUserId\",\"value\":\"${actionUserId.trim()}\"}]" else null
+        "addLabel" -> if (actionLabel.isNotBlank()) "[{\"type\":\"addLabel\",\"value\":\"${actionLabel.trim()}\"}]" else null
+        "removeLabel" -> if (actionLabel.isNotBlank()) "[{\"type\":\"removeLabel\",\"value\":\"${actionLabel.trim()}\"}]" else null
+        "moveUncompletedToNextSprint" -> "[{\"type\":\"moveUncompletedToNextSprint\"}]"
+        else -> null
+    }
+
+    val hasLoopWarning = trigger == "task.status_changed" &&
+            actionType == "setStatusId" &&
+            triggerToStatusId.isNotBlank() &&
+            actionStatusId.isNotBlank() &&
+            triggerToStatusId == actionStatusId
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Bolt, null, tint = AppColors.brandPrimary, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("New Automation Rule", style = AppTypography.headline)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 450.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Rule Name *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("input_rule_name")
+                )
+
+                Text("When (Trigger)", style = AppTypography.caption1.copy(fontWeight = FontWeight.Bold), color = AppColors.brandPrimary)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    triggers.forEach { (tKey, tLabel) ->
+                        IosFilterChip(
+                            title = tLabel,
+                            isSelected = trigger == tKey,
+                            onClick = { trigger = tKey },
+                            modifier = Modifier.testTag("chip_trigger_$tKey")
+                        )
+                    }
+                }
+
+                if (trigger == "task.status_changed" && statuses.isNotEmpty()) {
+                    Text("To Status (optional)", style = AppTypography.caption2, color = AppColors.textSecondary)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IosFilterChip("Any", triggerToStatusId.isBlank(), onClick = { triggerToStatusId = "" })
+                        statuses.forEach { s ->
+                            IosFilterChip(s.text("name"), triggerToStatusId == s.id, onClick = { triggerToStatusId = s.id })
+                        }
+                    }
+                }
+
+                Text("Then (Action)", style = AppTypography.caption1.copy(fontWeight = FontWeight.Bold), color = AppColors.brandPrimary)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    actions.forEach { (aKey, aLabel) ->
+                        IosFilterChip(
+                            title = aLabel,
+                            isSelected = actionType == aKey,
+                            onClick = { actionType = aKey },
+                            modifier = Modifier.testTag("chip_action_$aKey")
+                        )
+                    }
+                }
+
+                when (actionType) {
+                    "setPriority" -> {
+                        Text("Target Priority", style = AppTypography.caption2, color = AppColors.textSecondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf("low", "medium", "high", "critical").forEach { p ->
+                                IosFilterChip(p.replaceFirstChar { it.uppercase() }, actionPriority == p, onClick = { actionPriority = p })
+                            }
+                        }
+                    }
+                    "setStatusId" -> {
+                        Text("Target Status", style = AppTypography.caption2, color = AppColors.textSecondary)
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            statuses.forEach { s ->
+                                IosFilterChip(s.text("name"), actionStatusId == s.id, onClick = { actionStatusId = s.id })
+                            }
+                        }
+                    }
+                    "assignUserId" -> {
+                        OutlinedTextField(
+                            value = actionUserId,
+                            onValueChange = { actionUserId = it },
+                            label = { Text("Assignee User UUID") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("input_action_user_id")
+                        )
+                    }
+                    "addLabel", "removeLabel" -> {
+                        OutlinedTextField(
+                            value = actionLabel,
+                            onValueChange = { actionLabel = it },
+                            label = { Text("Label tag") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("input_action_label")
+                        )
+                    }
+                    "moveUncompletedToNextSprint" -> {
+                        Text(
+                            "Unfinished tasks migrate to the next planned sprint upon completion.",
+                            style = AppTypography.caption2,
+                            color = AppColors.textSecondary
+                        )
+                    }
+                }
+
+                if (hasLoopWarning) {
+                    Text(
+                        "Warning: Trigger To Status matches action status (potential loop).",
+                        style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                        color = AppColors.statusError
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (name.isNotBlank() && actionsJson != null) {
+                        onSubmit(
+                            json(
+                                "name" to name.trim(),
+                                "isEnabled" to true,
+                                "triggerType" to trigger,
+                                "triggerConfigJson" to triggerConfigJson,
+                                "actionsJson" to actionsJson
+                            )
+                        )
+                    }
+                },
+                enabled = name.isNotBlank() && actionsJson != null,
+                modifier = Modifier.testTag("btn_save_rule")
+            ) {
+                Text("Create Rule", color = AppColors.brandPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = AppColors.textSecondary)
+            }
+        },
+        modifier = Modifier.testTag("dialog_create_rule")
     )
 }

@@ -349,11 +349,83 @@ export interface FinalizeReleaseRequest {
   lock?: boolean;
 }
 
+export type WorkflowStatusCategory = 'backlog' | 'active' | 'completed' | 'cancelled';
+
+export interface WorkflowStatusDTO {
+  id: string;
+  projectId: string;
+  name: string;
+  color: string;
+  position: number;
+  category: WorkflowStatusCategory;
+  isDefault: boolean;
+  isFinal: boolean;
+  isLocked: boolean;
+  legacyStatus?: string | null;
+}
+
+export interface CreateWorkflowStatusRequest {
+  name: string;
+  color?: string;
+  position?: number;
+  category: WorkflowStatusCategory;
+  isDefault?: boolean;
+  isFinal?: boolean;
+}
+
+export interface UpdateWorkflowStatusRequest {
+  name?: string;
+  color?: string;
+  position?: number;
+  category?: WorkflowStatusCategory;
+  isDefault?: boolean;
+  isFinal?: boolean;
+}
+
+export interface AutomationRuleDTO {
+  id: string;
+  projectId: string;
+  name: string;
+  isEnabled: boolean;
+  triggerType: string;
+  triggerConfigJson?: string | null;
+  conditionsJson?: string | null;
+  actionsJson?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateAutomationRuleRequest {
+  name: string;
+  isEnabled?: boolean;
+  triggerType: string;
+  triggerConfigJson?: string | null;
+  conditionsJson?: string | null;
+  actionsJson?: string | null;
+}
+
+export interface UpdateAutomationRuleRequest {
+  name?: string;
+  isEnabled?: boolean;
+  triggerType?: string;
+  triggerConfigJson?: string | null;
+  conditionsJson?: string | null;
+  actionsJson?: string | null;
+}
+
+export interface WorkflowBundleDTO {
+  projectId: string;
+  workflowVersion: number;
+  statuses: WorkflowStatusDTO[];
+  rules: AutomationRuleDTO[];
+}
+
 export type NavDestination = 
   | 'all_tasks' 
   | 'my_tasks' 
   | 'backlog'
   | 'releases'
+  | 'settings'
   | 'inbox' 
   | 'messages' 
   | 'meetings' 
@@ -361,4 +433,5 @@ export type NavDestination =
   | 'sessions' 
   | 'team' 
   | 'billing';
+
 

@@ -51,6 +51,9 @@ class WorkflowTest {
     private val mockSprintIssues = CopyOnWriteArrayList<JsonObject>()
     private val mockReleases = CopyOnWriteArrayList<JsonObject>()
     private val mockReleaseIssues = CopyOnWriteArrayList<JsonObject>()
+    private val mockStatuses = CopyOnWriteArrayList<JsonObject>()
+    private val mockRules = CopyOnWriteArrayList<JsonObject>()
+    private var workflowVersion = 1
     private val timeLogs = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
     private lateinit var callTicketData: JsonObject
@@ -381,6 +384,55 @@ class WorkflowTest {
             "version" to 1
         )
 
+        workflowVersion = 1
+        mockStatuses.clear()
+        mockStatuses += json(
+            "id" to "status-1",
+            "project_id" to "project-a",
+            "name" to "To Do",
+            "color" to "#4F46E5",
+            "position" to 1000.0,
+            "category" to "backlog",
+            "isDefault" to true,
+            "isFinal" to false,
+            "isLocked" to true,
+            "legacyStatus" to "todo"
+        )
+        mockStatuses += json(
+            "id" to "status-2",
+            "project_id" to "project-a",
+            "name" to "In Progress",
+            "color" to "#06B6D4",
+            "position" to 2000.0,
+            "category" to "active",
+            "isDefault" to false,
+            "isFinal" to false,
+            "isLocked" to false
+        )
+        mockStatuses += json(
+            "id" to "status-3",
+            "project_id" to "project-a",
+            "name" to "Done",
+            "color" to "#10B981",
+            "position" to 3000.0,
+            "category" to "completed",
+            "isDefault" to false,
+            "isFinal" to true,
+            "isLocked" to true,
+            "legacyStatus" to "done"
+        )
+
+        mockRules.clear()
+        mockRules += json(
+            "id" to "rule-1",
+            "project_id" to "project-a",
+            "name" to "Auto-escalate on Status Changed",
+            "isEnabled" to true,
+            "triggerType" to "task.status_changed",
+            "triggerConfigJson" to json("toStatusId" to "status-2").toString(),
+            "actionsJson" to "[{\"type\":\"setPriority\",\"value\":\"high\"}]"
+        )
+
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -507,6 +559,68 @@ class WorkflowTest {
                             r.addProperty("is_locked", payload.flag("lock"))
                         }
                         r ?: json("success" to true)
+                    }
+                    path.endsWith("/workflow") && request.method == "GET" -> {
+                        json(
+                            "projectId" to "project-a",
+                            "workflowVersion" to workflowVersion,
+                            "statuses" to mockStatuses.toList(),
+                            "rules" to mockRules.toList()
+                        )
+                    }
+                    path.endsWith("/statuses") && request.method == "POST" -> {
+                        val newS = json(
+                            "id" to "status-${mockStatuses.size + 1}",
+                            "projectId" to "project-a",
+                            "name" to payload.text("name"),
+                            "color" to payload.text("color", "#4F46E5"),
+                            "position" to (mockStatuses.size + 1) * 1000.0,
+                            "category" to payload.text("category", "backlog"),
+                            "isDefault" to payload.flag("isDefault"),
+                            "isFinal" to payload.flag("isFinal"),
+                            "isLocked" to false
+                        )
+                        mockStatuses += newS
+                        workflowVersion++
+                        newS
+                    }
+                    path.startsWith("/api/statuses/") && request.method == "DELETE" -> {
+                        val sId = path.substringAfterLast("/")
+                        mockStatuses.removeIf { it.id == sId }
+                        workflowVersion++
+                        json("success" to true)
+                    }
+                    path.endsWith("/automation-rules") && request.method == "POST" -> {
+                        val trigConf = if (payload.has("triggerConfigJson") && !payload.get("triggerConfigJson").isJsonNull) {
+                            payload.text("triggerConfigJson")
+                        } else null
+                        val newRule = json(
+                            "id" to "rule-${mockRules.size + 1}",
+                            "projectId" to "project-a",
+                            "name" to payload.text("name"),
+                            "isEnabled" to payload.flag("isEnabled"),
+                            "triggerType" to payload.text("triggerType"),
+                            "triggerConfigJson" to trigConf,
+                            "actionsJson" to payload.text("actionsJson")
+                        )
+                        mockRules += newRule
+                        workflowVersion++
+                        newRule
+                    }
+                    path.startsWith("/api/automation-rules/") && request.method == "PATCH" -> {
+                        val rId = path.substringAfterLast("/")
+                        val r = mockRules.firstOrNull { it.id == rId }
+                        if (r != null && payload.has("isEnabled")) {
+                            r.addProperty("isEnabled", payload.flag("isEnabled"))
+                        }
+                        workflowVersion++
+                        r ?: json("success" to true)
+                    }
+                    path.startsWith("/api/automation-rules/") && request.method == "DELETE" -> {
+                        val rId = path.substringAfterLast("/")
+                        mockRules.removeIf { it.id == rId }
+                        workflowVersion++
+                        json("success" to true)
                     }
                     path.startsWith("/api/sprints/") && request.method == "PATCH" -> {
                         val sId = path.substringAfterLast("/")
@@ -1868,6 +1982,81 @@ class WorkflowTest {
         // Confirm ship
         compose.onNodeWithTag("btn_confirm_finalize").performClick()
         compose.waitForIdle()
+    }
+
+    @Test
+    fun projectSettingsWorkflow() {
+        login()
+        compose.onNodeWithText("All Tasks").performClick()
+        waitFor("Test Task 26/02 01")
+
+        // 1. Navigate to Settings mode
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(8)
+        compose.onNodeWithText("Settings").performClick()
+        waitFor("Project Settings")
+        waitFor("Manage workflow statuses and automation rules")
+
+        // 2. Verify initial statuses
+        waitFor("Workflow Statuses (3)")
+        waitFor("To Do")
+        waitFor("In Progress")
+        waitFor("Done")
+
+        // 3. Create a new status
+        compose.onNodeWithTag("btn_create_status").performClick()
+        waitFor("New Workflow Status")
+        compose.onNodeWithTag("input_status_name").performTextInput("QA Testing")
+        compose.onNodeWithTag("btn_save_status").performClick()
+        compose.waitForIdle()
+
+        waitFor("QA Testing")
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.endsWith("/statuses") })
+        }
+
+        // 4. Delete custom status
+        compose.onNodeWithTag("btn_delete_status_status-2").performClick()
+        compose.waitForIdle()
+
+        // 5. Switch to Automations tab
+        compose.onNodeWithTag("tab_automations").performClick()
+        waitFor("Automations (1)")
+        waitFor("Auto-escalate on Status Changed")
+
+        // 6. Toggle rule enabled
+        compose.onNodeWithTag("btn_toggle_rule_rule-1").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.contains("/automation-rules/rule-1") })
+        }
+
+        // 7. Create new automation rule
+        compose.onNodeWithTag("btn_create_rule").performClick()
+        waitFor("New Automation Rule")
+        compose.onNodeWithTag("input_rule_name").performTextInput("Sprint End Auto-Migration")
+        compose.onNodeWithTag("chip_trigger_sprint.completed").performClick()
+        compose.onNodeWithTag("chip_action_setStatusId").performClick()
+
+        // Capture screenshot of Android automation builder
+        screenshot("android_project_settings_workflow")
+
+        runCatching { androidx.test.espresso.Espresso.closeSoftKeyboard() }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("btn_save_rule").performClick()
+        compose.waitForIdle()
+
+        compose.runOnIdle {
+            val ruleWrites = writes.filter { it.first.endsWith("/automation-rules") }
+            assertTrue("Writes were ${writes.map { it.first }}, expected /automation-rules", ruleWrites.isNotEmpty())
+        }
+
+        waitFor("Automations (2)")
+        runCatching {
+            compose.onNodeWithTag("list_project_settings").performScrollToIndex(2)
+        }
+        compose.waitForIdle()
+        waitFor("Sprint End Auto-Migration")
     }
 }
 

@@ -33,7 +33,8 @@ import {
   Calendar,
   Target,
   BarChart3,
-  ShieldAlert
+  ShieldAlert,
+  Sliders
 } from 'lucide-react';
 
 interface KanbanBoardScreenProps {
@@ -572,6 +573,15 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
                 >
                   <Package className="w-3.5 h-3.5 text-indigo-400" />
                   Releases
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('settings')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                  title="Open Project Settings & Workflow Automations"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                  Settings
                 </button>
               </>
             )}

@@ -356,7 +356,7 @@ fun TasksScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(listOf("List", "Board", "Backlog", "Calendar", "Timeline", "Epics", "Analytics", "Releases")) { item ->
+                items(listOf("List", "Board", "Backlog", "Calendar", "Timeline", "Epics", "Analytics", "Releases", "Settings")) { item ->
                     IosFilterChip(
                         title = item,
                         isSelected = mode == item,
@@ -367,7 +367,7 @@ fun TasksScreen(
             }
 
             // Status filter chips
-            if (mode !in listOf("Backlog", "Analytics", "Releases")) {
+            if (mode !in listOf("Backlog", "Analytics", "Releases", "Settings")) {
                 Row(
                     Modifier
                         .horizontalScroll(rememberScrollState())
@@ -396,7 +396,7 @@ fun TasksScreen(
             }
         }
 
-        if (mode in listOf("Backlog", "Analytics", "Releases")) {
+        if (mode in listOf("Backlog", "Analytics", "Releases", "Settings")) {
             val activeProjectId = projectId.ifBlank { "project-a" }
             ProjectScreen(vm, api, activeProjectId, mode, onTask = { selected = it })
             return@Column
