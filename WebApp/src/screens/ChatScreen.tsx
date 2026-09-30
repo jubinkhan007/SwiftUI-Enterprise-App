@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ConversationDTO, MessageDTO, OrgMemberDTO, ThreadMessageBundleDTO } from '../types';
+import { 
+  ConversationDTO, 
+  MessageDTO, 
+  OrgMemberDTO, 
+  ThreadMessageBundleDTO,
+  ScheduledMessageDTO,
+  ReminderDTO,
+  MessageTemplateDTO,
+  UserPresenceDTO
+} from '../types';
 import { api } from '../services/api';
 import { 
   Hash, 
@@ -17,7 +26,11 @@ import {
   ChevronRight, 
   Sparkles,
   RefreshCw,
-  MoreHorizontal
+  MoreHorizontal,
+  Clock,
+  Bell,
+  FileText,
+  Check
 } from 'lucide-react';
 
 interface ChatScreenProps {
@@ -64,6 +77,112 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
   const [orgMembers, setOrgMembers] = useState<OrgMemberDTO[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [creatingConv, setCreatingConv] = useState(false);
+
+  // Productivity: Scheduled Messages & Reminders & Templates & Presence State
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessageDTO[]>([]);
+  const [showScheduleSendModal, setShowScheduleSendModal] = useState(false);
+  const [scheduleSendDateTime, setScheduleSendDateTime] = useState('');
+  const [showScheduledQueueModal, setShowScheduledQueueModal] = useState(false);
+  const [templates, setTemplates] = useState<MessageTemplateDTO[]>([]);
+  const [showTemplatePickerModal, setShowTemplatePickerModal] = useState(false);
+  const [reminders, setReminders] = useState<ReminderDTO[]>([]);
+  const [showRemindersModal, setShowRemindersModal] = useState(false);
+  const [remindingMessage, setRemindingMessage] = useState<MessageDTO | null>(null);
+  const [reminderDateTime, setReminderDateTime] = useState('');
+  const [toastNotice, setToastNotice] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastNotice(msg);
+    setTimeout(() => setToastNotice(null), 3500);
+  };
+
+  const loadProductivityData = async () => {
+    try {
+      const [scheds, rems, tpls] = await Promise.all([
+        api.getScheduledMessages('scheduled').catch(() => []),
+        api.getReminders('pending').catch(() => []),
+        api.getTemplates('all').catch(() => [])
+      ]);
+      setScheduledMessages(scheds);
+      setReminders(rems);
+      setTemplates(tpls);
+    } catch (err) {
+      console.error('Failed to load productivity items in chat:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadProductivityData();
+  }, [selectedConv]);
+
+  const handleScheduleSendSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedConv || !inputText.trim() || !scheduleSendDateTime) return;
+    try {
+      const dt = new Date(scheduleSendDateTime).toISOString();
+      await api.createScheduledMessage(selectedConv.id, {
+        body: inputText.trim(),
+        scheduledFor: dt
+      });
+      setInputText('');
+      setShowScheduleSendModal(false);
+      setScheduleSendDateTime('');
+      showToast('Message scheduled successfully!');
+      loadProductivityData();
+    } catch (err: any) {
+      alert(`Failed to schedule message: ${err.message || err}`);
+    }
+  };
+
+  const handleSendScheduledNow = async (id: string) => {
+    try {
+      await api.sendScheduledMessageNow(id);
+      showToast('Message sent immediately!');
+      loadProductivityData();
+      if (selectedConv) fetchMessages(selectedConv.id);
+    } catch (err: any) {
+      alert(`Failed to send now: ${err.message || err}`);
+    }
+  };
+
+  const handleCancelScheduled = async (id: string) => {
+    try {
+      await api.cancelScheduledMessage(id);
+      showToast('Scheduled message cancelled.');
+      loadProductivityData();
+    } catch (err: any) {
+      alert(`Failed to cancel: ${err.message || err}`);
+    }
+  };
+
+  const handleCreateReminderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!remindingMessage || !reminderDateTime) return;
+    try {
+      const dt = new Date(reminderDateTime).toISOString();
+      await api.createMessageReminder(remindingMessage.id, {
+        remindAt: dt
+      });
+      setRemindingMessage(null);
+      setReminderDateTime('');
+      showToast('Reminder set for this message!');
+      loadProductivityData();
+    } catch (err: any) {
+      alert(`Failed to set reminder: ${err.message || err}`);
+    }
+  };
+
+  const handleSelectTemplate = async (template: MessageTemplateDTO) => {
+    try {
+      const rendered = await api.renderTemplate(template.id, selectedConv?.id || null);
+      setInputText(prev => (prev ? `${prev}\n\n${rendered.body}` : rendered.body));
+      setShowTemplatePickerModal(false);
+      showToast(`Template "${template.name}" applied.`);
+    } catch (err: any) {
+      setInputText(prev => (prev ? `${prev}\n\n${template.body}` : template.body));
+      setShowTemplatePickerModal(false);
+    }
+  };
 
   const handleOpenCreateModal = async (defaultType: 'channel' | 'group' | 'direct' = 'channel') => {
     setCreateType(defaultType);
@@ -467,6 +586,24 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
               </div>
 
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowScheduledQueueModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition"
+                  title="Scheduled messages"
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  Scheduled ({scheduledMessages.filter(s => s.conversationId === selectedConv.id).length})
+                </button>
+
+                <button
+                  onClick={() => setShowRemindersModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition"
+                  title="Reminders"
+                >
+                  <Bell className="w-3.5 h-3.5 text-indigo-400" />
+                  Reminders ({reminders.length})
+                </button>
+
                 {onStartCall && (
                   <button
                     onClick={handleStartCall}
@@ -617,6 +754,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
 
                         <button
                           onClick={() => {
+                            setRemindingMessage(msg);
+                            const d = new Date(Date.now() + 60 * 60 * 1000);
+                            const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                            setReminderDateTime(iso);
+                          }}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-400"
+                          title="Remind me about this"
+                        >
+                          <Bell className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => {
                             setConvertingMessage(msg);
                             setTaskTitle(msg.body);
                           }}
@@ -658,6 +808,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
               )}
 
               <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTemplatePickerModal(true)}
+                  className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition"
+                  title="Insert template"
+                >
+                  <FileText className="w-4 h-4" />
+                </button>
+
                 <input
                   type="text"
                   placeholder={`Message #${selectedConv.name} (type / for commands)...`}
@@ -665,6 +824,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
                   onChange={handleInputChange}
                   className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
                 />
+
+                <button
+                  type="button"
+                  disabled={!inputText.trim()}
+                  onClick={() => {
+                    const d = new Date(Date.now() + 14 * 60 * 60 * 1000); // tomorrow morning
+                    const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                    setScheduleSendDateTime(iso);
+                    setShowScheduleSendModal(true);
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-amber-400 hover:bg-slate-800 disabled:opacity-40 transition"
+                  title="Schedule send"
+                >
+                  <Clock className="w-4 h-4" />
+                </button>
+
                 <button
                   type="submit"
                   disabled={!inputText.trim()}
@@ -957,6 +1132,299 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* ===================== SCHEDULE SEND MODAL ===================== */}
+      {showScheduleSendModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-400" />
+                Schedule Message Send
+              </h3>
+              <button onClick={() => setShowScheduleSendModal(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 font-mono bg-slate-950 p-3 rounded-xl border border-slate-800 line-clamp-3">
+              "{inputText}"
+            </p>
+
+            <form onSubmit={handleScheduleSendSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Deliver At</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleSendDateTime}
+                  onChange={e => setScheduleSendDateTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              {/* Presets */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Tomorrow at 9:00 AM', hours: 14 },
+                  { label: 'Tomorrow at 1:00 PM', hours: 18 },
+                  { label: 'Monday at 9:00 AM', hours: 72 },
+                ].map(p => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(Date.now() + p.hours * 60 * 60 * 1000);
+                      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                      setScheduleSendDateTime(iso);
+                    }}
+                    className="p-2 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500/50 text-[11px] font-semibold text-slate-300 text-left transition"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleSendModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-lg shadow-indigo-600/30"
+                >
+                  Schedule Message
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== SCHEDULED QUEUE MODAL ===================== */}
+      {showScheduledQueueModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-400" />
+                Scheduled Messages ({scheduledMessages.length})
+              </h3>
+              <button onClick={() => setShowScheduledQueueModal(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {scheduledMessages.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">No scheduled messages in the queue.</p>
+              ) : (
+                scheduledMessages.map(s => (
+                  <div key={s.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-400">
+                        {new Date(s.scheduledFor).toLocaleString()}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold capitalize">
+                        {s.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-200 whitespace-pre-wrap">{s.body}</p>
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
+                      <button
+                        onClick={() => handleSendScheduledNow(s.id)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold transition"
+                      >
+                        Send Now
+                      </button>
+                      <button
+                        onClick={() => handleCancelScheduled(s.id)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== TEMPLATE PICKER MODAL ===================== */}
+      {showTemplatePickerModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-400" />
+                Select Template
+              </h3>
+              <button onClick={() => setShowTemplatePickerModal(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {templates.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">
+                  No templates found. Go to Productivity Hub to create one.
+                </p>
+              ) : (
+                templates.map(t => (
+                  <div
+                    key={t.id}
+                    onClick={() => handleSelectTemplate(t)}
+                    className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500/50 cursor-pointer space-y-2 transition group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-200 group-hover:text-indigo-300 transition">
+                        {t.name}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          t.scope === 'org' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-300'
+                        }`}>
+                          {t.scope}
+                        </span>
+                        {t.shortcut && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                            /{t.shortcut}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono line-clamp-2">{t.body}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== MESSAGE REMINDER MODAL ===================== */}
+      {remindingMessage && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-indigo-400" />
+                Remind Me About Message
+              </h3>
+              <button onClick={() => setRemindingMessage(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 italic bg-slate-950 p-3 rounded-xl border border-slate-800 line-clamp-3">
+              "{remindingMessage.body}"
+            </p>
+
+            <form onSubmit={handleCreateReminderSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">When should we remind you?</label>
+                <input
+                  type="datetime-local"
+                  value={reminderDateTime}
+                  onChange={e => setReminderDateTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              {/* Quick Presets */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'In 20 minutes', mins: 20 },
+                  { label: 'In 1 hour', mins: 60 },
+                  { label: 'In 3 hours', mins: 180 },
+                  { label: 'Tomorrow 9:00 AM', mins: 1440 },
+                ].map(p => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(Date.now() + p.mins * 60 * 1000);
+                      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                      setReminderDateTime(iso);
+                    }}
+                    className="p-2 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500/50 text-[11px] font-semibold text-slate-300 text-left transition"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRemindingMessage(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-lg shadow-indigo-600/30"
+                >
+                  Set Reminder
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== REMINDERS DRAWER MODAL ===================== */}
+      {showRemindersModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-indigo-400" />
+                Active Reminders ({reminders.length})
+              </h3>
+              <button onClick={() => setShowRemindersModal(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {reminders.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">No active reminders.</p>
+              ) : (
+                reminders.map(r => (
+                  <div key={r.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-400">
+                        {new Date(r.remindAt).toLocaleString()}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold uppercase">
+                        {r.sourceType || 'reminder'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-200">{r.body}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastNotice && (
+        <div className="fixed bottom-6 right-6 z-50 bg-indigo-600 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-2xl shadow-indigo-600/40 flex items-center gap-2 animate-fade-in">
+          <Check className="w-4 h-4" />
+          {toastNotice}
         </div>
       )}
     </div>

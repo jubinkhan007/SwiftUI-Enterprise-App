@@ -44,7 +44,23 @@ import {
   WebhookSubscriptionDTO,
   CreateWebhookSubscriptionRequest,
   UpdateWebhookSubscriptionRequest,
-  WebhookTestResponse
+  WebhookTestResponse,
+  ScheduledMessageDTO,
+  CreateScheduledMessageRequest,
+  UpdateScheduledMessageRequest,
+  ReminderDTO,
+  CreateReminderRequest,
+  CreateMessageReminderRequest,
+  UpdateReminderRequest,
+  SnoozeReminderRequest,
+  UserPresenceDTO,
+  SetCustomStatusRequest,
+  BulkPresenceResponse,
+  PresenceState,
+  MessageTemplateDTO,
+  CreateTemplateRequest,
+  UpdateTemplateRequest,
+  RenderedTemplateDTO
 } from '../types';
 
 class ApiService {
@@ -1535,6 +1551,248 @@ class ApiService {
     return {
       delivered: data.delivered ?? true,
       statusCode: data.status_code ?? data.statusCode ?? 200,
+    };
+  }
+
+  // MARK: - Scheduled Messages
+  private mapScheduledMessage(m: any): ScheduledMessageDTO {
+    return {
+      id: m.id,
+      userId: m.user_id || m.userId || '',
+      orgId: m.org_id || m.orgId || '',
+      conversationId: m.conversation_id || m.conversationId || '',
+      parentId: m.parent_id ?? m.parentId ?? null,
+      body: m.body || '',
+      messageType: m.message_type || m.messageType || 'text',
+      scheduledFor: m.scheduled_for || m.scheduledFor || new Date().toISOString(),
+      status: m.status || 'scheduled',
+      sentMessageId: m.sent_message_id ?? m.sentMessageId ?? null,
+      error: m.error ?? null,
+      createdAt: m.created_at || m.createdAt,
+      updatedAt: m.updated_at || m.updatedAt,
+    };
+  }
+
+  async getScheduledMessages(status?: string): Promise<ScheduledMessageDTO[]> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const raw = await this.request<any>(`/api/me/scheduled-messages${query}`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((m: any) => this.mapScheduledMessage(m));
+  }
+
+  async createScheduledMessage(
+    conversationId: string,
+    payload: CreateScheduledMessageRequest
+  ): Promise<ScheduledMessageDTO> {
+    const raw = await this.request<any>(`/api/conversations/${conversationId}/scheduled-messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.mapScheduledMessage(raw.data || raw);
+  }
+
+  async updateScheduledMessage(
+    scheduledId: string,
+    payload: UpdateScheduledMessageRequest
+  ): Promise<ScheduledMessageDTO> {
+    const raw = await this.request<any>(`/api/scheduled-messages/${scheduledId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return this.mapScheduledMessage(raw.data || raw);
+  }
+
+  async cancelScheduledMessage(scheduledId: string): Promise<ScheduledMessageDTO> {
+    const raw = await this.request<any>(`/api/scheduled-messages/${scheduledId}`, {
+      method: 'DELETE',
+    });
+    return this.mapScheduledMessage(raw.data || raw);
+  }
+
+  async sendScheduledMessageNow(scheduledId: string): Promise<ScheduledMessageDTO> {
+    const raw = await this.request<any>(`/api/scheduled-messages/${scheduledId}/send-now`, {
+      method: 'POST',
+    });
+    return this.mapScheduledMessage(raw.data || raw);
+  }
+
+  // MARK: - Reminders
+  private mapReminder(r: any): ReminderDTO {
+    return {
+      id: r.id,
+      userId: r.user_id || r.userId || '',
+      orgId: r.org_id || r.orgId || '',
+      body: r.body || '',
+      remindAt: r.remind_at || r.remindAt || new Date().toISOString(),
+      status: r.status || 'pending',
+      sourceType: r.source_type ?? r.sourceType ?? null,
+      sourceId: r.source_id ?? r.sourceId ?? null,
+      firedAt: r.fired_at ?? r.firedAt ?? null,
+      createdAt: r.created_at || r.createdAt,
+      updatedAt: r.updated_at || r.updatedAt,
+    };
+  }
+
+  async getReminders(status?: string): Promise<ReminderDTO[]> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const raw = await this.request<any>(`/api/me/reminders${query}`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((r: any) => this.mapReminder(r));
+  }
+
+  async createReminder(payload: CreateReminderRequest): Promise<ReminderDTO> {
+    const raw = await this.request<any>('/api/me/reminders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.mapReminder(raw.data || raw);
+  }
+
+  async createMessageReminder(
+    messageId: string,
+    payload: CreateMessageReminderRequest
+  ): Promise<ReminderDTO> {
+    const raw = await this.request<any>(`/api/messages/${messageId}/remind`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.mapReminder(raw.data || raw);
+  }
+
+  async updateReminder(reminderId: string, payload: UpdateReminderRequest): Promise<ReminderDTO> {
+    const raw = await this.request<any>(`/api/reminders/${reminderId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return this.mapReminder(raw.data || raw);
+  }
+
+  async snoozeReminder(reminderId: string, minutes: number): Promise<ReminderDTO> {
+    const raw = await this.request<any>(`/api/reminders/${reminderId}/snooze`, {
+      method: 'POST',
+      body: JSON.stringify({ minutes }),
+    });
+    return this.mapReminder(raw.data || raw);
+  }
+
+  async dismissReminder(reminderId: string): Promise<ReminderDTO> {
+    const raw = await this.request<any>(`/api/reminders/${reminderId}/dismiss`, {
+      method: 'POST',
+    });
+    return this.mapReminder(raw.data || raw);
+  }
+
+  async deleteReminder(reminderId: string): Promise<void> {
+    await this.request<void>(`/api/reminders/${reminderId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // MARK: - Presence & Custom Status
+  private mapPresence(p: any): UserPresenceDTO {
+    return {
+      userId: p.user_id || p.userId || '',
+      state: p.state || 'offline',
+      customStatusEmoji: p.custom_status_emoji ?? p.customStatusEmoji ?? null,
+      customStatusText: p.custom_status_text ?? p.customStatusText ?? null,
+      customStatusExpiresAt: p.custom_status_expires_at ?? p.customStatusExpiresAt ?? null,
+      lastHeartbeatAt: p.last_heartbeat_at ?? p.lastHeartbeatAt ?? null,
+    };
+  }
+
+  async sendHeartbeat(state?: PresenceState): Promise<UserPresenceDTO> {
+    const raw = await this.request<any>('/api/me/presence/heartbeat', {
+      method: 'POST',
+      body: JSON.stringify(state ? { state } : {}),
+    });
+    return this.mapPresence(raw.data || raw);
+  }
+
+  async setCustomStatus(payload: SetCustomStatusRequest): Promise<UserPresenceDTO> {
+    const raw = await this.request<any>('/api/me/status', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return this.mapPresence(raw.data || raw);
+  }
+
+  async clearCustomStatus(): Promise<UserPresenceDTO> {
+    const raw = await this.request<any>('/api/me/status', {
+      method: 'DELETE',
+    });
+    return this.mapPresence(raw.data || raw);
+  }
+
+  async getMyPresence(): Promise<UserPresenceDTO> {
+    const raw = await this.request<any>('/api/me/presence');
+    return this.mapPresence(raw.data || raw);
+  }
+
+  async getBulkPresence(userIds: string[]): Promise<UserPresenceDTO[]> {
+    if (!userIds.length) return [];
+    const raw = await this.request<any>(`/api/presence?userIds=${encodeURIComponent(userIds.join(','))}`);
+    const data = raw.data || raw;
+    const items: any[] = Array.isArray(data?.presences) ? data.presences : (Array.isArray(data) ? data : []);
+    return items.map((p: any) => this.mapPresence(p));
+  }
+
+  async getUserPresence(userId: string): Promise<UserPresenceDTO> {
+    const raw = await this.request<any>(`/api/users/${userId}/presence`);
+    return this.mapPresence(raw.data || raw);
+  }
+
+  // MARK: - Reusable Templates
+  private mapTemplate(t: any): MessageTemplateDTO {
+    return {
+      id: t.id,
+      orgId: t.org_id || t.orgId || '',
+      ownerUserId: t.owner_user_id ?? t.ownerUserId ?? null,
+      scope: t.scope || 'user',
+      name: t.name || '',
+      shortcut: t.shortcut ?? null,
+      body: t.body || '',
+      createdAt: t.created_at || t.createdAt,
+      updatedAt: t.updated_at || t.updatedAt,
+    };
+  }
+
+  async getTemplates(scope: 'all' | 'user' | 'org' = 'all'): Promise<MessageTemplateDTO[]> {
+    const raw = await this.request<any>(`/api/templates?scope=${scope}`);
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((t: any) => this.mapTemplate(t));
+  }
+
+  async createTemplate(payload: CreateTemplateRequest): Promise<MessageTemplateDTO> {
+    const raw = await this.request<any>('/api/templates', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.mapTemplate(raw.data || raw);
+  }
+
+  async updateTemplate(templateId: string, payload: UpdateTemplateRequest): Promise<MessageTemplateDTO> {
+    const raw = await this.request<any>(`/api/templates/${templateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return this.mapTemplate(raw.data || raw);
+  }
+
+  async deleteTemplate(templateId: string): Promise<void> {
+    await this.request<void>(`/api/templates/${templateId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async renderTemplate(templateId: string, conversationId?: string | null): Promise<RenderedTemplateDTO> {
+    const raw = await this.request<any>(`/api/templates/${templateId}/render`, {
+      method: 'POST',
+      body: JSON.stringify(conversationId ? { conversationId } : {}),
+    });
+    const d = raw.data || raw;
+    return {
+      templateId: d.template_id || d.templateId || templateId,
+      body: d.body || '',
     };
   }
 }

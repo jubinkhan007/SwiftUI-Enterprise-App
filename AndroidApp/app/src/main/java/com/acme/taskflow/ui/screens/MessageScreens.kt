@@ -312,6 +312,7 @@ fun ChatScreen(vm: AppViewModel, api: ApiClient, conversationId: String, lists: 
         ) {
             Row(
                 modifier = Modifier
+                    .testTag("btn_chat_back")
                     .clickable { onBack() }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -352,7 +353,10 @@ fun ChatScreen(vm: AppViewModel, api: ApiClient, conversationId: String, lists: 
             IconButton(onClick = { pins = !pins }) {
                 Icon(Icons.Default.PushPin, "Pinned", tint = if (pins) AppColors.brandPrimary else AppColors.textSecondary)
             }
-            IconButton(onClick = { showScheduledSheet = true }) {
+            IconButton(
+                modifier = Modifier.testTag("btn_scheduled_sheet"),
+                onClick = { showScheduledSheet = true }
+            ) {
                 Icon(Icons.Default.Schedule, "Scheduled Messages", tint = AppColors.textSecondary)
             }
             IconButton(
@@ -506,6 +510,7 @@ fun ChatScreen(vm: AppViewModel, api: ApiClient, conversationId: String, lists: 
                                 onClick = { messageEditor = "React" to message; menu = false }
                             )
                             DropdownMenuItem(
+                                modifier = Modifier.testTag("menu_remind_me"),
                                 text = { Text("Remind me...") },
                                 leadingIcon = { Icon(Icons.Default.Alarm, null, modifier = Modifier.size(18.dp)) },
                                 onClick = { reminderMessage = message; menu = false }
@@ -595,10 +600,17 @@ fun ChatScreen(vm: AppViewModel, api: ApiClient, conversationId: String, lists: 
             }) {
                 Icon(Icons.Default.Save, "Save draft", tint = AppColors.textSecondary, modifier = Modifier.size(20.dp))
             }
-            IconButton(onClick = { scheduleDialog = true }, enabled = body.isNotBlank()) {
+            IconButton(
+                modifier = Modifier.testTag("btn_schedule_message"),
+                onClick = { scheduleDialog = true },
+                enabled = body.isNotBlank()
+            ) {
                 Icon(Icons.Default.ScheduleSend, "Schedule", tint = if (body.isNotBlank()) AppColors.brandPrimary else AppColors.textTertiary, modifier = Modifier.size(20.dp))
             }
-            IconButton(onClick = { showTemplates = true }) {
+            IconButton(
+                modifier = Modifier.testTag("btn_templates"),
+                onClick = { showTemplates = true }
+            ) {
                 Icon(Icons.Default.TextSnippet, "Templates", tint = AppColors.textSecondary, modifier = Modifier.size(20.dp))
             }
         }
@@ -1345,8 +1357,11 @@ fun ScheduledMessagesSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Scheduled Messages", style = AppTypography.title3, color = AppColors.textPrimary, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, null, tint = AppColors.textSecondary)
+                    IconButton(
+                        modifier = Modifier.testTag("btn_close_scheduled_sheet"),
+                        onClick = onDismiss
+                    ) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
                     }
                 }
                 HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
@@ -1374,20 +1389,26 @@ fun ScheduledMessagesSheet(
                                     Text("Sends at: ${dateLabel(item.text("scheduled_for"))}", style = AppTypography.caption2, color = AppColors.brandPrimary)
                                     Spacer(Modifier.height(6.dp))
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        TextButton(onClick = {
-                                            coroutineScope.launch {
-                                                api.request("/api/scheduled-messages/${item.id}/send-now", "POST")
-                                                remote.reload()
+                                        TextButton(
+                                            modifier = Modifier.testTag("btn_send_now"),
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    api.request("/api/scheduled-messages/${item.id}/send-now", "POST")
+                                                    remote.reload()
+                                                }
                                             }
-                                        }) {
+                                        ) {
                                             Text("Send Now", color = AppColors.brandPrimary)
                                         }
-                                        TextButton(onClick = {
-                                            coroutineScope.launch {
-                                                api.request("/api/scheduled-messages/${item.id}", "DELETE")
-                                                remote.reload()
+                                        TextButton(
+                                            modifier = Modifier.testTag("btn_cancel_scheduled"),
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    api.request("/api/scheduled-messages/${item.id}", "DELETE")
+                                                    remote.reload()
+                                                }
                                             }
-                                        }) {
+                                        ) {
                                             Text("Cancel", color = AppColors.statusError)
                                         }
                                     }
@@ -1433,21 +1454,25 @@ fun TemplatePickerSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(if (createMode) "Create Template" else "Message Templates", style = AppTypography.title3, color = AppColors.textPrimary, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, null, tint = AppColors.textSecondary)
+                    IconButton(
+                        modifier = Modifier.testTag("btn_close_template_sheet"),
+                        onClick = onDismiss
+                    ) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
                     }
                 }
                 HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
 
                 if (createMode) {
                     Column(Modifier.weight(1f).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        IosTextField(label = "Template Name", value = newName, onValueChange = { newName = it }, modifier = Modifier.fillMaxWidth())
-                        IosTextField(label = "Content", value = newBody, onValueChange = { newBody = it }, modifier = Modifier.fillMaxWidth(), singleLine = false)
+                        IosTextField(label = "Template Name", value = newName, onValueChange = { newName = it }, modifier = Modifier.fillMaxWidth(), testTag = "input_template_name")
+                        IosTextField(label = "Content", value = newBody, onValueChange = { newBody = it }, modifier = Modifier.fillMaxWidth(), singleLine = false, testTag = "input_template_content")
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { createMode = false }) { Text("Back", color = AppColors.textSecondary) }
                         Spacer(Modifier.width(8.dp))
                         Button(
+                            modifier = Modifier.testTag("btn_save_template"),
                             onClick = {
                                 if (newName.isNotBlank() && newBody.isNotBlank()) {
                                     coroutineScope.launch {
@@ -1474,7 +1499,7 @@ fun TemplatePickerSheet(
                             Button(
                                 onClick = { createMode = true },
                                 colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary.copy(alpha = 0.12f)),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth().testTag("btn_new_template")
                             ) {
                                 Icon(Icons.Default.Add, null, tint = AppColors.brandPrimary, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
@@ -1487,7 +1512,7 @@ fun TemplatePickerSheet(
                                 Card(
                                     shape = RoundedCornerShape(AppRadius.medium),
                                     colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
-                                    modifier = Modifier.fillMaxWidth().clickable { onSelect(template.text("body")) }
+                                    modifier = Modifier.fillMaxWidth().testTag("card_template_${template.text("name")}").clickable { onSelect(template.text("body")) }
                                 ) {
                                     Column(Modifier.padding(12.dp)) {
                                         Text(template.text("name"), style = AppTypography.headline, color = AppColors.brandPrimary)

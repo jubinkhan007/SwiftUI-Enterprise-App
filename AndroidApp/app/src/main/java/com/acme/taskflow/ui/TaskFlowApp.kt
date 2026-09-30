@@ -4,11 +4,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.List
@@ -241,6 +244,7 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                 Row(
                     modifier = Modifier
                         .weight(1f)
+                        .testTag("btn_user_profile")
                         .clickable { showUserMenu = true },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -315,6 +319,17 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                                 contentDescription = "Refresh",
                                 tint = AppColors.brandPrimary,
                                 modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        IconButton(
+                            modifier = Modifier.testTag("btn_top_bar_profile"),
+                            onClick = { showUserMenu = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccountCircle,
+                                contentDescription = "Profile",
+                                tint = AppColors.brandPrimary,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -460,21 +475,171 @@ private fun ProfileDialog(
 ) {
     var name by rememberSaveable { mutableStateOf(vm.user?.text("display_name").orEmpty()) }
     var email by rememberSaveable { mutableStateOf(vm.user?.text("email").orEmpty()) }
+    var statusEmoji by rememberSaveable { mutableStateOf("") }
+    var statusText by rememberSaveable { mutableStateOf("") }
+    var presenceState by rememberSaveable { mutableStateOf("online") }
+    val coroutineScope = rememberCoroutineScope()
+    var isSavingStatus by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        runCatching {
+            val res = vm.api.request("/api/me/presence", "GET").data.obj()
+            statusEmoji = res.text("custom_status_emoji")
+            statusText = res.text("custom_status_text")
+            val state = res.text("state")
+            if (state.isNotBlank()) presenceState = state
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Profile", style = AppTypography.title2) },
+        title = { Text("Profile & Status", style = AppTypography.title2) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Profile header
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppAvatar(name)
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(name.ifBlank { "Your profile" }, style = AppTypography.headline)
-                        Text(vm.user?.text("role", "Member")?.replaceFirstChar { it.uppercase() } ?: "Member",
-                            style = AppTypography.caption1, color = AppColors.textSecondary)
+                        Text(
+                            vm.user?.text("role", "Member")?.replaceFirstChar { it.uppercase() } ?: "Member",
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary
+                        )
                     }
                 }
+
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+                // Presence Switcher
+                Text("Presence", style = AppTypography.caption1, color = AppColors.textSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("online" to "Online", "away" to "Away", "offline" to "Offline").forEach { (state, label) ->
+                        val isSelected = presenceState.equals(state, ignoreCase = true)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                presenceState = state
+                                coroutineScope.launch {
+                                    runCatching {
+                                        vm.api.request("/api/me/presence/heartbeat", "POST", json("state" to state))
+                                    }
+                                }
+                            },
+                            label = { Text(label) },
+                            modifier = Modifier.testTag("chip_presence_$state")
+                        )
+                    }
+                }
+
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+                // Custom Status Section
+                Text("Custom Status", style = AppTypography.caption1, color = AppColors.textSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = statusEmoji,
+                        onValueChange = { statusEmoji = it },
+                        label = { Text("Emoji") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .width(76.dp)
+                            .testTag("input_custom_status_emoji")
+                    )
+                    OutlinedTextField(
+                        value = statusText,
+                        onValueChange = { statusText = it },
+                        label = { Text("What's your status?") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_custom_status_text")
+                    )
+                }
+
+                // Quick presets
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        "📅" to "In a meeting",
+                        "🍔" to "Out to lunch",
+                        "🏠" to "Working from home",
+                        "🌴" to "On vacation",
+                        "🎧" to "Focus time"
+                    ).forEach { (emoji, text) ->
+                        AssistChip(
+                            onClick = {
+                                statusEmoji = emoji
+                                statusText = text
+                            },
+                            label = { Text("$emoji $text", style = AppTypography.caption2) }
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("btn_save_status"),
+                        enabled = !isSavingStatus && (statusEmoji.isNotBlank() || statusText.isNotBlank()),
+                        onClick = {
+                            coroutineScope.launch {
+                                isSavingStatus = true
+                                runCatching {
+                                    vm.api.request(
+                                        "/api/me/status",
+                                        "PUT",
+                                        json("emoji" to statusEmoji.trim(), "text" to statusText.trim())
+                                    )
+                                }
+                                isSavingStatus = false
+                            }
+                        }
+                    ) {
+                        Text("Set Status")
+                    }
+
+                    OutlinedButton(
+                        modifier = Modifier.testTag("btn_clear_status"),
+                        enabled = !isSavingStatus,
+                        onClick = {
+                            coroutineScope.launch {
+                                isSavingStatus = true
+                                runCatching {
+                                    vm.api.request("/api/me/status", "DELETE")
+                                }
+                                statusEmoji = ""
+                                statusText = ""
+                                isSavingStatus = false
+                            }
+                        }
+                    ) {
+                        Text("Clear")
+                    }
+                }
+
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -492,7 +657,9 @@ private fun ProfileDialog(
                 if (onNavigateToTeam != null) {
                     OutlinedButton(
                         onClick = onNavigateToTeam,
-                        modifier = Modifier.fillMaxWidth().testTag("btn_profile_team_management")
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("btn_profile_team_management")
                     ) {
                         Icon(Icons.Default.Groups, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
@@ -513,7 +680,7 @@ private fun ProfileDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
 }

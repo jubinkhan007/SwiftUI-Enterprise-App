@@ -55,6 +55,12 @@ class WorkflowTest {
     private val mockRules = CopyOnWriteArrayList<JsonObject>()
     private val mockApiKeys = CopyOnWriteArrayList<JsonObject>()
     private val mockWebhooks = CopyOnWriteArrayList<JsonObject>()
+    private val mockTemplates = CopyOnWriteArrayList<JsonObject>()
+    private val mockScheduledMessages = CopyOnWriteArrayList<JsonObject>()
+    private val mockReminders = CopyOnWriteArrayList<JsonObject>()
+    private var mockPresenceState = "online"
+    private var mockCustomStatusEmoji = ""
+    private var mockCustomStatusText = ""
     private var workflowVersion = 1
     private val timeLogs = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
@@ -455,6 +461,30 @@ class WorkflowTest {
             "createdAt" to "2026-09-29T10:00:00Z"
         )
 
+        mockTemplates.clear()
+        mockTemplates += json("id" to "tmpl-1", "name" to "Bug Report", "body" to "Steps to reproduce:\n1. Open app\n2. Tap button")
+        mockTemplates += json("id" to "tmpl-2", "name" to "Standup", "body" to "Yesterday: Completed auth\nToday: Productivity parity\nBlockers: None")
+
+        mockScheduledMessages.clear()
+        mockScheduledMessages += json(
+            "id" to "sched-1",
+            "conversation_id" to "conversation-a",
+            "body" to "Scheduled standup reminder",
+            "scheduled_for" to "2026-10-01T09:00:00Z"
+        )
+
+        mockReminders.clear()
+        mockReminders += json(
+            "id" to "remind-1",
+            "body" to "Review Sprint 15 PRs",
+            "remind_at" to "2026-10-01T10:00:00Z",
+            "status" to "pending"
+        )
+
+        mockPresenceState = "online"
+        mockCustomStatusEmoji = "💻"
+        mockCustomStatusText = "Coding hard"
+
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -469,6 +499,41 @@ class WorkflowTest {
                     path == "/api/auth/login" -> json("token" to "fixture-token", "user" to json("id" to "user-a", "display_name" to "Alex Chen", "email" to "alex@example.com"))
                     path == "/api/organizations" -> listOf(workspace)
                     path == "/api/me" -> json("user" to json("id" to "user-a"), "role" to "owner", "permissions" to json("permissions" to listOf("members.invite")))
+                    path == "/api/me/presence" && request.method == "GET" -> json(
+                        "user_id" to "user-a",
+                        "state" to mockPresenceState,
+                        "custom_status_emoji" to mockCustomStatusEmoji,
+                        "custom_status_text" to mockCustomStatusText
+                    )
+                    path == "/api/me/presence/heartbeat" && request.method == "POST" -> {
+                        mockPresenceState = payload.text("state", "online")
+                        json(
+                            "user_id" to "user-a",
+                            "state" to mockPresenceState,
+                            "custom_status_emoji" to mockCustomStatusEmoji,
+                            "custom_status_text" to mockCustomStatusText
+                        )
+                    }
+                    path == "/api/me/status" && request.method == "PUT" -> {
+                        mockCustomStatusEmoji = payload.text("emoji")
+                        mockCustomStatusText = payload.text("text")
+                        json(
+                            "user_id" to "user-a",
+                            "state" to mockPresenceState,
+                            "custom_status_emoji" to mockCustomStatusEmoji,
+                            "custom_status_text" to mockCustomStatusText
+                        )
+                    }
+                    path == "/api/me/status" && request.method == "DELETE" -> {
+                        mockCustomStatusEmoji = ""
+                        mockCustomStatusText = ""
+                        json(
+                            "user_id" to "user-a",
+                            "state" to mockPresenceState,
+                            "custom_status_emoji" to "",
+                            "custom_status_text" to ""
+                        )
+                    }
                     path == "/api/hierarchy" -> json("spaces" to listOf(json("space" to json("id" to "space-a", "name" to "Ex1 Space"), "projects" to listOf(json("project" to json("id" to "project-a", "name" to "Mobile"), "lists" to listOf(json("id" to "list-a", "name" to "Release")))))))
                     path == "/api/organizations/org-a/members" && request.method == "GET" -> orgMembers.toList()
                     path.startsWith("/api/organizations/org-a/members/") && request.method == "PATCH" -> {
@@ -826,16 +891,74 @@ class WorkflowTest {
                         it.addProperty("status", "todo")
                         tasks += it
                     }
-                    path == "/api/templates" -> listOf(
-                        json("id" to "tmpl-1", "name" to "Bug Report", "body" to "Steps to reproduce:\n")
-                    )
-                    path.endsWith("/scheduled-messages") && request.method == "POST" -> payload.also {
-                        it.addProperty("id", "sched-1")
+                    path == "/api/templates" && request.method == "POST" -> {
+                        val newT = json(
+                            "id" to "tmpl-${mockTemplates.size + 1}",
+                            "name" to payload.text("name"),
+                            "body" to payload.text("body"),
+                            "scope" to payload.text("scope", "user")
+                        )
+                        mockTemplates += newT
+                        newT
                     }
-                    path == "/api/me/scheduled-messages" -> listOf(
-                        json("id" to "sched-1", "body" to "Scheduled standup", "scheduled_for" to "2026-09-15T09:00:00Z")
-                    )
-                    path.startsWith("/api/messages/") && path.endsWith("/remind") && request.method == "POST" -> json("id" to "remind-1")
+                    path == "/api/templates" -> mockTemplates.toList()
+                    path.endsWith("/scheduled-messages") && request.method == "POST" -> {
+                        val newSched = json(
+                            "id" to "sched-${mockScheduledMessages.size + 1}",
+                            "conversation_id" to "conversation-a",
+                            "body" to payload.text("body"),
+                            "scheduled_for" to payload.text("scheduled_for")
+                        )
+                        mockScheduledMessages += newSched
+                        newSched
+                    }
+                    path == "/api/me/scheduled-messages" || path == "/api/scheduled-messages" -> mockScheduledMessages.toList()
+                    path.startsWith("/api/scheduled-messages/") && path.endsWith("/send-now") && request.method == "POST" -> {
+                        val schedId = path.substringAfter("/api/scheduled-messages/").substringBefore("/send-now")
+                        mockScheduledMessages.removeAll { it.id == schedId }
+                        json("success" to true)
+                    }
+                    path.startsWith("/api/scheduled-messages/") && request.method == "DELETE" -> {
+                        val schedId = path.substringAfterLast("/")
+                        mockScheduledMessages.removeAll { it.id == schedId }
+                        json("success" to true)
+                    }
+                    path.startsWith("/api/messages/") && path.endsWith("/remind") && request.method == "POST" -> {
+                        val newRem = json(
+                            "id" to "remind-${mockReminders.size + 1}",
+                            "message_id" to path.substringAfter("/api/messages/").substringBefore("/remind"),
+                            "body" to payload.text("body", "Message reminder"),
+                            "remind_at" to payload.text("remind_at")
+                        )
+                        mockReminders += newRem
+                        newRem
+                    }
+                    path == "/api/me/reminders" || path == "/api/reminders" -> {
+                        if (request.method == "POST") {
+                            val newRem = json(
+                                "id" to "remind-${mockReminders.size + 1}",
+                                "body" to payload.text("body", payload.text("title", "New Reminder")),
+                                "remind_at" to payload.text("remind_at")
+                            )
+                            mockReminders += newRem
+                            newRem
+                        } else {
+                            mockReminders.toList()
+                        }
+                    }
+                    path.startsWith("/api/reminders/") && path.endsWith("/snooze") && request.method == "POST" -> {
+                        json("success" to true)
+                    }
+                    path.startsWith("/api/reminders/") && path.endsWith("/dismiss") && request.method == "POST" -> {
+                        val rId = path.substringAfter("/api/reminders/").substringBefore("/dismiss")
+                        mockReminders.removeAll { it.id == rId }
+                        json("success" to true)
+                    }
+                    path.startsWith("/api/reminders/") && request.method == "DELETE" -> {
+                        val rId = path.substringAfterLast("/")
+                        mockReminders.removeAll { it.id == rId }
+                        json("success" to true)
+                    }
                     path == "/api/search" || path == "/api/search/files" -> listOf(
                         json("id" to "res-1", "title" to "Mobile team", "subtitle" to "Found message here", "type" to "message")
                     )
@@ -2220,6 +2343,93 @@ class WorkflowTest {
         compose.runOnIdle {
             assertTrue(writes.any { it.first == "/api/webhooks/wh-1" })
         }
+    }
+
+    @Test fun productivityFeaturesWorkflow() {
+        login()
+
+        // 1. Navigate to Messages -> Mobile team conversation
+        compose.onNodeWithText("Messages").performClick()
+        waitFor("Mobile team")
+        compose.onNodeWithText("Mobile team").performClick()
+        waitFor("Hello team!")
+
+        // 2. Open Template Picker Sheet, create a new template, and select it
+        compose.onNodeWithTag("btn_templates").performClick()
+        waitFor("Message Templates")
+        compose.onNodeWithTag("btn_new_template").performClick()
+        waitFor("Create Template")
+        compose.onNodeWithTag("input_template_name").performTextInput("Deployment Checklist")
+        compose.onNodeWithTag("input_template_content").performTextInput("- [ ] Run migrations\n- [ ] Deploy server")
+        compose.onNodeWithTag("btn_save_template").performClick()
+        compose.waitForIdle()
+
+        // Template should now be in the list, click it to insert into composer
+        waitFor("Deployment Checklist")
+        compose.onNodeWithTag("card_template_Deployment Checklist").performClick()
+        compose.waitForIdle()
+
+        // 3. Schedule message send
+        compose.onNodeWithTag("btn_schedule_message").performClick()
+        waitFor("Schedule Message")
+        compose.onNodeWithText("In 30 minutes").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.endsWith("/scheduled-messages") })
+        }
+
+        // 4. View Scheduled Messages sheet and Send Now
+        compose.onNodeWithTag("btn_scheduled_sheet").performClick()
+        waitFor("Scheduled Messages")
+        waitFor("Send Now")
+        compose.onAllNodesWithTag("btn_send_now").onFirst().performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.endsWith("/send-now") })
+        }
+        compose.onNodeWithTag("btn_close_scheduled_sheet").performClick()
+        compose.waitForIdle()
+
+        // 5. Message Reminder: click message bubble to open context menu and set reminder
+        compose.onAllNodes(hasContentDescription("Message options")).onFirst().performClick()
+        waitFor("Remind me...")
+        compose.onNodeWithTag("menu_remind_me").performClick()
+        waitFor("Remind Me About This")
+        compose.onNodeWithText("In 20 minutes").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first.contains("/remind") })
+        }
+
+        // 6. User Presence and Custom Status via Profile dialog
+        compose.onNodeWithTag("btn_chat_back").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("btn_top_bar_profile").performClick()
+        waitFor("Profile & Status")
+
+        // Switch presence to Away
+        compose.onNodeWithTag("chip_presence_away").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/me/presence/heartbeat" && it.second.text("state") == "away" })
+        }
+
+        // Set Custom Status
+        compose.onNodeWithTag("input_custom_status_emoji").performTextClearance()
+        compose.onNodeWithTag("input_custom_status_emoji").performTextInput("🎧")
+        compose.onNodeWithTag("input_custom_status_text").performTextClearance()
+        compose.onNodeWithTag("input_custom_status_text").performTextInput("Deep Work Focus")
+        compose.onNodeWithTag("btn_save_status").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/me/status" && it.second.text("text") == "Deep Work Focus" })
+        }
+
+        // Capture screenshot of Android productivity features (profile & custom status active)
+        screenshot("android_productivity_features")
+
+        compose.onNodeWithText("Close").performClick()
+        compose.waitForIdle()
     }
 }
 

@@ -490,7 +490,136 @@ export type NavDestination =
   | 'productivity' 
   | 'sessions' 
   | 'team' 
-  | 'billing';
+  | 'billing'
+  | 'reminders';
+
+// Productivity: Scheduled Messages
+export type ScheduledMessageStatus = 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled';
+
+export interface ScheduledMessageDTO {
+  id: string;
+  userId: string;
+  orgId: string;
+  conversationId: string;
+  parentId?: string | null;
+  body: string;
+  messageType?: string;
+  scheduledFor: string;
+  status: ScheduledMessageStatus;
+  sentMessageId?: string | null;
+  error?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface CreateScheduledMessageRequest {
+  body: string;
+  scheduledFor: string;
+  parentId?: string | null;
+  messageType?: string;
+}
+
+export interface UpdateScheduledMessageRequest {
+  body?: string;
+  scheduledFor?: string;
+}
+
+// Productivity: Reminders
+export type ReminderStatus = 'pending' | 'fired' | 'snoozed' | 'dismissed';
+
+export interface ReminderDTO {
+  id: string;
+  userId: string;
+  orgId: string;
+  body: string;
+  remindAt: string;
+  status: ReminderStatus;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  firedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface CreateReminderRequest {
+  body: string;
+  remindAt: string;
+  sourceType?: string;
+  sourceId?: string;
+}
+
+export interface CreateMessageReminderRequest {
+  remindAt: string;
+  body?: string;
+}
+
+export interface UpdateReminderRequest {
+  body?: string;
+  remindAt?: string;
+}
+
+export interface SnoozeReminderRequest {
+  minutes: number;
+}
+
+// Presence & Custom Status
+export type PresenceState = 'online' | 'away' | 'offline';
+
+export interface UserPresenceDTO {
+  userId: string;
+  state: PresenceState;
+  customStatusEmoji?: string | null;
+  customStatusText?: string | null;
+  customStatusExpiresAt?: string | null;
+  lastHeartbeatAt?: string | null;
+}
+
+export interface SetCustomStatusRequest {
+  emoji?: string;
+  text?: string;
+  expiresAt?: string | null;
+}
+
+export interface BulkPresenceResponse {
+  presences: UserPresenceDTO[];
+}
+
+// Reusable Templates
+export type TemplateScope = 'user' | 'org';
+
+export interface MessageTemplateDTO {
+  id: string;
+  orgId: string;
+  ownerUserId?: string | null;
+  scope: TemplateScope;
+  name: string;
+  shortcut?: string | null;
+  body: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface CreateTemplateRequest {
+  name: string;
+  body: string;
+  shortcut?: string | null;
+  scope: TemplateScope;
+}
+
+export interface UpdateTemplateRequest {
+  name?: string;
+  body?: string;
+  shortcut?: string | null;
+}
+
+export interface RenderTemplateRequest {
+  conversationId?: string | null;
+}
+
+export interface RenderedTemplateDTO {
+  templateId: string;
+  body: string;
+}
 
 
 
