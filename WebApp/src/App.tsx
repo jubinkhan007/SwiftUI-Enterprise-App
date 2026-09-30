@@ -16,6 +16,7 @@ import { BillingScreen } from './screens/BillingScreen';
 import { BacklogScreen } from './screens/BacklogScreen';
 import { ReleaseManagementScreen } from './screens/ReleaseManagementScreen';
 import { ProjectSettingsScreen } from './screens/ProjectSettingsScreen';
+import { IntegrationSettingsScreen } from './screens/IntegrationSettingsScreen';
 import { SyncCenterModal } from './components/SyncCenterModal';
 import { Video, PhoneOff } from 'lucide-react';
 
@@ -162,6 +163,7 @@ export const App: React.FC = () => {
           {currentNav === 'backlog' && <BacklogScreen onNavigate={setCurrentNav} />}
           {currentNav === 'releases' && <ReleaseManagementScreen onNavigate={setCurrentNav} />}
           {currentNav === 'settings' && <ProjectSettingsScreen onNavigate={setCurrentNav} />}
+          {currentNav === 'integrations' && <IntegrationSettingsScreen onNavigate={setCurrentNav} />}
           {currentNav === 'inbox' && <InboxScreen onNavigate={setCurrentNav} />}
           {currentNav === 'messages' && (
             <ChatScreen onStartCall={(convId) => setActiveCallConvId(convId)} />

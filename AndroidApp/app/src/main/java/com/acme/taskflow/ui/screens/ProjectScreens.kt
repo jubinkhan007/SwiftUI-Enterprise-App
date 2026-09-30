@@ -46,6 +46,7 @@ fun ProjectScreen(vm: AppViewModel, api: ApiClient, projectId: String, mode: Str
             "Analytics" -> AnalyticsScreen(vm, api, projectId)
             "Releases" -> ReleasesScreen(vm, api, projectId, onTask)
             "Settings" -> ProjectSettingsScreen(vm, api, projectId)
+            "Integrations" -> IntegrationsScreen(vm, api)
         }
     }
 }
@@ -1638,5 +1639,588 @@ private fun CreateRuleDialog(
             }
         },
         modifier = Modifier.testTag("dialog_create_rule")
+    )
+}
+
+// MARK: - Integrations: API Keys & Webhooks Screen
+
+@Composable
+fun IntegrationsScreen(vm: AppViewModel, api: ApiClient) {
+    val apiKeysRemote = rememberRemote(api, "/api/api-keys", vm.revision)
+    val webhooksRemote = rememberRemote(api, "/api/webhooks", vm.revision)
+    val action = rememberAction()
+
+    var tab by rememberSaveable { mutableStateOf("API Keys") }
+    var showCreateKey by remember { mutableStateOf(false) }
+    var showCreateWebhook by remember { mutableStateOf(false) }
+    var rawKeySecret by remember { mutableStateOf<String?>(null) }
+    var testResult by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    val apiKeys = apiKeysRemote.data.rows()
+    val webhooks = webhooksRemote.data.rows()
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("list_integrations"),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 48.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Integrations & API", style = AppTypography.headline)
+                    Text(
+                        "Manage personal API tokens and outgoing webhooks",
+                        style = AppTypography.caption1,
+                        color = AppColors.textSecondary
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (tab == "API Keys") {
+                        IconButton(
+                            onClick = { showCreateKey = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                                .testTag("btn_create_api_key")
+                        ) {
+                            Icon(Icons.Default.Add, "Generate key", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                        }
+                    } else {
+                        IconButton(
+                            onClick = { showCreateWebhook = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                                .testTag("btn_create_webhook")
+                        ) {
+                            Icon(Icons.Default.Add, "Add webhook", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Segmented tabs: API Keys vs Webhooks
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                IosFilterChip(
+                    title = "Personal API Keys (${apiKeys.size})",
+                    isSelected = tab == "API Keys",
+                    onClick = { tab = "API Keys" },
+                    modifier = Modifier.testTag("tab_api_keys")
+                )
+                IosFilterChip(
+                    title = "Outgoing Webhooks (${webhooks.size})",
+                    isSelected = tab == "Webhooks",
+                    onClick = { tab = "Webhooks" },
+                    modifier = Modifier.testTag("tab_webhooks")
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+            RemoteStatus(if (tab == "API Keys") apiKeysRemote else webhooksRemote)
+            ActionStatus(action)
+        }
+
+        if (tab == "API Keys") {
+            if (!apiKeysRemote.loading && apiKeysRemote.error == null && apiKeys.isEmpty()) {
+                item {
+                    IosCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.VpnKey, null, tint = AppColors.brandPrimary, modifier = Modifier.size(36.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No API keys generated", style = AppTypography.headline)
+                            Text(
+                                "Generate API keys for automated tools and scripts.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(apiKeys, key = { it.id }) { key ->
+                val prefix = key.text("keyPrefix", key.text("key_prefix", ""))
+                val isRevoked = key.flag("isRevoked") || key.flag("is_revoked")
+
+                IosCard(
+                    modifier = Modifier.fillMaxWidth().testTag("key_card_${key.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    key.text("name"),
+                                    style = AppTypography.headline.copy(fontSize = 15.sp),
+                                    color = AppColors.textPrimary
+                                )
+                                if (prefix.isNotBlank()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(AppRadius.small))
+                                            .background(AppColors.surfaceElevated)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            "tf_${prefix}...",
+                                            style = AppTypography.caption2.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                            color = AppColors.brandPrimary
+                                        )
+                                    }
+                                }
+                                if (isRevoked) {
+                                    IosPill("Revoked")
+                                }
+                            }
+
+                            if (key.has("scopes") && key.get("scopes").isJsonArray) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    key.get("scopes").asJsonArray.forEach { sc ->
+                                        IosPill(sc.asString)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!isRevoked) {
+                            IconButton(
+                                onClick = {
+                                    action.run {
+                                        api.request("/api/api-keys/${key.id}", "DELETE")
+                                        vm.changed()
+                                    }
+                                },
+                                modifier = Modifier.testTag("btn_revoke_key_${key.id}")
+                            ) {
+                                Icon(Icons.Default.Delete, "Revoke key", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Webhooks Tab
+            if (!webhooksRemote.loading && webhooksRemote.error == null && webhooks.isEmpty()) {
+                item {
+                    IosCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.Language, null, tint = AppColors.brandPrimary, modifier = Modifier.size(36.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No webhooks configured", style = AppTypography.headline)
+                            Text(
+                                "Subscribe URLs to receive real-time notifications.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(webhooks, key = { it.id }) { wh ->
+                val targetUrl = wh.text("targetUrl", wh.text("target_url", ""))
+                val isActive = wh.flag("isActive") || wh.flag("is_active")
+                val failureCount = wh.number("failureCount")
+
+                IosCard(
+                    modifier = Modifier.fillMaxWidth().testTag("webhook_card_${wh.id}")
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    targetUrl,
+                                    style = AppTypography.body.copy(fontWeight = FontWeight.SemiBold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 13.sp),
+                                    color = AppColors.textPrimary
+                                )
+                                if (failureCount > 0) {
+                                    Text(
+                                        "$failureCount delivery failures",
+                                        style = AppTypography.caption2,
+                                        color = AppColors.statusError
+                                    )
+                                }
+                            }
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Switch(
+                                    checked = isActive,
+                                    onCheckedChange = { checked ->
+                                        action.run {
+                                            api.request("/api/webhooks/${wh.id}", "PATCH", json("isActive" to checked))
+                                            vm.changed()
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("btn_toggle_webhook_${wh.id}")
+                                )
+
+                                IconButton(
+                                    onClick = {
+                                        action.run {
+                                            api.request("/api/webhooks/${wh.id}/test", "POST")
+                                            testResult = wh.id to "Ping delivered (HTTP 200 OK)"
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("btn_test_webhook_${wh.id}")
+                                ) {
+                                    Icon(Icons.Default.Send, "Test webhook", tint = AppColors.brandPrimary, modifier = Modifier.size(18.dp))
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        action.run {
+                                            api.request("/api/webhooks/${wh.id}", "DELETE")
+                                            vm.changed()
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("btn_delete_webhook_${wh.id}")
+                                ) {
+                                    Icon(Icons.Default.Delete, "Delete webhook", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+
+                        if (wh.has("events") && wh.get("events").isJsonArray) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                wh.get("events").asJsonArray.forEach { ev ->
+                                    IosPill(ev.asString)
+                                }
+                            }
+                        }
+
+                        if (testResult?.first == wh.id) {
+                            Text(
+                                testResult?.second ?: "",
+                                style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                                color = AppColors.statusSuccess
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreateKey) {
+        CreateApiKeyDialog(
+            onDismiss = { showCreateKey = false },
+            onSubmit = { payload ->
+                action.run {
+                    val res = api.request("/api/api-keys", "POST", payload)
+                    val rawSecret = res.data.obj().text("rawKey", res.data.obj().text("raw_key", ""))
+                    if (rawSecret.isNotBlank()) {
+                        rawKeySecret = rawSecret
+                    }
+                    vm.changed()
+                    showCreateKey = false
+                }
+            }
+        )
+    }
+
+    rawKeySecret?.let { secret ->
+        ApiKeySecretDialog(
+            secret = secret,
+            onDismiss = { rawKeySecret = null }
+        )
+    }
+
+    if (showCreateWebhook) {
+        CreateWebhookDialog(
+            onDismiss = { showCreateWebhook = false },
+            onSubmit = { payload ->
+                action.run {
+                    api.request("/api/webhooks", "POST", payload)
+                    vm.changed()
+                    showCreateWebhook = false
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CreateApiKeyDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (JsonObject) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var readScope by remember { mutableStateOf(true) }
+    var writeScope by remember { mutableStateOf(true) }
+    var adminScope by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.VpnKey, null, tint = AppColors.brandPrimary, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Generate Personal API Key", style = AppTypography.headline)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Key Name *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("input_key_name")
+                )
+
+                Text("Authorization Scopes", style = AppTypography.caption1.copy(fontWeight = FontWeight.Bold), color = AppColors.brandPrimary)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { readScope = !readScope },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = readScope, onCheckedChange = { readScope = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("tasks.read — Read-only task and backlog data", style = AppTypography.caption1)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { writeScope = !writeScope },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = writeScope, onCheckedChange = { writeScope = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("tasks.write — Create and modify tasks", style = AppTypography.caption1)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { adminScope = !adminScope },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = adminScope, onCheckedChange = { adminScope = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("admin — Full workspace administration", style = AppTypography.caption1)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        val scopesArray = com.google.gson.JsonArray().apply {
+                            if (readScope) add("tasks.read")
+                            if (writeScope) add("tasks.write")
+                            if (adminScope) add("admin")
+                        }
+                        val payload = json("name" to name.trim())
+                        payload.add("scopes", scopesArray)
+                        onSubmit(payload)
+                    }
+                },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.testTag("btn_save_key")
+            ) {
+                Text("Generate", color = AppColors.brandPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = AppColors.textSecondary)
+            }
+        },
+        modifier = Modifier.testTag("dialog_create_api_key")
+    )
+}
+
+@Composable
+private fun ApiKeySecretDialog(
+    secret: String,
+    onDismiss: () -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, null, tint = AppColors.statusWarning, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Save Your API Token", style = AppTypography.headline)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "This secret will NEVER be displayed again. Store it securely.",
+                    style = AppTypography.caption1,
+                    color = AppColors.statusWarning
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(AppRadius.medium))
+                        .background(AppColors.surfaceElevated)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        secret,
+                        style = AppTypography.body.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp),
+                        color = AppColors.statusSuccess,
+                        modifier = Modifier.testTag("text_secret_token")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(secret))
+                    copied = true
+                },
+                modifier = Modifier.testTag("btn_copy_secret")
+            ) {
+                Text(if (copied) "Copied!" else "Copy Secret", color = AppColors.brandPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("btn_dismiss_secret")) {
+                Text("Done", color = AppColors.textSecondary)
+            }
+        },
+        modifier = Modifier.testTag("dialog_api_key_secret")
+    )
+}
+
+@Composable
+private fun CreateWebhookDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (JsonObject) -> Unit
+) {
+    var targetUrl by remember { mutableStateOf("") }
+    var taskCreated by remember { mutableStateOf(true) }
+    var taskUpdated by remember { mutableStateOf(true) }
+    var sprintClosed by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Language, null, tint = AppColors.brandPrimary, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Register Webhook", style = AppTypography.headline)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = targetUrl,
+                    onValueChange = { targetUrl = it },
+                    label = { Text("Target URL *") },
+                    placeholder = { Text("https://example.com/webhook") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("input_webhook_url")
+                )
+
+                Text("Event Subscriptions", style = AppTypography.caption1.copy(fontWeight = FontWeight.Bold), color = AppColors.brandPrimary)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { taskCreated = !taskCreated },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = taskCreated, onCheckedChange = { taskCreated = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("task.created — New task logged", style = AppTypography.caption1)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { taskUpdated = !taskUpdated },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = taskUpdated, onCheckedChange = { taskUpdated = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("task.updated — Task modified", style = AppTypography.caption1)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { sprintClosed = !sprintClosed },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = sprintClosed, onCheckedChange = { sprintClosed = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("sprint.closed — Sprint finalized", style = AppTypography.caption1)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (targetUrl.isNotBlank()) {
+                        val eventsArray = com.google.gson.JsonArray().apply {
+                            if (taskCreated) add("task.created")
+                            if (taskUpdated) add("task.updated")
+                            if (sprintClosed) add("sprint.closed")
+                        }
+                        val payload = json("targetUrl" to targetUrl.trim())
+                        payload.add("events", eventsArray)
+                        onSubmit(payload)
+                    }
+                },
+                enabled = targetUrl.isNotBlank() && (taskCreated || taskUpdated || sprintClosed),
+                modifier = Modifier.testTag("btn_save_webhook")
+            ) {
+                Text("Register", color = AppColors.brandPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = AppColors.textSecondary)
+            }
+        },
+        modifier = Modifier.testTag("dialog_create_webhook")
     )
 }

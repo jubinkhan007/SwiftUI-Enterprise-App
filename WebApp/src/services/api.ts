@@ -37,7 +37,14 @@ import {
   UpdateWorkflowStatusRequest,
   AutomationRuleDTO,
   CreateAutomationRuleRequest,
-  UpdateAutomationRuleRequest
+  UpdateAutomationRuleRequest,
+  APIKeyDTO,
+  CreateAPIKeyRequest,
+  CreateAPIKeyResponse,
+  WebhookSubscriptionDTO,
+  CreateWebhookSubscriptionRequest,
+  UpdateWebhookSubscriptionRequest,
+  WebhookTestResponse
 } from '../types';
 
 class ApiService {
@@ -1432,6 +1439,103 @@ class ApiService {
     await this.request<void>(`/api/automation-rules/${ruleId}`, {
       method: 'DELETE',
     });
+  }
+
+  // MARK: - Integrations: API Keys & Webhooks
+
+  private mapApiKey(k: any): APIKeyDTO {
+    return {
+      id: k.id,
+      orgId: k.org_id || k.orgId,
+      userId: k.user_id || k.userId,
+      name: k.name,
+      keyPrefix: k.key_prefix || k.keyPrefix || '',
+      scopes: Array.isArray(k.scopes) ? k.scopes : [],
+      lastUsedAt: k.last_used_at || k.lastUsedAt || null,
+      expiresAt: k.expires_at || k.expiresAt || null,
+      isRevoked: k.is_revoked ?? k.isRevoked ?? false,
+      createdAt: k.created_at || k.createdAt || null,
+    };
+  }
+
+  async getApiKeys(): Promise<APIKeyDTO[]> {
+    const raw = await this.request<any>('/api/api-keys');
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((k: any) => this.mapApiKey(k));
+  }
+
+  async createApiKey(payload: CreateAPIKeyRequest): Promise<CreateAPIKeyResponse> {
+    const raw = await this.request<any>('/api/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const data = raw.data || raw;
+    return {
+      rawKey: data.raw_key || data.rawKey,
+      apiKey: this.mapApiKey(data.api_key || data.apiKey),
+      id: data.id || (data.api_key || data.apiKey)?.id,
+    };
+  }
+
+  async revokeApiKey(keyId: string): Promise<void> {
+    await this.request<void>(`/api/api-keys/${keyId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  private mapWebhook(w: any): WebhookSubscriptionDTO {
+    return {
+      id: w.id,
+      orgId: w.org_id || w.orgId,
+      targetUrl: w.target_url || w.targetUrl,
+      secret: w.secret || '',
+      events: Array.isArray(w.events) ? w.events : [],
+      isActive: w.is_active ?? w.isActive ?? true,
+      failureCount: w.failure_count ?? w.failureCount ?? 0,
+      createdAt: w.created_at || w.createdAt || null,
+    };
+  }
+
+  async getWebhooks(): Promise<WebhookSubscriptionDTO[]> {
+    const raw = await this.request<any>('/api/webhooks');
+    const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+    return items.map((w: any) => this.mapWebhook(w));
+  }
+
+  async createWebhook(payload: CreateWebhookSubscriptionRequest): Promise<WebhookSubscriptionDTO> {
+    const raw = await this.request<any>('/api/webhooks', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return this.mapWebhook(raw.data || raw);
+  }
+
+  async updateWebhook(
+    webhookId: string,
+    payload: UpdateWebhookSubscriptionRequest
+  ): Promise<WebhookSubscriptionDTO> {
+    const raw = await this.request<any>(`/api/webhooks/${webhookId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return this.mapWebhook(raw.data || raw);
+  }
+
+  async deleteWebhook(webhookId: string): Promise<void> {
+    await this.request<void>(`/api/webhooks/${webhookId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async testWebhook(webhookId: string): Promise<WebhookTestResponse> {
+    const raw = await this.request<any>(`/api/webhooks/${webhookId}/test`, {
+      method: 'POST',
+    });
+    const data = raw.data || raw;
+    return {
+      delivered: data.delivered ?? true,
+      statusCode: data.status_code ?? data.statusCode ?? 200,
+    };
   }
 }
 

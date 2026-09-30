@@ -420,12 +420,70 @@ export interface WorkflowBundleDTO {
   rules: AutomationRuleDTO[];
 }
 
+// MARK: - Integrations: API Keys & Webhooks
+export type APIKeyScope = 'tasks.read' | 'tasks.write' | 'webhooks.manage' | 'apikeys.manage' | 'admin';
+
+export interface APIKeyDTO {
+  id: string;
+  orgId: string;
+  userId: string;
+  name: string;
+  keyPrefix: string;
+  scopes: APIKeyScope[];
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  isRevoked: boolean;
+  createdAt?: string | null;
+}
+
+export interface CreateAPIKeyRequest {
+  name: string;
+  scopes?: APIKeyScope[];
+  expiresAt?: string | null;
+}
+
+export interface CreateAPIKeyResponse {
+  rawKey: string;
+  apiKey: APIKeyDTO;
+  id?: string;
+}
+
+export interface WebhookSubscriptionDTO {
+  id: string;
+  orgId: string;
+  targetUrl: string;
+  secret: string;
+  events: string[];
+  isActive: boolean;
+  failureCount: number;
+  createdAt?: string | null;
+}
+
+export interface CreateWebhookSubscriptionRequest {
+  targetUrl: string;
+  events: string[];
+  secret?: string;
+}
+
+export interface UpdateWebhookSubscriptionRequest {
+  targetUrl?: string;
+  secret?: string;
+  events?: string[];
+  isActive?: boolean;
+}
+
+export interface WebhookTestResponse {
+  delivered: boolean;
+  statusCode?: number;
+}
+
 export type NavDestination = 
   | 'all_tasks' 
   | 'my_tasks' 
   | 'backlog'
   | 'releases'
   | 'settings'
+  | 'integrations'
   | 'inbox' 
   | 'messages' 
   | 'meetings' 
@@ -433,5 +491,6 @@ export type NavDestination =
   | 'sessions' 
   | 'team' 
   | 'billing';
+
 
 

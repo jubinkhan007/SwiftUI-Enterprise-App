@@ -53,6 +53,8 @@ class WorkflowTest {
     private val mockReleaseIssues = CopyOnWriteArrayList<JsonObject>()
     private val mockStatuses = CopyOnWriteArrayList<JsonObject>()
     private val mockRules = CopyOnWriteArrayList<JsonObject>()
+    private val mockApiKeys = CopyOnWriteArrayList<JsonObject>()
+    private val mockWebhooks = CopyOnWriteArrayList<JsonObject>()
     private var workflowVersion = 1
     private val timeLogs = CopyOnWriteArrayList<JsonObject>()
     private lateinit var callSessionData: JsonObject
@@ -431,6 +433,26 @@ class WorkflowTest {
             "triggerType" to "task.status_changed",
             "triggerConfigJson" to json("toStatusId" to "status-2").toString(),
             "actionsJson" to "[{\"type\":\"setPriority\",\"value\":\"high\"}]"
+        )
+
+        mockApiKeys.clear()
+        mockApiKeys += json(
+            "id" to "key-1",
+            "name" to "CI Integration Token",
+            "keyPrefix" to "ci_int_1234",
+            "scopes" to listOf("tasks.read", "tasks.write"),
+            "isRevoked" to false,
+            "createdAt" to "2026-09-29T10:00:00Z"
+        )
+
+        mockWebhooks.clear()
+        mockWebhooks += json(
+            "id" to "wh-1",
+            "targetUrl" to "https://api.github.com/webhook",
+            "events" to listOf("task.created", "task.updated"),
+            "isActive" to true,
+            "failureCount" to 0,
+            "createdAt" to "2026-09-29T10:00:00Z"
         )
 
         server = MockWebServer()
@@ -933,6 +955,62 @@ class WorkflowTest {
                     }
                     path.startsWith("/api/conversations/") && path.endsWith("/preferences") && request.method == "PATCH" -> {
                         json("success" to true, "notification_preference" to payload.text("notification_preference", "all"), "is_muted" to payload.flag("is_muted"))
+                    }
+                    path == "/api/api-keys" && request.method == "GET" -> mockApiKeys.toList()
+                    path == "/api/api-keys" && request.method == "POST" -> {
+                        val scopes = if (payload.has("scopes") && payload.get("scopes").isJsonArray) {
+                            payload.get("scopes").asJsonArray.map { it.asString }
+                        } else listOf("tasks.read")
+                        val newKey = json(
+                            "id" to "key-${mockApiKeys.size + 1}",
+                            "name" to payload.text("name"),
+                            "keyPrefix" to "sec_9988",
+                            "scopes" to scopes,
+                            "isRevoked" to false,
+                            "createdAt" to "2026-09-29T12:00:00Z"
+                        )
+                        mockApiKeys += newKey
+                        json(
+                            "rawKey" to "eap_sec_9988_mock_secret_token_12345678",
+                            "apiKey" to newKey
+                        )
+                    }
+                    path.startsWith("/api/api-keys/") && request.method == "DELETE" -> {
+                        val kId = path.substringAfterLast("/")
+                        mockApiKeys.firstOrNull { it.id == kId }?.addProperty("isRevoked", true)
+                        json("success" to true)
+                    }
+                    path == "/api/webhooks" && request.method == "GET" -> mockWebhooks.toList()
+                    path == "/api/webhooks" && request.method == "POST" -> {
+                        val events = if (payload.has("events") && payload.get("events").isJsonArray) {
+                            payload.get("events").asJsonArray.map { it.asString }
+                        } else listOf("task.created")
+                        val newWh = json(
+                            "id" to "wh-${mockWebhooks.size + 1}",
+                            "targetUrl" to payload.text("targetUrl"),
+                            "events" to events,
+                            "isActive" to true,
+                            "failureCount" to 0,
+                            "createdAt" to "2026-09-29T12:00:00Z"
+                        )
+                        mockWebhooks += newWh
+                        newWh
+                    }
+                    path.startsWith("/api/webhooks/") && path.endsWith("/test") && request.method == "POST" -> {
+                        json("delivered" to true, "statusCode" to 200)
+                    }
+                    path.startsWith("/api/webhooks/") && request.method == "PATCH" -> {
+                        val whId = path.substringAfterLast("/")
+                        val wh = mockWebhooks.firstOrNull { it.id == whId }
+                        if (wh != null && payload.has("isActive")) {
+                            wh.addProperty("isActive", payload.flag("isActive"))
+                        }
+                        wh ?: json("success" to true)
+                    }
+                    path.startsWith("/api/webhooks/") && request.method == "DELETE" -> {
+                        val whId = path.substringAfterLast("/")
+                        mockWebhooks.removeAll { it.id == whId }
+                        json("success" to true)
                     }
                     else -> emptyList<JsonObject>()
                 }
@@ -2057,6 +2135,91 @@ class WorkflowTest {
         }
         compose.waitForIdle()
         waitFor("Sprint End Auto-Migration")
+    }
+
+    @Test
+    fun integrationsWorkflow() {
+        login()
+        compose.onNodeWithText("All Tasks").performClick()
+        waitFor("Test Task 26/02 01")
+
+        // 1. Scroll mode chips and click Integrations (index 9)
+        compose.onNodeWithTag("mode_chips").performScrollToIndex(9)
+        compose.onNodeWithText("Integrations").performClick()
+        waitFor("Integrations & API")
+        waitFor("Manage personal API tokens and outgoing webhooks")
+
+        // 2. Verify initial API Key is rendered
+        waitFor("Personal API Keys (1)")
+        waitFor("CI Integration Token")
+        waitFor("tf_ci_int_1234...")
+
+        // 3. Generate a new API Key
+        compose.onNodeWithTag("btn_create_api_key").performClick()
+        waitFor("Generate Personal API Key")
+        compose.onNodeWithTag("input_key_name").performTextInput("Automation Bot")
+        compose.onNodeWithTag("btn_save_key").performClick()
+        compose.waitForIdle()
+
+        // 4. Verify Secret Dialog is shown with token and Copy button
+        waitFor("Save Your API Token")
+        waitFor("This secret will NEVER be displayed again. Store it securely.")
+        waitFor("eap_sec_9988_mock_secret_token_12345678")
+        compose.onNodeWithTag("btn_copy_secret").performClick()
+        waitFor("Copied!")
+        compose.onNodeWithTag("btn_dismiss_secret").performClick()
+        compose.waitForIdle()
+
+        // 5. Verify new key appears in list and revoke it
+        waitFor("Personal API Keys (2)")
+        waitFor("Automation Bot")
+        compose.onNodeWithTag("btn_revoke_key_key-2").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/api-keys/key-2" })
+        }
+        waitFor("Revoked")
+
+        // 6. Switch to Webhooks tab
+        compose.onNodeWithTag("tab_webhooks").performClick()
+        waitFor("Outgoing Webhooks (1)")
+        waitFor("https://api.github.com/webhook")
+
+        // 7. Toggle webhook active switch
+        compose.onNodeWithTag("btn_toggle_webhook_wh-1").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/webhooks/wh-1" })
+        }
+
+        // 8. Test ping webhook and verify feedback
+        compose.onNodeWithTag("btn_test_webhook_wh-1").performClick()
+        compose.waitForIdle()
+        waitFor("Ping delivered (HTTP 200 OK)")
+
+        // 9. Register a new Webhook
+        compose.onNodeWithTag("btn_create_webhook").performClick()
+        waitFor("Register Webhook")
+        compose.onNodeWithTag("input_webhook_url").performTextInput("https://slack.com/services/hooks/taskflow")
+
+        // Capture screenshot of Android integrations screen with webhook dialog active
+        screenshot("android_integrations_workflow")
+
+        compose.onNodeWithTag("btn_save_webhook").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/webhooks" })
+        }
+
+        waitFor("Outgoing Webhooks (2)")
+        waitFor("https://slack.com/services/hooks/taskflow")
+
+        // 10. Delete webhook
+        compose.onNodeWithTag("btn_delete_webhook_wh-1").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(writes.any { it.first == "/api/webhooks/wh-1" })
+        }
     }
 }
 

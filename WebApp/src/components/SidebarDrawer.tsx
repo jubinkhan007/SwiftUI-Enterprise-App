@@ -20,7 +20,8 @@ import {
   CreditCard,
   Layers,
   Package,
-  Sliders
+  Sliders,
+  KeyRound
 } from 'lucide-react';
 import { HierarchyTreeDTO, NavDestination, UserDTO } from '../types';
 import { api } from '../services/api';
@@ -142,6 +143,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
     { id: 'backlog', label: 'Backlog & Sprints', icon: Layers },
     { id: 'releases', label: 'Releases & Versions', icon: Package },
     { id: 'settings', label: 'Project Settings', icon: Sliders },
+    { id: 'integrations', label: 'API Keys & Webhooks', icon: KeyRound },
     { id: 'inbox', label: 'Inbox', icon: Mail },
     { id: 'messages', label: 'Messages & Channels', icon: MessageSquare },
     { id: 'meetings', label: 'Meetings & Time', icon: Calendar },
