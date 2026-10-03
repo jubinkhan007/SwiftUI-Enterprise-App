@@ -69,7 +69,7 @@ let package = Package(
         .target(
             name: "FeatureDashboard",
             dependencies: [
-                "Core", "Domain", "AppNetwork", "AppData", "DesignSystem",
+                "Core", "Domain", "AppNetwork", "AppData", "DesignSystem", "FeatureAuth",
                 .product(name: "SharedModels", package: "SharedModels"),
             ]
         ),
