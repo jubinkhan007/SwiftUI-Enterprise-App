@@ -15,7 +15,9 @@ import {
   Video,
   Webhook,
   HelpCircle,
-  CheckCircle2
+  CheckCircle2,
+  Receipt,
+  Mail
 } from 'lucide-react';
 import { api } from '../services/api';
 import { NavDestination, OrganizationDetailsDTO } from '../types';
@@ -337,6 +339,46 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ onNavigate }) => {
           </div>
         </div>
 
+        {/* Payment Method & Invoicing Card */}
+        <div className="p-6 rounded-2xl bg-slate-900/70 border border-slate-800 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shrink-0">
+              <Receipt className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                Payment Method &amp; Invoicing
+                {isPro || isEnterprise ? (
+                  <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                    Stripe Active
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold bg-slate-700/50 text-slate-400 border border-slate-600 px-2 py-0.5 rounded-full">
+                    Free Tier
+                  </span>
+                )}
+              </h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isPro || isEnterprise
+                  ? 'Manage payment cards, download VAT/tax invoices, and update billing details securely via Stripe.'
+                  : 'You are currently on the Free Starter plan. No credit card or payment information is required.'}
+              </p>
+            </div>
+          </div>
+
+          {(isPro || isEnterprise) && (
+            <button
+              onClick={handleManagePortal}
+              disabled={portalLoading}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-2 shrink-0 shadow-sm"
+              data-testid="btn_manage_invoices"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+              Download Invoices &amp; Receipts
+            </button>
+          )}
+        </div>
+
         {/* Pricing Tier Comparison Cards */}
         <div>
           <div className="text-center mb-8">
@@ -575,7 +617,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ onNavigate }) => {
                   href="mailto:enterprise@taskflow.local?subject=TaskFlow%20Enterprise%20Inquiry"
                   className="w-full py-2.5 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-2"
                 >
-                  <MailIcon className="w-3.5 h-3.5 text-amber-400" />
+                  <Mail className="w-3.5 h-3.5 text-amber-400" />
                   Contact Sales
                 </a>
               </div>
@@ -650,22 +692,3 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ onNavigate }) => {
     </div>
   );
 };
-
-function MailIcon(props: { className?: string }) {
-  return (
-    <svg 
-      className={props.className || 'w-4 h-4'} 
-      fill="none" 
-      stroke="currentColor" 
-      viewBox="0 0 24 24" 
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path 
-        strokeLinecap="round" 
-        strokeLinejoin="round" 
-        strokeWidth={2} 
-        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" 
-      />
-    </svg>
-  );
-}

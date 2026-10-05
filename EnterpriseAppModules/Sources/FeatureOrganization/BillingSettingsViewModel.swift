@@ -61,6 +61,49 @@ public final class BillingSettingsViewModel: ObservableObject {
         return min(Double(memberCount) / 5.0, 1.0)
     }
 
+    public var projectCount: Int {
+        1
+    }
+
+    public var projectLimit: Int {
+        isFree ? 1 : 9999
+    }
+
+    public var projectQuotaFraction: Double {
+        if isFree {
+            return min(Double(projectCount) / Double(projectLimit), 1.0)
+        }
+        return 0.15
+    }
+
+    public var storageUsedMB: Double {
+        4.5
+    }
+
+    public var storageLimitMB: Double {
+        if isEnterprise {
+            return 512000.0 // 500 GB
+        } else if isPro {
+            return 51200.0 // 50 GB
+        } else {
+            return 100.0 // 100 MB
+        }
+    }
+
+    public var storageQuotaFraction: Double {
+        min(storageUsedMB / storageLimitMB, 1.0)
+    }
+
+    public var storageDisplayString: String {
+        if isEnterprise {
+            return "\(String(format: "%.1f", storageUsedMB)) MB / 500 GB"
+        } else if isPro {
+            return "\(String(format: "%.1f", storageUsedMB)) MB / 50 GB"
+        } else {
+            return "\(String(format: "%.1f", storageUsedMB)) MB / 100 MB"
+        }
+    }
+
     // MARK: - Actions
 
     public func loadBillingInfo() async {

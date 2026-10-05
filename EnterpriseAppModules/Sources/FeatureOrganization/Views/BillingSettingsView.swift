@@ -27,8 +27,19 @@ public struct BillingSettingsView: View {
                             errorMessageView(error)
                         }
 
+                        // Success message
+                        if let success = viewModel.successMessage {
+                            successMessageView(success)
+                        }
+
                         // Current Subscription Summary Card
                         currentPlanCard
+
+                        // Quotas & Resource Usage Overview
+                        quotasOverviewSection
+
+                        // Invoices & Payment Method
+                        invoicesAndPaymentSection
 
                         // Pricing Plans Header
                         VStack(spacing: AppSpacing.xxs) {
@@ -219,6 +230,166 @@ public struct BillingSettingsView: View {
         )
     }
 
+    // MARK: - Quotas & Resource Usage Overview
+
+    private var quotasOverviewSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("Resource Quotas & Allocation")
+                .font(AppTypography.headline)
+                .foregroundColor(AppColors.textPrimary)
+
+            VStack(spacing: AppSpacing.md) {
+                // Team Seats Gauge
+                quotaRow(
+                    title: "Team Member Seats",
+                    icon: "person.2.fill",
+                    usedText: viewModel.isPro || viewModel.isEnterprise ? "\(viewModel.memberCount) used (Unlimited)" : "\(viewModel.memberCount) / 5 seats used",
+                    fraction: viewModel.memberQuotaFraction,
+                    isWarning: viewModel.isFree && viewModel.memberCount >= 4,
+                    warningText: "Near free seat limit (5 max). Upgrade to Pro for unlimited members."
+                )
+
+                Divider().overlay(AppColors.borderSubtle)
+
+                // Active Projects Gauge
+                quotaRow(
+                    title: "Active Projects & Workspaces",
+                    icon: "folder.fill",
+                    usedText: viewModel.isFree ? "\(viewModel.projectCount) / 1 project used" : "\(viewModel.projectCount) active (Unlimited)",
+                    fraction: viewModel.projectQuotaFraction,
+                    isWarning: viewModel.isFree && viewModel.projectCount >= 1,
+                    warningText: "Single project limit on Free tier. Upgrade to Pro for unlimited initiatives."
+                )
+
+                Divider().overlay(AppColors.borderSubtle)
+
+                // Storage Gauge
+                quotaRow(
+                    title: "Encrypted Cloud Storage",
+                    icon: "externaldrive.fill",
+                    usedText: viewModel.storageDisplayString,
+                    fraction: viewModel.storageQuotaFraction,
+                    isWarning: false,
+                    warningText: nil
+                )
+            }
+            .padding(AppSpacing.md)
+            .background(AppColors.backgroundSecondary.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
+                    .stroke(AppColors.borderDefault, lineWidth: 1)
+            )
+        }
+    }
+
+    private func quotaRow(
+        title: String,
+        icon: String,
+        usedText: String,
+        fraction: Double,
+        isWarning: Bool,
+        warningText: String?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(AppTypography.subheadline.weight(.semibold))
+                    .foregroundColor(AppColors.textPrimary)
+
+                Spacer()
+
+                Text(usedText)
+                    .font(AppTypography.caption1.weight(.medium))
+                    .foregroundColor(isWarning ? AppColors.statusWarning : AppColors.textSecondary)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(AppColors.backgroundSecondary)
+                        .frame(height: 6)
+
+                    Capsule()
+                        .fill(isWarning ? AppColors.statusWarning : AppColors.brandPrimary)
+                        .frame(width: max(geo.size.width * CGFloat(fraction), 6), height: 6)
+                }
+            }
+            .frame(height: 6)
+
+            if isWarning, let warning = warningText {
+                HStack(spacing: AppSpacing.xxs) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppColors.statusWarning)
+                    Text(warning)
+                        .font(AppTypography.caption2)
+                        .foregroundColor(AppColors.statusWarning)
+                }
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    // MARK: - Invoices & Payment Method
+
+    private var invoicesAndPaymentSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("Payment Method & Invoicing")
+                .font(AppTypography.headline)
+                .foregroundColor(AppColors.textPrimary)
+
+            VStack(alignment: .leading, spacing: AppSpacing.md) {
+                HStack(spacing: AppSpacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                            .fill(AppColors.brandPrimary.opacity(0.12))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: viewModel.isPro || viewModel.isEnterprise ? "creditcard.circle.fill" : "creditcard")
+                            .font(.system(size: 24))
+                            .foregroundColor(AppColors.brandPrimary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.isPro || viewModel.isEnterprise ? "Stripe Automated Invoicing Active" : "No Payment Method Required")
+                            .font(AppTypography.subheadline.weight(.bold))
+                            .foregroundColor(AppColors.textPrimary)
+                        Text(viewModel.isPro || viewModel.isEnterprise ? "Receipts, tax invoices, and payment card managed securely via Stripe Portal" : "You are currently enjoying the Free starter plan with no credit card on file")
+                            .font(AppTypography.caption1)
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+
+                    Spacer()
+                }
+
+                if viewModel.isPro || viewModel.isEnterprise {
+                    Button {
+                        Task {
+                            if let url = await viewModel.manageSubscription() {
+                                openURL(url)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: AppSpacing.xs) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                            Text("Download Past Invoices & Receipts via Stripe")
+                        }
+                        .font(AppTypography.caption1.weight(.semibold))
+                        .foregroundColor(AppColors.brandPrimary)
+                        .padding(.vertical, AppSpacing.xxs)
+                    }
+                }
+            }
+            .padding(AppSpacing.md)
+            .background(AppColors.backgroundSecondary.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
+                    .stroke(AppColors.borderDefault, lineWidth: 1)
+            )
+        }
+    }
+
     // MARK: - Tier Cards Section
 
     private var tierCardsSection: some View {
@@ -233,9 +404,9 @@ public struct BillingSettingsView: View {
                 isCurrent: viewModel.isFree,
                 features: [
                     "Up to 5 team members",
-                    "3 active workspaces & projects",
-                    "5 GB encrypted cloud storage",
-                    "Task boards & list views",
+                    "1 active workspace project",
+                    "100 MB encrypted cloud storage",
+                    "Standard Kanban boards & lists",
                     "Community support"
                 ],
                 buttonTitle: viewModel.isFree ? "Current Plan" : "Downgrade",
@@ -252,11 +423,12 @@ public struct BillingSettingsView: View {
                 isHighlighted: true,
                 isCurrent: viewModel.isPro && !viewModel.isEnterprise,
                 features: [
-                    "Unlimited team members",
-                    "Unlimited projects & boards",
-                    "100 GB encrypted storage",
+                    "Unlimited team members & guests",
+                    "Unlimited projects & spaces",
+                    "50 GB high-speed cloud storage",
+                    "Live video & screen sharing (LiveKit)",
+                    "Webhooks & API automations",
                     "Agile Sprints, Epics & Kanban",
-                    "Video conferencing & screen share",
                     "Priority 24/7 technical support"
                 ],
                 buttonTitle: viewModel.isPro && !viewModel.isEnterprise ? "Manage in Stripe" : "Upgrade to Pro ($19/mo)",
@@ -286,11 +458,12 @@ public struct BillingSettingsView: View {
                 isCurrent: viewModel.isEnterprise,
                 features: [
                     "Everything in Pro included",
-                    "Custom SAML / Okta SSO integration",
-                    "Full audit log compliance & export",
-                    "99.99% guaranteed uptime SLA",
-                    "Dedicated Customer Success Manager",
-                    "Custom invoicing & billing terms"
+                    "500 GB high-capacity storage",
+                    "SAML 2.0 / Okta SSO integration",
+                    "Custom domain whitelabeling",
+                    "Audit log compliance & export",
+                    "99.9% guaranteed uptime SLA",
+                    "Dedicated Customer Success Manager"
                 ],
                 buttonTitle: "Contact Sales",
                 buttonEnabled: true,
@@ -430,15 +603,21 @@ public struct BillingSettingsView: View {
             VStack(spacing: 0) {
                 featureRow(name: "Team Members", free: "5", pro: "Unlimited", enterprise: "Unlimited")
                 Divider().overlay(AppColors.borderSubtle)
-                featureRow(name: "Encrypted Storage", free: "5 GB", pro: "100 GB", enterprise: "Unlimited")
+                featureRow(name: "Active Projects", free: "1", pro: "Unlimited", enterprise: "Unlimited")
+                Divider().overlay(AppColors.borderSubtle)
+                featureRow(name: "Encrypted Storage", free: "100 MB", pro: "50 GB", enterprise: "500 GB")
+                Divider().overlay(AppColors.borderSubtle)
+                featureRow(name: "Live Video & Screen Share", free: "—", pro: "Included", enterprise: "Included")
+                Divider().overlay(AppColors.borderSubtle)
+                featureRow(name: "Webhooks & Automations", free: "—", pro: "Included", enterprise: "Included")
                 Divider().overlay(AppColors.borderSubtle)
                 featureRow(name: "Agile Sprints & Epics", free: "—", pro: "Included", enterprise: "Included")
-                Divider().overlay(AppColors.borderSubtle)
-                featureRow(name: "Video & Screen Sharing", free: "—", pro: "Included", enterprise: "Included")
                 Divider().overlay(AppColors.borderSubtle)
                 featureRow(name: "SAML / Okta SSO", free: "—", pro: "—", enterprise: "Included")
                 Divider().overlay(AppColors.borderSubtle)
                 featureRow(name: "Audit Logging Export", free: "—", pro: "—", enterprise: "Included")
+                Divider().overlay(AppColors.borderSubtle)
+                featureRow(name: "Stripe Billing Portal", free: "—", pro: "Self-serve", enterprise: "Invoicing & Portal")
             }
             .background(AppColors.backgroundSecondary.opacity(0.4))
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
@@ -521,6 +700,26 @@ public struct BillingSettingsView: View {
         }
         .padding(AppSpacing.sm)
         .background(AppColors.statusError.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+    }
+
+    private func successMessageView(_ msg: String) -> some View {
+        HStack {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(AppColors.statusSuccess)
+            Text(msg)
+                .font(AppTypography.caption1)
+                .foregroundColor(AppColors.statusSuccess)
+            Spacer()
+            Button {
+                viewModel.successMessage = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(AppColors.textTertiary)
+            }
+        }
+        .padding(AppSpacing.sm)
+        .background(AppColors.statusSuccess.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 }
