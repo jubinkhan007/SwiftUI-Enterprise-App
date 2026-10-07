@@ -69,6 +69,9 @@ func routes(_ app: Application) throws {
     let timeLogController = TimeLogController()
     try authenticatedAPI.register(collection: timeLogController)
 
+    let deviceTokenController = DeviceTokenController()
+    try authenticatedAPI.register(collection: deviceTokenController)
+
     let attachmentController = AttachmentController()
     try orgScopedAPI.register(collection: attachmentController)
 

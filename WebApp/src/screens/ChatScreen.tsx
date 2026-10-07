@@ -35,6 +35,7 @@ import {
 
 interface ChatScreenProps {
   onStartCall?: (conversationId: string) => void;
+  initialChannelId?: string | null;
 }
 
 const EMOJI_PICKER = ['👍', '❤️', '🎉', '🚀', '👀', '🔥', '💡'];
@@ -46,13 +47,21 @@ const SLASH_COMMANDS = [
   { cmd: '/help', desc: 'Show chat command guide' },
 ];
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChannelId }) => {
   const [conversations, setConversations] = useState<ConversationDTO[]>([]);
   const [selectedConv, setSelectedConv] = useState<ConversationDTO | null>(null);
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!initialChannelId || conversations.length === 0) return;
+    const found = conversations.find(c => c.id === initialChannelId);
+    if (found) {
+      setSelectedConv(found);
+    }
+  }, [initialChannelId, conversations]);
   const lastMarkedReadRef = useRef<Record<string, string>>({});
 
   // Input

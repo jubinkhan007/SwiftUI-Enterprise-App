@@ -1,6 +1,7 @@
 import SwiftUI
 import SharedModels
 import DesignSystem
+import AppData
 
 /// In-meeting screen. The "media area" is a labeled placeholder — sub-phase 4-B
 /// replaces it with the Agora/LiveKit video stage. The chat sidebar reuses the
@@ -54,7 +55,25 @@ public struct InMeetingView: View {
                     .navigationTitle("Chat")
             }
         }
-        .task { await session.refresh() }
+        .task {
+            await session.refresh()
+            LiveActivityManager.shared.startMeetingActivity(
+                meetingId: session.meetingId.uuidString,
+                title: session.meeting?.title ?? "Meeting",
+                participantCount: session.meeting?.participants.filter { $0.joinState == .inMeeting }.count ?? 1,
+                isAudioMuted: !micOn,
+                isVideoMuted: !camOn
+            )
+        }
+        .onDisappear {
+            LiveActivityManager.shared.endMeetingActivity()
+        }
+        .onChange(of: micOn) { _, newValue in
+            LiveActivityManager.shared.updateMeetingActivity(isAudioMuted: !newValue)
+        }
+        .onChange(of: camOn) { _, newValue in
+            LiveActivityManager.shared.updateMeetingActivity(isVideoMuted: !newValue)
+        }
     }
 
     private var mediaArea: some View {

@@ -40,6 +40,8 @@ import {
 interface KanbanBoardScreenProps {
   myTasksOnly?: boolean;
   onNavigate?: (dest: NavDestination) => void;
+  initialTaskId?: string | null;
+  onCloseTaskDetail?: () => void;
 }
 
 export interface BoardColumn {
@@ -66,7 +68,12 @@ const DEFAULT_COLUMNS: BoardColumn[] = [
   { id: 'col-done', status: 'done', title: 'Done', color: 'border-emerald-500/30 text-emerald-400' },
 ];
 
-export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnly = false, onNavigate }) => {
+export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
+  myTasksOnly = false,
+  onNavigate,
+  initialTaskId,
+  onCloseTaskDetail
+}) => {
   const [tasks, setTasks] = useState<TaskItemDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -279,6 +286,23 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({ myTasksOnl
   useEffect(() => {
     fetchTasks();
   }, [myTasksOnly]);
+
+  useEffect(() => {
+    if (!initialTaskId) return;
+    const found = tasks.find(t => t.id === initialTaskId);
+    if (found) {
+      openEditModal(found);
+    } else {
+      api.getTask(initialTaskId).then(task => {
+        if (task) openEditModal(task);
+      }).catch(() => {});
+    }
+  }, [initialTaskId, tasks]);
+
+  const closeEditModal = () => {
+    setEditingTask(null);
+    onCloseTaskDetail?.();
+  };
 
   // Handle Drag Events
   const handleDragStart = (e: React.DragEvent, task: TaskItemDTO) => {

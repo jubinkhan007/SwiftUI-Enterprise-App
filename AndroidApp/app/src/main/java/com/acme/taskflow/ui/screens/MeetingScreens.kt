@@ -44,10 +44,21 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun MeetingsScreen(vm: AppViewModel, api: ApiClient) {
+fun MeetingsScreen(
+    vm: AppViewModel,
+    api: ApiClient,
+    initialMeetingId: String? = null
+) {
     var scope by rememberSaveable { mutableStateOf("upcoming") }
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    var selected by rememberSaveable(initialMeetingId) { mutableStateOf<String?>(initialMeetingId) }
     var create by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialMeetingId) {
+        if (!initialMeetingId.isNullOrBlank()) {
+            selected = initialMeetingId
+        }
+    }
+
     val remote = rememberRemote(api, "/api/meetings", vm.revision, query = mapOf("scope" to scope), paged = true)
 
     if (selected != null) {

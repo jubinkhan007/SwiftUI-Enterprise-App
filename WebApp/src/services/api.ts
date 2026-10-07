@@ -136,6 +136,19 @@ class ApiService {
     this.setCurrentUser(null);
   }
 
+  async registerDeviceToken(token: string, platform: 'web' | 'android' | 'ios' = 'web', environment: string = 'production'): Promise<any> {
+    return this.request('/api/me/device-tokens', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform, environment })
+    });
+  }
+
+  async unregisterDeviceToken(token: string): Promise<any> {
+    return this.request(`/api/me/device-tokens/${encodeURIComponent(token)}`, {
+      method: 'DELETE'
+    });
+  }
+
   async deleteTask(taskId: string): Promise<void> {
     await this.request(`/api/tasks/${taskId}`, { method: 'DELETE' });
   }
@@ -246,6 +259,34 @@ class ApiService {
       sprintPosition: t.sprint_position ?? t.sprintPosition,
       backlogPosition: t.backlog_position ?? t.backlogPosition,
     }));
+  }
+
+  async getTask(taskId: string): Promise<TaskItemDTO> {
+    const data = await this.request<any>(`/api/tasks/${taskId}`);
+    const t = data?.data || data;
+    return {
+      id: t.id,
+      orgId: t.org_id || t.orgId,
+      listId: t.list_id || t.listId,
+      projectId: t.project_id || t.projectId,
+      title: t.title || 'Untitled Task',
+      description: t.description,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      taskType: t.task_type || t.taskType || 'task',
+      storyPoints: t.story_points ?? t.storyPoints,
+      issueKey: t.issue_key || t.issueKey,
+      labels: t.labels || [],
+      startDate: t.start_date || t.startDate,
+      dueDate: t.due_date || t.dueDate,
+      completedAt: t.completed_at || t.completedAt,
+      assigneeId: t.assignee_id || t.assigneeId,
+      position: t.position || 0,
+      version: t.version,
+      sprintId: t.sprint_id ?? t.sprintId ?? null,
+      sprintPosition: t.sprint_position ?? t.sprintPosition,
+      backlogPosition: t.backlog_position ?? t.backlogPosition,
+    };
   }
 
   async updateTask(taskId: string, updates: Partial<TaskItemDTO>): Promise<TaskItemDTO> {

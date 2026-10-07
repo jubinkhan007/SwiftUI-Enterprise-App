@@ -71,14 +71,25 @@ private val availableSlashCommands = listOf(
 private val urlRegex = Regex("""https?://[^\s<>"{}|\^~\[\]`]+""")
 
 @Composable
-fun MessagesScreen(vm: AppViewModel, api: ApiClient, lists: List<Choice>) {
+fun MessagesScreen(
+    vm: AppViewModel,
+    api: ApiClient,
+    lists: List<Choice>,
+    initialChannelId: String? = null
+) {
     val remote = rememberRemote(api, "/api/conversations", vm.revision)
     val members = rememberRemote(api, "/api/organizations/${api.orgId}/members")
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    var selected by rememberSaveable(initialChannelId) { mutableStateOf<String?>(initialChannelId) }
     var search by rememberSaveable { mutableStateOf("") }
     var showGlobalSearch by remember { mutableStateOf(false) }
     var create by remember { mutableStateOf(false) }
     val wide = LocalConfiguration.current.screenWidthDp >= 720
+
+    LaunchedEffect(initialChannelId) {
+        if (!initialChannelId.isNullOrBlank()) {
+            selected = initialChannelId
+        }
+    }
 
     Row(Modifier.fillMaxSize().background(AppColors.backgroundPrimary)) {
         if (wide || selected == null) {

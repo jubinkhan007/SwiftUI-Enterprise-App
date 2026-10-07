@@ -13,10 +13,12 @@ enum NotificationService {
         // Don't notify yourself.
         guard mentionedUserId != actorUserId else { return }
 
+        let deepLink = PushNotificationService.buildDeepLink(for: "task", entityId: taskId.uuidString)
         let payload: [String: String] = [
             "taskId": taskId.uuidString,
             "commentId": commentId.uuidString,
-            "actorUserId": actorUserId.uuidString
+            "actorUserId": actorUserId.uuidString,
+            "deepLink": deepLink
         ]
         let payloadJson = try? String(data: JSONSerialization.data(withJSONObject: payload, options: []), encoding: .utf8)
 
@@ -34,6 +36,15 @@ enum NotificationService {
         // a pre-check read inside the write transaction (avoids holding the write lock longer).
         do {
             try await row.save(on: db)
+            await PushNotificationService.dispatch(
+                to: mentionedUserId,
+                title: "New Mention",
+                body: "You were mentioned in a task comment.",
+                entityType: "task",
+                entityId: taskId.uuidString,
+                on: db,
+                logger: Logger(label: "PushNotificationService")
+            )
         } catch {
             // Duplicate — already notified.
         }

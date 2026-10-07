@@ -111,6 +111,9 @@ func configure(_ app: Application) throws {
     // Phase 15: SaaS Tenant Fields & User Sessions
     app.migrations.add(CreateUserSession())
 
+    // Phase 19: Push Notifications & Device Tokens
+    app.migrations.add(CreateDeviceTokens())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 

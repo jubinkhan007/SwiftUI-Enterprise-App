@@ -104,6 +104,7 @@ fun TasksScreen(
     listId: String,
     mine: Boolean,
     projectId: String = "",
+    initialTaskId: String? = null,
     onBackToWorkspace: (() -> Unit)? = null,
     onDetailActive: ((Boolean) -> Unit)? = null
 ) {
@@ -112,11 +113,17 @@ fun TasksScreen(
     var status by rememberSaveable { mutableStateOf("") }
     var type by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("List") }
-    var selected by rememberSaveable(listId, mine) { mutableStateOf<String?>(null) }
+    var selected by rememberSaveable(listId, mine, initialTaskId) { mutableStateOf<String?>(initialTaskId) }
     var selectedEpicId by remember { mutableStateOf<String?>(null) }
     var create by remember { mutableStateOf(false) }
     var showSavedViews by remember { mutableStateOf(false) }
     var showSyncCenter by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialTaskId) {
+        if (!initialTaskId.isNullOrBlank()) {
+            selected = initialTaskId
+        }
+    }
 
     LaunchedEffect(selected) {
         onDetailActive?.invoke(selected != null)

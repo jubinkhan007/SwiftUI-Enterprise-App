@@ -1,6 +1,7 @@
 import SwiftUI
 import DesignSystem
 import SharedModels
+import AppData
 
 /// Full-screen in-call experience. Composes participant grid (or screen-share
 /// presenter when active) + controls bar + host menu sheet.
@@ -52,6 +53,27 @@ public struct InCallView: View {
         .sheet(isPresented: $showSystemBroadcastPicker) {
             ScreenShareSystemPicker()
                 .presentationDetents([.medium])
+        }
+        .onAppear {
+            LiveActivityManager.shared.startCallActivity(
+                callId: store.callId.uuidString,
+                channelOrContactName: headerTitle,
+                remoteParticipantCount: store.managerState.remoteParticipants.count,
+                isAudioMuted: store.managerState.localAudioMuted,
+                isVideoMuted: store.managerState.localVideoMuted,
+                isScreenSharing: store.managerState.isScreenSharing
+            )
+        }
+        .onDisappear {
+            LiveActivityManager.shared.endCallActivity()
+        }
+        .onChange(of: store.managerState) { _, newState in
+            LiveActivityManager.shared.updateCallActivity(
+                remoteParticipantCount: newState.remoteParticipants.count,
+                isAudioMuted: newState.localAudioMuted,
+                isVideoMuted: newState.localVideoMuted,
+                isScreenSharing: newState.isScreenSharing
+            )
         }
     }
 

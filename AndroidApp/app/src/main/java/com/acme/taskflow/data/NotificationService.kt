@@ -48,6 +48,8 @@ class NotificationService : Service() {
         }
     }
 
+    private var deviceToken: String? = null
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val storedSession = SessionStore(this).read()
         val preferences = getSharedPreferences(SERVICE_PREFS, MODE_PRIVATE)
@@ -62,6 +64,24 @@ class NotificationService : Service() {
             pollJob?.cancel()
             socketJob = serviceScope.launch { collectEvents(api!!) }
             pollJob = serviceScope.launch { pollNotifications(api!!) }
+
+            // Register device token with backend
+            serviceScope.launch {
+                runCatching {
+                    val androidId = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: java.util.UUID.randomUUID().toString()
+                    val tokenStr = "fcm_android_$androidId"
+                    deviceToken = tokenStr
+                    api?.request(
+                        "/api/me/device-tokens",
+                        "POST",
+                        json(
+                            "token" to tokenStr,
+                            "platform" to "android",
+                            "environment" to "production"
+                        )
+                    )
+                }
+            }
         }
         return START_STICKY
     }
@@ -73,8 +93,15 @@ class NotificationService : Service() {
                     when (event.text("type")) {
                         "message.new" -> {
                             if (event.child("payload").text("senderId") != userId) {
-                                showMessageNotification("New message", "You have a new message")
+                                val convId = event.child("payload").text("conversationId").ifBlank { event.text("entity_id") }
+                                val link = if (convId.isNotBlank()) "taskflow://channels/$convId" else "taskflow://messages"
+                                showMessageNotification("New message", "You have a new message", link)
                             }
+                        }
+                        "task.assigned", "task.created" -> {
+                            val taskId = event.child("payload").text("taskId").ifBlank { event.text("entity_id") }
+                            val link = if (taskId.isNotBlank()) "taskflow://tasks/$taskId" else "taskflow://tasks"
+                            showTaskNotification("Task assigned", "A task was assigned to you", link)
                         }
                     }
                 }
@@ -97,7 +124,24 @@ class NotificationService : Service() {
                 val incoming = rows.filter { it.id.isNotBlank() && it.id !in seenNotificationIds }
                 if (initialized) incoming.forEach { notification ->
                     val type = notification.text("type")
+                    val entityType = notification.text("entity_type")
+                    val entityId = notification.text("entity_id")
                     val payload = runCatching { com.google.gson.JsonParser.parseString(notification.text("payload_json")).obj() }.getOrDefault(com.google.gson.JsonObject())
+                    
+                    val deepLink = payload.text("deep_link").ifBlank {
+                        payload.text("deepLink").ifBlank {
+                            when {
+                                entityType == "task" || type.startsWith("task") -> entityId.takeIf { it.isNotBlank() }?.let { "taskflow://tasks/$it" }
+                                entityType == "conversation" || type.startsWith("message") -> entityId.takeIf { it.isNotBlank() }?.let { "taskflow://channels/$it" }
+                                entityType == "meeting" || type.startsWith("meeting") -> entityId.takeIf { it.isNotBlank() }?.let { "taskflow://meetings/$it" }
+                                entityType == "call" || type.startsWith("call") -> entityId.takeIf { it.isNotBlank() }?.let { "taskflow://calls/$it" }
+                                entityType == "billing" -> "taskflow://billing"
+                                entityType == "reminder" || type.startsWith("reminder") -> "taskflow://productivity"
+                                else -> null
+                            }
+                        }
+                    }
+
                     when {
                         type == "call.incoming" -> {
                             val caller = payload.text("actorName")
@@ -105,12 +149,29 @@ class NotificationService : Service() {
                                 "Incoming call",
                                 notification.text("body").ifBlank {
                                     if (caller.isBlank()) "Someone is calling you" else "$caller is calling you"
-                                }
+                                },
+                                deepLink
                             )
                         }
                         type.startsWith("message") -> showMessageNotification(
                             notification.text("title", "New message"),
-                            notification.text("body").ifBlank { payload.text("message", "You have a new message") }
+                            notification.text("body").ifBlank { payload.text("message", "You have a new message") },
+                            deepLink
+                        )
+                        type.startsWith("task") || entityType == "task" -> showTaskNotification(
+                            notification.text("title", "Task notification"),
+                            notification.text("body").ifBlank { "You have a task update" },
+                            deepLink
+                        )
+                        type.startsWith("meeting") || entityType == "meeting" -> showMeetingNotification(
+                            notification.text("title", "Meeting notification"),
+                            notification.text("body").ifBlank { "You have a meeting update" },
+                            deepLink
+                        )
+                        else -> showMessageNotification(
+                            notification.text("title", "Notification"),
+                            notification.text("body").ifBlank { "You have a new alert" },
+                            deepLink
                         )
                     }
                 }
@@ -126,24 +187,47 @@ class NotificationService : Service() {
         }
     }
 
-    private fun showMessageNotification(title: String, body: String) = showNotification(
+    private fun showMessageNotification(title: String, body: String, deepLink: String? = null) = showNotification(
         channel = CHANNEL_MESSAGES,
         title = title,
         body = body,
-        priority = NotificationCompat.PRIORITY_DEFAULT
+        priority = NotificationCompat.PRIORITY_DEFAULT,
+        deepLink = deepLink
     )
 
-    private fun showCallNotification(title: String, body: String) = showNotification(
+    private fun showCallNotification(title: String, body: String, deepLink: String? = null) = showNotification(
         channel = CHANNEL_CALLS,
         title = title,
         body = body,
-        priority = NotificationCompat.PRIORITY_HIGH
+        priority = NotificationCompat.PRIORITY_HIGH,
+        deepLink = deepLink
     )
 
-    private fun showNotification(channel: String, title: String, body: String, priority: Int) {
+    private fun showTaskNotification(title: String, body: String, deepLink: String? = null) = showNotification(
+        channel = CHANNEL_TASKS,
+        title = title,
+        body = body,
+        priority = NotificationCompat.PRIORITY_DEFAULT,
+        deepLink = deepLink
+    )
+
+    private fun showMeetingNotification(title: String, body: String, deepLink: String? = null) = showNotification(
+        channel = CHANNEL_MEETINGS,
+        title = title,
+        body = body,
+        priority = NotificationCompat.PRIORITY_DEFAULT,
+        deepLink = deepLink
+    )
+
+    private fun showNotification(channel: String, title: String, body: String, priority: Int, deepLink: String? = null) {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (!deepLink.isNullOrBlank()) {
+                data = android.net.Uri.parse(deepLink)
+                putExtra("deep_link", deepLink)
+                putExtra("EXTRA_DEEPLINK", deepLink)
+            }
         }
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -176,6 +260,8 @@ class NotificationService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL_SERVICE, "Connection", NotificationManager.IMPORTANCE_MIN))
         manager.createNotificationChannel(NotificationChannel(CHANNEL_MESSAGES, "Messages", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_TASKS, "Tasks", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_MEETINGS, "Meetings", NotificationManager.IMPORTANCE_DEFAULT))
         manager.createNotificationChannel(NotificationChannel(CHANNEL_CALLS, "Calls", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "Incoming voice and video calls"
         })
@@ -184,6 +270,14 @@ class NotificationService : Service() {
     override fun onDestroy() {
         socketJob?.cancel()
         pollJob?.cancel()
+        val token = deviceToken
+        if (!token.isNullOrBlank()) {
+            serviceScope.launch {
+                runCatching {
+                    api?.request("/api/me/device-tokens/$token", "DELETE")
+                }
+            }
+        }
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -194,6 +288,8 @@ class NotificationService : Service() {
         private const val SERVICE_NOTIFICATION_ID = 9
         private const val CHANNEL_SERVICE = "taskflow_connection"
         private const val CHANNEL_MESSAGES = "taskflow_messages"
+        private const val CHANNEL_TASKS = "taskflow_tasks"
+        private const val CHANNEL_MEETINGS = "taskflow_meetings"
         private const val CHANNEL_CALLS = "taskflow_calls"
         private const val EXTRA_SERVER = "server"
         private const val EXTRA_TOKEN = "token"

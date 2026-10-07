@@ -1037,7 +1037,7 @@ private fun RoleEditModal(
 
 @Composable
 fun ProductivityScreen(vm: AppViewModel, api: ApiClient) {
-    var tab by rememberSaveable { mutableStateOf("Reminders") }
+    var tab by rememberSaveable { mutableStateOf("Focus") }
     val path = when (tab) {
         "Reminders" -> "/api/reminders"
         "Scheduled" -> "/api/scheduled-messages"
@@ -1060,19 +1060,21 @@ fun ProductivityScreen(vm: AppViewModel, api: ApiClient) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Productivity Hub", style = AppTypography.largeTitle, color = AppColors.textPrimary, modifier = Modifier.weight(1f))
-                IconButton(
-                    onClick = { editor = tab },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(AppColors.brandPrimary.copy(alpha = 0.12f))
-                ) {
-                    Icon(Icons.Default.Add, "Create", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                if (tab != "Focus") {
+                    IconButton(
+                        onClick = { editor = tab },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                    ) {
+                        Icon(Icons.Default.Add, "Create", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Reminders", "Scheduled", "Templates").forEach { name ->
+                listOf("Focus", "Reminders", "Scheduled", "Templates").forEach { name ->
                     IosFilterChip(
                         title = name,
                         isSelected = tab == name,
@@ -1083,35 +1085,45 @@ fun ProductivityScreen(vm: AppViewModel, api: ApiClient) {
         }
         HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
 
-        RemoteStatus(remote)
-        ActionStatus(action)
+        if (tab == "Focus") {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                FocusTimerContent(initialTitle = "Deep Work Session")
+            }
+        } else {
+            RemoteStatus(remote)
+            ActionStatus(action)
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (!remote.loading && remote.error == null && remote.data.rows().isEmpty()) {
-                item {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text("No items in $tab.", style = AppTypography.body, color = AppColors.textSecondary)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (!remote.loading && remote.error == null && remote.data.rows().isEmpty()) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Text("No items in $tab.", style = AppTypography.body, color = AppColors.textSecondary)
+                        }
                     }
                 }
-            }
-            items(remote.data.rows(), key = { it.id }) { item ->
-                IosCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(item.text("title", item.text("name", item.text("body"))), style = AppTypography.headline)
-                            Text(dateLabel(item.text("remind_at", item.text("scheduled_for", item.text("created_at")))), style = AppTypography.caption1, color = AppColors.textSecondary)
-                        }
-                        IconButton(onClick = {
-                            action.run {
-                                api.request("$path/${item.id}", "DELETE")
-                                vm.changed()
+                items(remote.data.rows(), key = { it.id }) { item ->
+                    IosCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.text("title", item.text("name", item.text("body"))), style = AppTypography.headline)
+                                Text(dateLabel(item.text("remind_at", item.text("scheduled_for", item.text("created_at")))), style = AppTypography.caption1, color = AppColors.textSecondary)
                             }
-                        }) {
-                            Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
+                            IconButton(onClick = {
+                                action.run {
+                                    api.request("$path/${item.id}", "DELETE")
+                                    vm.changed()
+                                }
+                            }) {
+                                Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                 }

@@ -6,10 +6,11 @@ import SharedModels
 /// Drafts are accessed inside chats, so they're not a tab here.
 public struct ProductivityHubView: View {
     public enum Tab: String, CaseIterable, Identifiable, Hashable {
-        case reminders, scheduled, templates
+        case focusTimer, reminders, scheduled, templates
         public var id: String { rawValue }
         var label: String {
             switch self {
+            case .focusTimer: return "Focus"
             case .reminders: return "Reminders"
             case .scheduled: return "Scheduled"
             case .templates: return "Templates"
@@ -17,6 +18,7 @@ public struct ProductivityHubView: View {
         }
         var icon: String {
             switch self {
+            case .focusTimer: return "headphones"
             case .reminders: return "bell.fill"
             case .scheduled: return "clock.arrow.circlepath"
             case .templates: return "text.badge.star"
@@ -24,7 +26,7 @@ public struct ProductivityHubView: View {
         }
     }
 
-    @State private var tab: Tab = .reminders
+    @State private var tab: Tab = .focusTimer
 
     public let canManageOrgTemplates: Bool
 
@@ -52,6 +54,7 @@ public struct ProductivityHubView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
+        case .focusTimer: FocusTimerView()
         case .reminders: RemindersView()
         case .scheduled: ScheduledMessagesView()
         case .templates: TemplatesSettingsView(canManageOrgTemplates: canManageOrgTemplates)

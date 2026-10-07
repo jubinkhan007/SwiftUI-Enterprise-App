@@ -29,9 +29,10 @@ import {
 
 interface MeetingsScreenProps {
   onStartCall?: (roomId: string) => void;
+  initialMeetingId?: string | null;
 }
 
-export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall }) => {
+export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall, initialMeetingId }) => {
   const [meetings, setMeetings] = useState<MeetingDTO[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,6 +42,14 @@ export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall }) =
 
   // Parity Modals: Lobby, Waiting Room, Host Controls, AI Summary
   const [lobbyMeeting, setLobbyMeeting] = useState<MeetingDTO | null>(null);
+
+  useEffect(() => {
+    if (!initialMeetingId || meetings.length === 0) return;
+    const found = meetings.find(m => m.id === initialMeetingId);
+    if (found) {
+      setLobbyMeeting(found);
+    }
+  }, [initialMeetingId, meetings]);
   const [lobbyMicEnabled, setLobbyMicEnabled] = useState(true);
   const [lobbyVideoEnabled, setLobbyVideoEnabled] = useState(true);
 

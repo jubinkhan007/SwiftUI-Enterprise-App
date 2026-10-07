@@ -45,7 +45,11 @@ import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 
 @Composable
-fun TaskFlowApp(vm: AppViewModel = viewModel()) {
+fun TaskFlowApp(
+    vm: AppViewModel = viewModel(),
+    pendingDeeplink: DeeplinkTarget? = null,
+    onDeeplinkHandled: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     LaunchedEffect(vm.user, vm.workspace, vm.server) {
         runCatching {
@@ -59,12 +63,24 @@ fun TaskFlowApp(vm: AppViewModel = viewModel()) {
     val api = remember(vm.user, vm.workspace, vm.server) { vm.api }
     if (vm.user == null) AuthScreen(vm)
     else if (vm.workspace == null) WorkspaceScreen(vm, api)
-    else key(vm.workspace?.id) { AuthenticatedShell(vm, api) }
+    else key(vm.workspace?.id) {
+        AuthenticatedShell(
+            vm = vm,
+            api = api,
+            pendingDeeplink = pendingDeeplink,
+            onDeeplinkHandled = onDeeplinkHandled
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
+private fun AuthenticatedShell(
+    vm: AppViewModel,
+    api: ApiClient,
+    pendingDeeplink: DeeplinkTarget? = null,
+    onDeeplinkHandled: (() -> Unit)? = null
+) {
     var destination by rememberSaveable { mutableStateOf(Destination.AllTasks) }
     var listId by rememberSaveable { mutableStateOf("") }
     var listName by rememberSaveable { mutableStateOf("") }
@@ -73,8 +89,52 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
     var hierarchyEditor by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showCreateHierarchy by remember { mutableStateOf(false) }
     var showSyncCenter by remember { mutableStateOf(false) }
+    var showBillingModal by remember { mutableStateOf(false) }
     var showUserMenu by remember { mutableStateOf(false) }
     var showWorkspaceSwitcher by remember { mutableStateOf(false) }
+    var activeTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeChannelId by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeMeetingId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(pendingDeeplink) {
+        val target = pendingDeeplink ?: return@LaunchedEffect
+        when (target) {
+            is DeeplinkTarget.Task -> {
+                destination = Destination.AllTasks
+                activeTaskId = target.id
+                listId = ""
+                listName = ""
+                projectId = ""
+                showNavigation = false
+            }
+            is DeeplinkTarget.Channel -> {
+                destination = Destination.Messages
+                activeChannelId = target.id
+                showNavigation = false
+            }
+            is DeeplinkTarget.Meeting -> {
+                destination = Destination.Meetings
+                activeMeetingId = target.id
+                showNavigation = false
+            }
+            is DeeplinkTarget.Call -> {
+                destination = Destination.Calls
+                showNavigation = false
+            }
+            is DeeplinkTarget.Billing -> {
+                showBillingModal = true
+            }
+            is DeeplinkTarget.Inbox -> {
+                destination = Destination.Inbox
+                showNavigation = false
+            }
+            is DeeplinkTarget.Productivity -> {
+                destination = Destination.Productivity
+                showNavigation = false
+            }
+        }
+        onDeeplinkHandled?.invoke()
+    }
 
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -365,12 +425,13 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
                         listId = listId,
                         mine = destination == Destination.MyTasks,
                         projectId = projectId,
+                        initialTaskId = activeTaskId,
                         onBackToWorkspace = { showNavigation = true },
                         onDetailActive = { isDetailOpen = it }
                     )
                     Destination.Inbox -> InboxScreen(vm, api)
-                    Destination.Messages -> MessagesScreen(vm, api, lists)
-                    Destination.Meetings -> MeetingsScreen(vm, api)
+                    Destination.Messages -> MessagesScreen(vm, api, lists, initialChannelId = activeChannelId)
+                    Destination.Meetings -> MeetingsScreen(vm, api, initialMeetingId = activeMeetingId)
                     Destination.Calls -> CallsScreen(vm, api)
                     Destination.Productivity -> ProductivityScreen(vm, api)
                     Destination.Team -> TeamScreen(vm, api)
@@ -440,6 +501,14 @@ private fun AuthenticatedShell(vm: AppViewModel, api: ApiClient) {
             api = api,
             isLive = live,
             onDismiss = { showSyncCenter = false }
+        )
+    }
+
+    if (showBillingModal) {
+        BillingSettingsModal(
+            vm = vm,
+            api = api,
+            onDismiss = { showBillingModal = false }
         )
     }
 

@@ -430,8 +430,23 @@ fun CallRoomDialog(api: ApiClient, ticket: JsonObject, onDismiss: () -> Unit) {
         }
     }
 
+    LaunchedEffect(state, mic) {
+        if (state.equals("connected", ignoreCase = true)) {
+            val callId = session.text("id").ifBlank { ticket.child("session").text("id") }
+            val callTitle = session.text("title").ifBlank { "Active Call" }
+            OngoingActivityManager.showCallOngoingNotification(
+                context = context,
+                callId = callId,
+                title = callTitle,
+                remoteCount = 1,
+                isMuted = !mic
+            )
+        }
+    }
+
     DisposableEffect(room) {
         onDispose {
+            OngoingActivityManager.hideCallNotification(context)
             runCatching {
                 room.disconnect()
                 room.release()

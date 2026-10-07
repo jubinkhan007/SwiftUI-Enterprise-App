@@ -18,15 +18,67 @@ import { ReleaseManagementScreen } from './screens/ReleaseManagementScreen';
 import { ProjectSettingsScreen } from './screens/ProjectSettingsScreen';
 import { IntegrationSettingsScreen } from './screens/IntegrationSettingsScreen';
 import { SyncCenterModal } from './components/SyncCenterModal';
+import { getCurrentLocationDeeplink, parseDeeplink, syncUrlWithDestination, DeeplinkRoute } from './services/deeplink';
 import { Video, PhoneOff } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<UserDTO | null>(api.currentUser);
   const [currentNav, setCurrentNav] = useState<NavDestination>('all_tasks');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [activeCallConvId, setActiveCallConvId] = useState<string | null>(null);
   const [incomingCallNotification, setIncomingCallNotification] = useState<NotificationDTO | null>(null);
   const [showSyncCenter, setShowSyncCenter] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  const applyDeeplinkRoute = (route: DeeplinkRoute) => {
+    setCurrentNav(route.destination);
+    if (route.taskId) setSelectedTaskId(route.taskId);
+    if (route.channelId) setSelectedChannelId(route.channelId);
+    if (route.meetingId) setSelectedMeetingId(route.meetingId);
+  };
+
+  useEffect(() => {
+    const route = getCurrentLocationDeeplink();
+    if (route) {
+      applyDeeplinkRoute(route);
+    }
+
+    const onUrlChange = () => {
+      const r = getCurrentLocationDeeplink();
+      if (r) applyDeeplinkRoute(r);
+    };
+
+    window.addEventListener('popstate', onUrlChange);
+    window.addEventListener('hashchange', onUrlChange);
+    return () => {
+      window.removeEventListener('popstate', onUrlChange);
+      window.removeEventListener('hashchange', onUrlChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const registerDevice = async () => {
+      try {
+        const token = localStorage.getItem('taskflow_web_device_token') || `web_${crypto.randomUUID()}`;
+        localStorage.setItem('taskflow_web_device_token', token);
+        await api.registerDeviceToken(token, 'web', 'production');
+      } catch (err) {
+        // non-fatal
+      }
+    };
+    registerDevice();
+  }, [user]);
+
+  const handleNavigate = (nav: NavDestination, taskId?: string, channelId?: string, meetingId?: string) => {
+    setCurrentNav(nav);
+    setSelectedTaskId(taskId || null);
+    setSelectedChannelId(channelId || null);
+    setSelectedMeetingId(meetingId || null);
+    syncUrlWithDestination({ destination: nav, taskId, channelId, meetingId });
+  };
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -151,28 +203,54 @@ export const App: React.FC = () => {
         {/* Sidebar Drawer */}
         <SidebarDrawer
           currentNav={currentNav}
-          onNavigate={(nav) => setCurrentNav(nav)}
+          onNavigate={(nav) => handleNavigate(nav)}
           currentUser={user}
           onLogout={handleLogout}
         />
 
         {/* Dynamic Screen View */}
         <main className="flex-1 flex flex-col h-full overflow-hidden">
-          {currentNav === 'all_tasks' && <KanbanBoardScreen myTasksOnly={false} onNavigate={setCurrentNav} />}
-          {currentNav === 'my_tasks' && <KanbanBoardScreen myTasksOnly={true} onNavigate={setCurrentNav} />}
-          {currentNav === 'backlog' && <BacklogScreen onNavigate={setCurrentNav} />}
-          {currentNav === 'releases' && <ReleaseManagementScreen onNavigate={setCurrentNav} />}
-          {currentNav === 'settings' && <ProjectSettingsScreen onNavigate={setCurrentNav} />}
-          {currentNav === 'integrations' && <IntegrationSettingsScreen onNavigate={setCurrentNav} />}
-          {currentNav === 'inbox' && <InboxScreen onNavigate={setCurrentNav} />}
+          {currentNav === 'all_tasks' && (
+            <KanbanBoardScreen
+              myTasksOnly={false}
+              onNavigate={handleNavigate}
+              initialTaskId={selectedTaskId}
+              onCloseTaskDetail={() => {
+                setSelectedTaskId(null);
+                syncUrlWithDestination({ destination: 'all_tasks' });
+              }}
+            />
+          )}
+          {currentNav === 'my_tasks' && (
+            <KanbanBoardScreen
+              myTasksOnly={true}
+              onNavigate={handleNavigate}
+              initialTaskId={selectedTaskId}
+              onCloseTaskDetail={() => {
+                setSelectedTaskId(null);
+                syncUrlWithDestination({ destination: 'my_tasks' });
+              }}
+            />
+          )}
+          {currentNav === 'backlog' && <BacklogScreen onNavigate={handleNavigate} />}
+          {currentNav === 'releases' && <ReleaseManagementScreen onNavigate={handleNavigate} />}
+          {currentNav === 'settings' && <ProjectSettingsScreen onNavigate={handleNavigate} />}
+          {currentNav === 'integrations' && <IntegrationSettingsScreen onNavigate={handleNavigate} />}
+          {currentNav === 'inbox' && <InboxScreen onNavigate={handleNavigate} />}
           {currentNav === 'messages' && (
-            <ChatScreen onStartCall={(convId) => setActiveCallConvId(convId)} />
+            <ChatScreen
+              onStartCall={(convId) => setActiveCallConvId(convId)}
+              initialChannelId={selectedChannelId}
+            />
           )}
           {currentNav === 'meetings' && (
-            <MeetingsScreen onStartCall={(roomId) => setActiveCallConvId(roomId)} />
+            <MeetingsScreen
+              onStartCall={(roomId) => setActiveCallConvId(roomId)}
+              initialMeetingId={selectedMeetingId}
+            />
           )}
-          {currentNav === 'team' && <TeamScreen onNavigate={setCurrentNav} />}
-          {currentNav === 'billing' && <BillingScreen onNavigate={setCurrentNav} />}
+          {currentNav === 'team' && <TeamScreen onNavigate={handleNavigate} />}
+          {currentNav === 'billing' && <BillingScreen onNavigate={handleNavigate} />}
           {currentNav === 'productivity' && <ProductivityScreen />}
           {currentNav === 'sessions' && <SessionAuditScreen />}
         </main>

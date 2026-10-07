@@ -177,7 +177,8 @@ actor ProductivityRunner {
                 "reminderId": id.uuidString,
                 "body": row.body,
                 "sourceType": row.sourceType ?? "",
-                "sourceId": row.sourceId?.uuidString ?? ""
+                "sourceId": row.sourceId?.uuidString ?? "",
+                "deepLink": PushNotificationService.buildDeepLink(for: "reminder", entityId: id.uuidString)
             ]
             let payloadJson = try? String(
                 data: JSONSerialization.data(withJSONObject: payload, options: []),
@@ -192,7 +193,18 @@ actor ProductivityRunner {
                 type: "reminder.fired",
                 payloadJson: payloadJson
             )
-            do { try await notification.save(on: db) } catch { /* dedup */ }
+            do {
+                try await notification.save(on: db)
+                await PushNotificationService.dispatch(
+                    to: row.$user.id,
+                    title: "Reminder",
+                    body: row.body.isEmpty ? "Your scheduled reminder is due." : row.body,
+                    entityType: "reminder",
+                    entityId: id.uuidString,
+                    on: db,
+                    logger: app.logger
+                )
+            } catch { /* dedup */ }
 
             row.status = "fired"
             row.firedAt = now

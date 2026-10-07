@@ -13,8 +13,39 @@ import AppData
 import Domain
 import SharedModels
 
+#if os(iOS)
+import UIKit
+
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        PushNotificationManager.shared.configure()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        PushNotificationManager.shared.registerDeviceTokenData(deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        print("PushNotificationManager: Remote notification registration failed: \(error)")
+    }
+}
+#endif
+
 @main
 struct EnterpriseApp: App {
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
     let modelContainer: ModelContainer
     @StateObject private var authManager: AppData.AuthManager
     
@@ -54,6 +85,9 @@ struct EnterpriseApp: App {
                     )
                 }
             }
+            .onOpenURL { url in
+                DeeplinkRouter.handle(url)
+            }
         }
     }
 }
@@ -75,11 +109,15 @@ struct AuthenticatedRootView: View {
     @StateObject private var syncManager: SyncEngineManager
     @StateObject private var inboxViewModel: InboxViewModel
     @StateObject private var conversationListViewModel: ConversationListViewModel
+    @ObservedObject private var deeplinkRouter: DeeplinkRouter = .shared
+    @ObservedObject private var pushNotificationManager: PushNotificationManager = .shared
     @State private var showTeamManagement = false
+    @State private var showBillingSheet = false
     @State private var showingCreateTask = false
     @State private var viewType: DashboardViewType = .list
     @State private var projectSettingsSheet: ProjectSettingsSheetItem? = nil
     @State private var selectedNotificationTask: TaskItemDTO? = nil
+    @State private var selectedMeetingSheet: MeetingDetailSheetItem? = nil
     @State private var isLoadingTask: Bool = false
     @State private var meetingMembers: [MeetingPickableMember] = []
     @State private var incomingCall: IncomingCallPresentation? = nil
@@ -87,6 +125,10 @@ struct AuthenticatedRootView: View {
     @State private var realtimeListenerId: UUID? = nil
 
     private struct ProjectSettingsSheetItem: Identifiable {
+        let id: UUID
+    }
+
+    private struct MeetingDetailSheetItem: Identifiable {
         let id: UUID
     }
 
@@ -275,6 +317,25 @@ struct AuthenticatedRootView: View {
                 .sheet(isPresented: $showTeamManagement) {
                     TeamManagementView(orgId: selectedOrg.id)
                 }
+                .sheet(isPresented: $showBillingSheet) {
+                    BillingSettingsView(orgId: selectedOrg.id)
+                }
+                .sheet(item: $selectedMeetingSheet) { item in
+                    NavigationStack {
+                        MeetingDetailView(
+                            meetingId: item.id,
+                            currentUserId: session.user.id,
+                            repository: meetingRepository,
+                            realtimeProvider: realtimeProvider,
+                            availableMembers: meetingMembers
+                        )
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { selectedMeetingSheet = nil }
+                            }
+                        }
+                    }
+                }
                 .sheet(isPresented: $showingCreateTask) {
                     CreateTaskSheet(
                         viewModel: CreateTaskViewModel(taskRepository: viewModel.taskRepository, listId: viewModel.query.listId),
@@ -328,6 +389,15 @@ struct AuthenticatedRootView: View {
         .onChange(of: sidebarViewModel.selectedArea) { oldValue, newValue in
             viewModel.handleSidebarSelection(newValue, viewType: viewType)
         }
+        .onReceive(deeplinkRouter.$currentDestination) { destination in
+            guard let destination else { return }
+            handleDeeplinkDestination(destination)
+        }
+        .onReceive(pushNotificationManager.$pendingDeeplink) { destination in
+            guard let destination else { return }
+            handleDeeplinkDestination(destination)
+            pushNotificationManager.pendingDeeplink = nil
+        }
         .task {
             await realtimeProvider.connect(orgId: selectedOrg.id)
             installCallRealtimeListenerIfNeeded()
@@ -340,6 +410,7 @@ struct AuthenticatedRootView: View {
             }
             await syncManager.refresh()
             syncManager.syncNow()
+            _ = await PushNotificationManager.shared.requestAuthorization()
         }
         .onDisappear {
             if let realtimeListenerId {
@@ -371,6 +442,15 @@ struct AuthenticatedRootView: View {
     }
 
     private func handleNotificationTap(_ notification: NotificationDTO) {
+        if let payloadStr = notification.payloadJson,
+           let data = payloadStr.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let deepLinkString = (dict["deep_link"] as? String) ?? (dict["deepLink"] as? String),
+           let dest = DeeplinkParser.parse(urlString: deepLinkString) {
+            handleDeeplinkDestination(dest)
+            return
+        }
+
         if notification.type == "mention" || notification.type.starts(with: "task.") {
             var taskIdString: String? = nil
             if notification.entityType == "task" {
@@ -397,15 +477,43 @@ struct AuthenticatedRootView: View {
             sidebarViewModel.selectedArea = .messages
             conversationListViewModel.pendingChannelId = notification.entityId
         } else if notification.type.starts(with: "meeting.") || notification.entityType == "meeting" {
-            sidebarViewModel.selectedArea = .meetings
-            // MeetingsHomeView observes MeetingsStore; tap-to-open requires the user
-            // to pick the meeting from the list. Direct nav lands in 4-A polish.
+            selectedMeetingSheet = MeetingDetailSheetItem(id: notification.entityId)
         } else if notification.type.starts(with: "call.") || notification.entityType == "call" {
             Task { await presentIncomingCallIfNeeded(callId: notification.entityId) }
         } else if notification.type.starts(with: "reminder.") || notification.entityType == "reminder"
                   || notification.type.starts(with: "scheduled_message.") {
             sidebarViewModel.selectedArea = .productivity
         }
+    }
+
+    private func handleDeeplinkDestination(_ dest: DeeplinkDestination) {
+        switch dest {
+        case .task(let id):
+            Task {
+                isLoadingTask = true
+                do {
+                    let taskItem = try await viewModel.taskRepository.getTask(id: id)
+                    selectedNotificationTask = taskItem
+                } catch {
+                    print("Failed to fetch task from deep link: \(error)")
+                }
+                isLoadingTask = false
+            }
+        case .channel(let id):
+            sidebarViewModel.selectedArea = .messages
+            conversationListViewModel.pendingChannelId = id
+        case .meeting(let id):
+            selectedMeetingSheet = MeetingDetailSheetItem(id: id)
+        case .call(let id):
+            Task { await presentIncomingCallIfNeeded(callId: id) }
+        case .billing:
+            showBillingSheet = true
+        case .inbox:
+            sidebarViewModel.selectedArea = .inbox
+        case .productivity:
+            sidebarViewModel.selectedArea = .productivity
+        }
+        deeplinkRouter.clear()
     }
 
     private func installCallRealtimeListenerIfNeeded() {
