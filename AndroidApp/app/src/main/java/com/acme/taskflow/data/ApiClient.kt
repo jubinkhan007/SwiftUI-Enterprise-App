@@ -127,6 +127,47 @@ class ApiClient(
         return rows
     }
 
+    suspend fun search(
+        query: String,
+        types: List<String> = emptyList(),
+        limit: Int = 20
+    ): JsonObject {
+        val qParams = mutableMapOf("q" to query, "limit" to limit.toString())
+        if (types.isNotEmpty()) {
+            qParams["types"] = types.joinToString(",")
+        }
+        val result = request("/api/org/search", query = qParams)
+        return result.data.obj()
+    }
+
+    suspend fun runAICopilot(
+        action: String,
+        prompt: String? = null,
+        contextId: String? = null,
+        entityPayload: Map<String, String>? = null
+    ): JsonObject {
+        val payload = JsonObject().apply {
+            addProperty("action", action)
+            if (prompt != null) addProperty("prompt", prompt)
+            if (contextId != null) addProperty("contextId", contextId)
+            if (entityPayload != null) {
+                val entityObj = JsonObject()
+                entityPayload.forEach { (k, v) -> entityObj.addProperty(k, v) }
+                add("entityPayload", entityObj)
+            }
+        }
+        val result = request("/api/org/ai/copilot", method = "POST", body = payload)
+        return result.data.obj()
+    }
+
+    suspend fun breakdownTask(prompt: String): JsonObject {
+        return runAICopilot(action = "breakdown_task", prompt = prompt)
+    }
+
+    suspend fun generateStandupSummary(): JsonObject {
+        return runAICopilot(action = "generate_standup_summary")
+    }
+
     companion object {
         val transport = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)

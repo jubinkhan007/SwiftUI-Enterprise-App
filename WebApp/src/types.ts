@@ -621,5 +621,60 @@ export interface RenderedTemplateDTO {
   body: string;
 }
 
+// Phase 17: Omnibar Search & AI Copilot
+export type SearchEntityType = 'task' | 'message' | 'meeting' | 'member' | 'doc';
+
+export interface SearchResultItemDTO {
+  id: string;
+  entityType: SearchEntityType;
+  title: string;
+  subtitle: string;
+  deepLink: string;
+  icon?: string | null;
+  badge?: string | null;
+  metadata?: Record<string, string> | null;
+  updatedAt?: string | null;
+}
+
+export interface OmnibarSearchRequest {
+  query: string;
+  types?: SearchEntityType[];
+  limit?: number;
+}
+
+export interface OmnibarSearchResponse {
+  results: SearchResultItemDTO[];
+  totalCount: number;
+  query: string;
+}
+
+export type AIAssistantAction =
+  | 'breakdown_task'
+  | 'generate_standup_summary'
+  | 'suggest_next_actions'
+  | 'summarize_thread';
+
+export interface SuggestedTaskDTO {
+  id?: string;
+  title: string;
+  description?: string | null;
+  priority?: string | null;
+  estimateHours?: number | null;
+}
+
+export interface AIAssistantRequest {
+  action: AIAssistantAction;
+  contextId?: string | null;
+  prompt?: string | null;
+  entityPayload?: Record<string, string> | null;
+}
+
+export interface AIAssistantResponse {
+  action: AIAssistantAction;
+  summary: string;
+  suggestedTasks?: SuggestedTaskDTO[] | null;
+  actionItems?: string[] | null;
+}
+
 
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, LogOut, UserRound, X } from 'lucide-react';
+import { Building2, LogOut, Search, UserRound, X } from 'lucide-react';
 import { UserDTO } from '../types';
 import { api } from '../services/api';
 
@@ -10,6 +10,7 @@ interface WorkspaceHeaderProps {
   onLogout?: () => void;
   onProfileSaved?: (user: UserDTO) => void;
   onOpenSyncCenter?: () => void;
+  onOpenOmnibar?: () => void;
   isLive?: boolean;
 }
 
@@ -20,6 +21,7 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
   onLogout,
   onProfileSaved,
   onOpenSyncCenter,
+  onOpenOmnibar,
   isLive = true,
 }) => {
   const [showProfile, setShowProfile] = useState(false);
@@ -62,6 +64,18 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
 
       {currentUser && (
         <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenOmnibar}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 hover:text-white transition text-xs font-medium shadow-sm hover:border-slate-600"
+            title="Search & AI Copilot (⌘K)"
+          >
+            <Search className="w-3.5 h-3.5 text-teal-400" />
+            <span className="hidden md:inline text-slate-300 font-medium">Search or AI Copilot...</span>
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-400 bg-slate-900 border border-slate-750 rounded shadow-inner">
+              ⌘K
+            </kbd>
+          </button>
+
           <button
             onClick={onOpenSyncCenter}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 transition text-xs font-medium"

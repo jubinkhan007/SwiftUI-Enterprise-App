@@ -126,6 +126,13 @@ func routes(_ app: Application) throws {
     let releaseController = ReleaseController()
     try authenticatedAPI.register(collection: releaseController)
 
+    // Omnibar Search & AI Copilot
+    let searchController = SearchController()
+    try orgScopedAPI.register(collection: searchController)
+
+    let aiAssistantController = AIAssistantController()
+    try orgScopedAPI.register(collection: aiAssistantController)
+
     // Phase 11: Real-time collaboration
     RealtimeController.register(on: app)
 }

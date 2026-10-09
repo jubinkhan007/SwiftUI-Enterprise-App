@@ -60,7 +60,15 @@ import {
   MessageTemplateDTO,
   CreateTemplateRequest,
   UpdateTemplateRequest,
-  RenderedTemplateDTO
+  RenderedTemplateDTO,
+  SearchEntityType,
+  SearchResultItemDTO,
+  OmnibarSearchRequest,
+  OmnibarSearchResponse,
+  AIAssistantAction,
+  SuggestedTaskDTO,
+  AIAssistantRequest,
+  AIAssistantResponse
 } from '../types';
 
 class ApiService {
@@ -1045,13 +1053,24 @@ class ApiService {
     return resp.url;
   }
 
-  async createTask(title: string, listId?: string, description?: string): Promise<TaskItemDTO> {
+  async createTask(
+    titleOrPayload: string | { title: string; listId?: string; description?: string; priority?: string; status?: string },
+    listId?: string,
+    description?: string
+  ): Promise<TaskItemDTO> {
+    const isObj = typeof titleOrPayload === 'object';
+    const title = isObj ? titleOrPayload.title : titleOrPayload;
+    const finalDesc = isObj ? titleOrPayload.description : description;
+    const finalListId = isObj ? titleOrPayload.listId : listId;
+
     const raw = await this.request<any>('/api/tasks', {
       method: 'POST',
       body: JSON.stringify({
         title,
-        list_id: listId,
-        description,
+        list_id: finalListId,
+        description: finalDesc,
+        ...(isObj && titleOrPayload.priority ? { priority: titleOrPayload.priority } : {}),
+        ...(isObj && titleOrPayload.status ? { status: titleOrPayload.status } : {}),
       }),
     });
     const t = raw.data || raw;
@@ -1061,7 +1080,7 @@ class ApiService {
       listId: t.list_id || t.listId,
       projectId: t.project_id || t.projectId,
       title: t.title || title || 'New Task',
-      description: t.description || description,
+      description: t.description || finalDesc,
       status: t.status || 'todo',
       priority: t.priority || 'medium',
       taskType: t.task_type || t.taskType || 'task',
@@ -1835,6 +1854,38 @@ class ApiService {
       templateId: d.template_id || d.templateId || templateId,
       body: d.body || '',
     };
+  }
+
+  // Phase 17: Omnibar Search & AI Copilot
+  async search(query: string, types?: SearchEntityType[], limit: number = 20): Promise<OmnibarSearchResponse> {
+    const params = new URLSearchParams();
+    if (query) params.append('q', query);
+    if (types && types.length > 0) params.append('types', types.join(','));
+    if (limit) params.append('limit', String(limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const raw = await this.request<any>(`/api/search${qs}`);
+    return raw?.data || raw || { results: [], totalCount: 0, query };
+  }
+
+  async runAICopilot(request: AIAssistantRequest): Promise<AIAssistantResponse> {
+    const raw = await this.request<any>('/api/ai/copilot', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+    return raw?.data || raw;
+  }
+
+  async breakdownTask(prompt: string, contextId?: string): Promise<AIAssistantResponse> {
+    const raw = await this.request<any>('/api/ai/breakdown', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'breakdown_task', prompt, contextId }),
+    });
+    return raw?.data || raw;
+  }
+
+  async generateStandupSummary(): Promise<AIAssistantResponse> {
+    const raw = await this.request<any>('/api/ai/standup');
+    return raw?.data || raw;
   }
 }
 

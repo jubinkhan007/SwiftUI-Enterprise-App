@@ -178,3 +178,13 @@ extension TimeLogDTO: Content {}
 extension LogTimeRequest: Content {}
 extension ProjectTimeReportDTO: Content {}
 extension UserSessionDTO: Content {}
+
+// Phase 17: Omnibar Search & AI Copilot
+extension SearchEntityType: Content {}
+extension SearchResultItemDTO: Content {}
+extension OmnibarSearchRequest: Content {}
+extension OmnibarSearchResponse: Content {}
+extension AIAssistantAction: Content {}
+extension SuggestedTaskDTO: Content {}
+extension AIAssistantRequest: Content {}
+extension AIAssistantResponse: Content {}

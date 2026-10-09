@@ -82,4 +82,32 @@ class ApiClientTest {
         job.cancelAndJoin()
         assertTrue(job.isCancelled)
     }
+
+    @Test fun `search encodes query and entity types`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"success":true,"data":{"results":[{"id":"t1","title":"Auth Flow","deepLink":"taskflow://tasks/t1"}],"totalCount":1,"query":"Auth"}}"""))
+        val res = client().search("Auth", types = listOf("task", "message"), limit = 15)
+        val request = server.takeRequest()
+        assertEquals("/api/org/search?q=Auth&limit=15&types=task%2Cmessage", request.path)
+        assertEquals("t1", res.list("results").first().text("id"))
+        assertEquals("taskflow://tasks/t1", res.list("results").first().text("deepLink"))
+    }
+
+    @Test fun `copilot breakdown and standup requests format action payload`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"success":true,"data":{"action":"breakdown_task","summary":"Structured subtasks","suggestedTasks":[{"title":"Step 1","estimateHours":2.0}]}}"""))
+        val breakdown = client().breakdownTask("Setup OAuth")
+        val req1 = server.takeRequest()
+        assertEquals("/api/org/ai/copilot", req1.path)
+        assertEquals("POST", req1.method)
+        val body1 = JsonParser.parseString(req1.body.readUtf8()).obj()
+        assertEquals("breakdown_task", body1.text("action"))
+        assertEquals("Setup OAuth", body1.text("prompt"))
+        assertEquals("Structured subtasks", breakdown.text("summary"))
+
+        server.enqueue(MockResponse().setBody("""{"success":true,"data":{"action":"generate_standup_summary","summary":"Yesterday: Completed tasks\nToday: Next sprint"}}"""))
+        val standup = client().generateStandupSummary()
+        val req2 = server.takeRequest()
+        val body2 = JsonParser.parseString(req2.body.readUtf8()).obj()
+        assertEquals("generate_standup_summary", body2.text("action"))
+        assertTrue(standup.text("summary").contains("Yesterday"))
+    }
 }

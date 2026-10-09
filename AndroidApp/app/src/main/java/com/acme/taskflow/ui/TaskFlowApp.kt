@@ -89,6 +89,7 @@ private fun AuthenticatedShell(
     var hierarchyEditor by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showCreateHierarchy by remember { mutableStateOf(false) }
     var showSyncCenter by remember { mutableStateOf(false) }
+    var showOmnibar by remember { mutableStateOf(false) }
     var showBillingModal by remember { mutableStateOf(false) }
     var showUserMenu by remember { mutableStateOf(false) }
     var showWorkspaceSwitcher by remember { mutableStateOf(false) }
@@ -382,6 +383,17 @@ private fun AuthenticatedShell(
                             )
                         }
                         IconButton(
+                            modifier = Modifier.testTag("btn_top_bar_search"),
+                            onClick = { showOmnibar = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search & AI Copilot",
+                                tint = AppColors.brandPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        IconButton(
                             modifier = Modifier.testTag("btn_top_bar_profile"),
                             onClick = { showUserMenu = true }
                         ) {
@@ -501,6 +513,56 @@ private fun AuthenticatedShell(
             api = api,
             isLive = live,
             onDismiss = { showSyncCenter = false }
+        )
+    }
+
+    if (showOmnibar) {
+        OmnibarSearchDialog(
+            api = api,
+            onDismiss = { showOmnibar = false },
+            onNavigateDeeplink = { deeplinkUrl ->
+                showOmnibar = false
+                DeeplinkParser.parse(deeplinkUrl)?.let { target ->
+                    when (target) {
+                        is DeeplinkTarget.Task -> {
+                            destination = Destination.AllTasks
+                            activeTaskId = target.id
+                            listId = ""
+                            listName = ""
+                            projectId = ""
+                            showNavigation = false
+                        }
+                        is DeeplinkTarget.Channel -> {
+                            destination = Destination.Messages
+                            activeChannelId = target.id
+                            showNavigation = false
+                        }
+                        is DeeplinkTarget.Meeting -> {
+                            destination = Destination.Meetings
+                            activeMeetingId = target.id
+                            showNavigation = false
+                        }
+                        is DeeplinkTarget.Call -> {
+                            destination = Destination.Calls
+                            showNavigation = false
+                        }
+                        is DeeplinkTarget.Billing -> {
+                            showBillingModal = true
+                        }
+                        is DeeplinkTarget.Inbox -> {
+                            destination = Destination.Inbox
+                            showNavigation = false
+                        }
+                        is DeeplinkTarget.Productivity -> {
+                            destination = Destination.Productivity
+                            showNavigation = false
+                        }
+                    }
+                }
+            },
+            onTaskCreated = {
+                vm.changed()
+            }
         )
     }
 

@@ -104,6 +104,8 @@ struct AuthenticatedRootView: View {
     let meetingRepository: MeetingRepositoryProtocol
     let callRepository: CallRepositoryProtocol
     let realtimeProvider: RealTimeProvider
+    let searchRepository: SearchRepositoryProtocol
+    let aiAssistantRepository: AIAssistantRepositoryProtocol
     @StateObject private var sidebarViewModel: SidebarViewModel
     @StateObject private var orgGateViewModel: OrganizationGateViewModel
     @StateObject private var syncManager: SyncEngineManager
@@ -114,6 +116,7 @@ struct AuthenticatedRootView: View {
     @State private var showTeamManagement = false
     @State private var showBillingSheet = false
     @State private var showingCreateTask = false
+    @State private var showingOmnibar = false
     @State private var viewType: DashboardViewType = .list
     @State private var projectSettingsSheet: ProjectSettingsSheetItem? = nil
     @State private var selectedNotificationTask: TaskItemDTO? = nil
@@ -170,6 +173,8 @@ struct AuthenticatedRootView: View {
         let productivityRepo = LiveProductivityService(apiClient: apiClient)
         let presenceRepo = LivePresenceService(apiClient: apiClient)
         let notificationRepo = LiveNotificationService(apiClient: apiClient)
+        let searchRepo = LiveSearchService(apiClient: apiClient)
+        let aiRepo = LiveAIAssistantService(apiClient: apiClient)
         let rtProvider = RealTimeProvider()
 
         // Configure shared stores once at app startup so any view can use them.
@@ -200,6 +205,8 @@ struct AuthenticatedRootView: View {
         self.messagingRepository = messagingRepo
         self.meetingRepository = meetingRepo
         self.callRepository = callRepo
+        self.searchRepository = searchRepo
+        self.aiAssistantRepository = aiRepo
         self.realtimeProvider = rtProvider
         
         self._sidebarViewModel = StateObject(wrappedValue: SidebarViewModel(hierarchyRepository: hierarchyRepo))
@@ -303,6 +310,16 @@ struct AuthenticatedRootView: View {
                         }
                     }
 
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showingOmnibar = true
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.subheadline)
+                        }
+                        .keyboardShortcut("k", modifiers: [.command])
+                    }
+
                     if horizontalSizeClass != .compact {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
@@ -313,6 +330,14 @@ struct AuthenticatedRootView: View {
                             }
                         }
                     }
+                }
+                .sheet(isPresented: $showingOmnibar) {
+                    OmnibarSearchView(
+                        isPresented: $showingOmnibar,
+                        searchRepository: searchRepository,
+                        aiRepository: aiAssistantRepository,
+                        taskRepository: viewModel.taskRepository
+                    )
                 }
                 .sheet(isPresented: $showTeamManagement) {
                     TeamManagementView(orgId: selectedOrg.id)

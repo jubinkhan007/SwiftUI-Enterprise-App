@@ -18,6 +18,7 @@ import { ReleaseManagementScreen } from './screens/ReleaseManagementScreen';
 import { ProjectSettingsScreen } from './screens/ProjectSettingsScreen';
 import { IntegrationSettingsScreen } from './screens/IntegrationSettingsScreen';
 import { SyncCenterModal } from './components/SyncCenterModal';
+import { OmnibarModal } from './components/OmnibarModal';
 import { getCurrentLocationDeeplink, parseDeeplink, syncUrlWithDestination, DeeplinkRoute } from './services/deeplink';
 import { Video, PhoneOff } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export const App: React.FC = () => {
   const [activeCallConvId, setActiveCallConvId] = useState<string | null>(null);
   const [incomingCallNotification, setIncomingCallNotification] = useState<NotificationDTO | null>(null);
   const [showSyncCenter, setShowSyncCenter] = useState(false);
+  const [showOmnibar, setShowOmnibar] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   const applyDeeplinkRoute = (route: DeeplinkRoute) => {
@@ -89,6 +91,17 @@ export const App: React.FC = () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowOmnibar(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const handleLoginSuccess = (user: UserDTO) => {
@@ -195,6 +208,7 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
         onProfileSaved={setUser}
         onOpenSyncCenter={() => setShowSyncCenter(true)}
+        onOpenOmnibar={() => setShowOmnibar(true)}
         isLive={isOnline}
       />
 
@@ -269,6 +283,13 @@ export const App: React.FC = () => {
         isOpen={showSyncCenter}
         onClose={() => setShowSyncCenter(false)}
         isLive={isOnline}
+      />
+
+      {/* Enterprise Unified Omnibar Search (Cmd+K) & AI Copilot */}
+      <OmnibarModal
+        isOpen={showOmnibar}
+        onClose={() => setShowOmnibar(false)}
+        onSelectRoute={applyDeeplinkRoute}
       />
     </div>
   );
