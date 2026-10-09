@@ -60,4 +60,54 @@ final class SearchAndAITests: XCTestCase {
         XCTAssertEqual(decoded.results.first?.title, "Setup CI/CD pipeline")
         XCTAssertEqual(decoded.results.first?.deepLink, "taskflow://tasks/123")
     }
+
+    func testSearchEndpointHybridAndSemantic() {
+        let config = APIConfiguration(baseURL: URL(string: "http://localhost:8080")!)
+        let ep = SearchEndpoint.search(
+            query: "that bug with login",
+            types: [.task],
+            limit: 20,
+            mode: .semantic,
+            threshold: 0.35,
+            configuration: config
+        )
+
+        XCTAssertEqual(ep.path, "/api/search")
+        XCTAssertEqual(ep.method, .get)
+        XCTAssertEqual(ep.queryParameters?["q"], "that bug with login")
+        XCTAssertEqual(ep.queryParameters?["mode"], "semantic")
+        XCTAssertEqual(ep.queryParameters?["threshold"], "0.35")
+    }
+
+    func testSearchResultSemanticFieldsSerialization() throws {
+        let item = SearchResultItemDTO(
+            id: UUID().uuidString,
+            entityType: .task,
+            title: "Fix OAuth authentication crash on sign in",
+            subtitle: "Critical bug",
+            deepLink: "taskflow://tasks/456",
+            icon: "checkmark.square.fill",
+            badge: "✨ 85% Match",
+            metadata: ["taskKey": "PROJ-102"],
+            similarityScore: 0.854,
+            matchType: "semantic",
+            highlightSnippet: "Users encounter freeze on auth modal",
+            updatedAt: Date()
+        )
+        let response = OmnibarSearchResponse(
+            results: [item],
+            totalCount: 1,
+            query: "that bug with login",
+            mode: .hybrid
+        )
+
+        let data = try JSONCoding.encoder.encode(response)
+        let decoded = try JSONCoding.decoder.decode(OmnibarSearchResponse.self, from: data)
+
+        XCTAssertEqual(decoded.mode, .hybrid)
+        XCTAssertEqual(decoded.results.first?.similarityScore, 0.854)
+        XCTAssertEqual(decoded.results.first?.matchType, "semantic")
+        XCTAssertEqual(decoded.results.first?.highlightSnippet, "Users encounter freeze on auth modal")
+        XCTAssertEqual(decoded.results.first?.badge, "✨ 85% Match")
+    }
 }

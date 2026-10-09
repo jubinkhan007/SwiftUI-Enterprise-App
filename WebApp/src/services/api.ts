@@ -62,6 +62,7 @@ import {
   UpdateTemplateRequest,
   RenderedTemplateDTO,
   SearchEntityType,
+  SearchMode,
   SearchResultItemDTO,
   OmnibarSearchRequest,
   OmnibarSearchResponse,
@@ -1856,15 +1857,46 @@ class ApiService {
     };
   }
 
-  // Phase 17: Omnibar Search & AI Copilot
-  async search(query: string, types?: SearchEntityType[], limit: number = 20): Promise<OmnibarSearchResponse> {
+  // Phase 17: Omnibar Search & AI Copilot with Semantic / Vector Embeddings
+  async search(
+    query: string,
+    types?: SearchEntityType[],
+    limit: number = 20,
+    mode: SearchMode = 'hybrid',
+    threshold?: number
+  ): Promise<OmnibarSearchResponse> {
     const params = new URLSearchParams();
     if (query) params.append('q', query);
     if (types && types.length > 0) params.append('types', types.join(','));
     if (limit) params.append('limit', String(limit));
+    if (mode) params.append('mode', mode);
+    if (threshold != null) params.append('threshold', String(threshold));
     const qs = params.toString() ? `?${params.toString()}` : '';
     const raw = await this.request<any>(`/api/search${qs}`);
-    return raw?.data || raw || { results: [], totalCount: 0, query };
+    const data = raw?.data || raw || { results: [], totalCount: 0, query };
+
+    const rawResults: any[] = data.results || [];
+    const mappedResults: SearchResultItemDTO[] = rawResults.map((r: any) => ({
+      id: r.id,
+      entityType: (r.entity_type || r.entityType) as SearchEntityType,
+      title: r.title || '',
+      subtitle: r.subtitle || '',
+      deepLink: r.deep_link || r.deepLink || '',
+      icon: r.icon,
+      badge: r.badge,
+      similarityScore: r.similarity_score ?? r.similarityScore ?? null,
+      matchType: r.match_type ?? r.matchType ?? null,
+      highlightSnippet: r.highlight_snippet ?? r.highlightSnippet ?? null,
+      metadata: r.metadata ?? null,
+      updatedAt: r.updated_at ?? r.updatedAt ?? null,
+    }));
+
+    return {
+      results: mappedResults,
+      totalCount: data.total_count ?? data.totalCount ?? mappedResults.length,
+      query: data.query || query,
+      mode: (data.mode as SearchMode) || mode,
+    };
   }
 
   async runAICopilot(request: AIAssistantRequest): Promise<AIAssistantResponse> {

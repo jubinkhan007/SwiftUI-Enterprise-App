@@ -181,6 +181,7 @@ extension UserSessionDTO: Content {}
 
 // Phase 17: Omnibar Search & AI Copilot
 extension SearchEntityType: Content {}
+extension SearchMode: Content {}
 extension SearchResultItemDTO: Content {}
 extension OmnibarSearchRequest: Content {}
 extension OmnibarSearchResponse: Content {}

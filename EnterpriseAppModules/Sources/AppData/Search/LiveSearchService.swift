@@ -12,8 +12,8 @@ public final class LiveSearchService: SearchRepositoryProtocol {
         self.apiConfiguration = configuration
     }
 
-    public func search(query: String, types: [SearchEntityType]?, limit: Int?) async throws -> OmnibarSearchResponse {
-        let ep = SearchEndpoint.search(query: query, types: types, limit: limit, configuration: apiConfiguration)
+    public func search(query: String, types: [SearchEntityType]?, limit: Int?, mode: SearchMode?) async throws -> OmnibarSearchResponse {
+        let ep = SearchEndpoint.search(query: query, types: types, limit: limit, mode: mode, threshold: nil, configuration: apiConfiguration)
         let response = try await apiClient.request(ep, responseType: APIResponse<OmnibarSearchResponse>.self)
         guard let data = response.data else {
             throw NetworkError.decodingFailed("Missing response data for search.")

@@ -87,9 +87,21 @@ class ApiClientTest {
         server.enqueue(MockResponse().setBody("""{"success":true,"data":{"results":[{"id":"t1","title":"Auth Flow","deepLink":"taskflow://tasks/t1"}],"totalCount":1,"query":"Auth"}}"""))
         val res = client().search("Auth", types = listOf("task", "message"), limit = 15)
         val request = server.takeRequest()
-        assertEquals("/api/org/search?q=Auth&limit=15&types=task%2Cmessage", request.path)
+        assertEquals("/api/org/search?q=Auth&limit=15&mode=hybrid&types=task%2Cmessage", request.path)
         assertEquals("t1", res.list("results").first().text("id"))
         assertEquals("taskflow://tasks/t1", res.list("results").first().text("deepLink"))
+    }
+
+    @Test fun `search encodes query, entity types, and semantic mode`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"success":true,"data":{"results":[{"id":"t1","title":"Auth Flow","similarity_score":0.88,"match_type":"semantic","highlight_snippet":"OAuth crash on login","deepLink":"taskflow://tasks/t1"}],"totalCount":1,"query":"that bug with the login screen","mode":"semantic"}}"""))
+        val res = client().search("that bug with the login screen", types = listOf("task"), limit = 10, mode = "semantic", threshold = 0.6)
+        val request = server.takeRequest()
+        assertEquals("/api/org/search?q=that%20bug%20with%20the%20login%20screen&limit=10&mode=semantic&types=task&threshold=0.6", request.path)
+        val firstItem = res.list("results").first()
+        assertEquals("t1", firstItem.text("id"))
+        assertEquals(0.88, firstItem.get("similarity_score").asDouble, 0.001)
+        assertEquals("semantic", firstItem.text("match_type"))
+        assertEquals("OAuth crash on login", firstItem.text("highlight_snippet"))
     }
 
     @Test fun `copilot breakdown and standup requests format action payload`() = runBlocking {

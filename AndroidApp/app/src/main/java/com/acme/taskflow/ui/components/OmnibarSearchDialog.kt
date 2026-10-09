@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,7 +52,10 @@ data class OmnibarSearchResult(
     val title: String,
     val subtitle: String,
     val deepLink: String,
-    val badge: String? = null
+    val badge: String? = null,
+    val similarityScore: Double? = null,
+    val matchType: String? = null,
+    val highlightSnippet: String? = null
 )
 
 data class OmnibarSuggestedTask(
@@ -73,6 +77,7 @@ fun OmnibarSearchDialog(
     val coroutineScope = rememberCoroutineScope()
 
     var activeTab by remember { mutableStateOf("all") } // "all", "task", "message", "meeting", "member", "copilot"
+    var searchMode by remember { mutableStateOf("hybrid") } // "hybrid", "semantic", "keyword"
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf<List<OmnibarSearchResult>>(emptyList()) }
@@ -88,23 +93,34 @@ fun OmnibarSearchDialog(
     var tasksAddedSuccess by remember { mutableStateOf(false) }
 
     // Search query debounced runner
-    LaunchedEffect(searchQuery, activeTab) {
+    LaunchedEffect(searchQuery, activeTab, searchMode) {
         if (activeTab == "copilot") return@LaunchedEffect
         delay(200) // debounce
         isSearching = true
         errorMessage = null
         try {
             val types = if (activeTab == "all") emptyList() else listOf(activeTab)
-            val response = api.search(searchQuery.trim(), types = types, limit = 25)
+            val response = api.search(searchQuery.trim(), types = types, limit = 25, mode = searchMode)
             val rawResults = response.list("results")
             searchResults = rawResults.map { obj ->
+                val score = when {
+                    obj.has("similarity_score") && !obj.get("similarity_score").isJsonNull -> obj.get("similarity_score").asDouble
+                    obj.has("similarityScore") && !obj.get("similarityScore").isJsonNull -> obj.get("similarityScore").asDouble
+                    else -> null
+                }
+                val matchType = obj.text("match_type").ifBlank { obj.text("matchType") }.takeIf { it.isNotBlank() }
+                val snippet = obj.text("highlight_snippet").ifBlank { obj.text("highlightSnippet") }.takeIf { it.isNotBlank() }
+
                 OmnibarSearchResult(
                     id = obj.text("id"),
                     entityType = obj.text("entityType").ifBlank { obj.text("entity_type") }.ifBlank { "task" },
                     title = obj.text("title").ifBlank { "Untitled" },
                     subtitle = obj.text("subtitle"),
                     deepLink = obj.text("deepLink").ifBlank { obj.text("deep_link") },
-                    badge = obj.text("badge").takeIf { it.isNotBlank() }
+                    badge = obj.text("badge").takeIf { it.isNotBlank() },
+                    similarityScore = score,
+                    matchType = matchType,
+                    highlightSnippet = snippet
                 )
             }
         } catch (e: Exception) {
@@ -259,6 +275,44 @@ fun OmnibarSearchDialog(
                                 selectedLabelColor = Color(0xFF6366F1)
                             )
                         )
+                    }
+
+                    // Search Engine Mode Selector (Hybrid, Semantic, Keyword)
+                    if (activeTab != "copilot") {
+                        Spacer(Modifier.height(AppSpacing.xs))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(AppRadius.small))
+                                .background(AppColors.backgroundSecondary.copy(alpha = 0.7f))
+                                .padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val modes = listOf(
+                                Triple("hybrid", "✨ Hybrid (AI)", "Keyword + Dense Vector Semantic Matching"),
+                                Triple("semantic", "🧠 Semantic", "Vector concept clusters & cosine similarity"),
+                                Triple("keyword", "🔍 Keyword", "Standard lexical substring search")
+                            )
+                            modes.forEach { (modeKey, modeTitle, _) ->
+                                val isSelected = searchMode == modeKey
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(AppRadius.small))
+                                        .background(if (isSelected) AppColors.brandPrimary.copy(alpha = 0.22f) else Color.Transparent)
+                                        .clickable { searchMode = modeKey }
+                                        .padding(vertical = 5.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = modeTitle,
+                                        style = AppTypography.caption2,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) AppColors.brandPrimary else AppColors.textSecondary
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Spacer(Modifier.height(AppSpacing.sm))
@@ -700,6 +754,46 @@ fun OmnibarSearchDialog(
                                                         color = AppColors.textSecondary,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                if (!item.highlightSnippet.isNullOrBlank()) {
+                                                    Text(
+                                                        "\"${item.highlightSnippet}\"",
+                                                        style = AppTypography.caption2,
+                                                        fontStyle = FontStyle.Italic,
+                                                        color = Color(0xFFA5B4FC),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+
+                                            if (item.similarityScore != null) {
+                                                Spacer(Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFF6366F1).copy(alpha = 0.18f)
+                                                ) {
+                                                    Text(
+                                                        "✨ ${(item.similarityScore * 100).toInt()}%",
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                        style = AppTypography.caption2,
+                                                        color = Color(0xFF818CF8),
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            } else if (item.matchType == "exact") {
+                                                Spacer(Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = AppColors.statusSuccess.copy(alpha = 0.18f)
+                                                ) {
+                                                    Text(
+                                                        "Exact",
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                        style = AppTypography.caption2,
+                                                        color = AppColors.statusSuccess,
+                                                        fontWeight = FontWeight.SemiBold
                                                     )
                                                 }
                                             }

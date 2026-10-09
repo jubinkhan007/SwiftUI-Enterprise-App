@@ -8,6 +8,7 @@ import DesignSystem
 public final class OmnibarViewModel: ObservableObject {
     @Published public var query: String = ""
     @Published public var selectedFilter: SearchEntityType? = nil
+    @Published public var searchMode: SearchMode = .hybrid
     @Published public var isCopilotActive: Bool = false
     @Published public var results: [SearchResultItemDTO] = []
     @Published public var isSearching: Bool = false
@@ -51,7 +52,7 @@ public final class OmnibarViewModel: ObservableObject {
 
         let types = selectedFilter.map { [$0] }
         do {
-            let resp = try await searchRepository.search(query: query, types: types, limit: 30)
+            let resp = try await searchRepository.search(query: query, types: types, limit: 30, mode: searchMode)
             self.results = resp.results
         } catch {
             self.errorMessage = "Search failed: \(error.localizedDescription)"
@@ -62,6 +63,11 @@ public final class OmnibarViewModel: ObservableObject {
     public func selectFilter(_ filter: SearchEntityType?) {
         self.selectedFilter = filter
         self.isCopilotActive = false
+        Task { await performSearch(query: query) }
+    }
+
+    public func selectSearchMode(_ mode: SearchMode) {
+        self.searchMode = mode
         Task { await performSearch(query: query) }
     }
 
@@ -163,6 +169,9 @@ public struct OmnibarSearchView: View {
             VStack(spacing: 0) {
                 searchHeaderBar
                 filterChipsRow
+                if !viewModel.isCopilotActive {
+                    modeChipsRow
+                }
 
                 Divider()
 
@@ -270,6 +279,33 @@ public struct OmnibarSearchView: View {
         .background(AppColors.surfacePrimary)
     }
 
+    private var modeChipsRow: some View {
+        HStack(spacing: AppSpacing.xs) {
+            Text("Engine:")
+                .font(AppTypography.caption2)
+                .foregroundColor(AppColors.textTertiary)
+
+            ForEach(SearchMode.allCases, id: \.self) { mode in
+                Button {
+                    viewModel.selectSearchMode(mode)
+                } label: {
+                    Text(mode.displayName)
+                        .font(AppTypography.caption2)
+                        .fontWeight(viewModel.searchMode == mode ? .bold : .regular)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(viewModel.searchMode == mode ? Color.indigo.opacity(0.18) : AppColors.backgroundSecondary)
+                        .foregroundColor(viewModel.searchMode == mode ? Color.indigo : AppColors.textSecondary)
+                        .clipShape(Capsule())
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.bottom, 6)
+        .background(AppColors.surfacePrimary)
+    }
+
     private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -344,6 +380,14 @@ public struct OmnibarSearchView: View {
                                             .font(AppTypography.caption1)
                                             .foregroundColor(AppColors.textSecondary)
                                             .lineLimit(1)
+                                    }
+
+                                    if let snippet = item.highlightSnippet, !snippet.isEmpty, snippet != item.subtitle, snippet != item.title {
+                                        Text(snippet)
+                                            .font(AppTypography.caption2)
+                                            .italic()
+                                            .foregroundColor(AppColors.textTertiary)
+                                            .lineLimit(2)
                                     }
                                 }
 

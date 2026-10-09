@@ -19,6 +19,7 @@ import {
 import { api } from '../services/api';
 import {
   SearchEntityType,
+  SearchMode,
   SearchResultItemDTO,
   AIAssistantResponse,
   SuggestedTaskDTO
@@ -43,6 +44,7 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('all');
+  const [searchMode, setSearchMode] = useState<SearchMode>('hybrid');
   const [results, setResults] = useState<SearchResultItemDTO[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -87,7 +89,7 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
         inputRef.current?.focus();
       }, 50);
       setSelectedIndex(0);
-      fetchSearch('');
+      fetchSearch('', 'all', searchMode);
     } else {
       setQuery('');
       setResults([]);
@@ -97,35 +99,38 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
     }
   }, [isOpen]);
 
-  // Debounced search
-  const fetchSearch = useCallback(async (searchQuery: string, tab: TabType = activeTab) => {
-    if (tab === 'copilot') return;
-    setIsLoading(true);
-    setErrorMessage(null);
+  // Debounced search with searchMode support
+  const fetchSearch = useCallback(
+    async (searchQuery: string, tab: TabType = activeTab, mode: SearchMode = searchMode) => {
+      if (tab === 'copilot') return;
+      setIsLoading(true);
+      setErrorMessage(null);
 
-    const types: SearchEntityType[] | undefined =
-      tab === 'all' ? undefined : [tab as SearchEntityType];
+      const types: SearchEntityType[] | undefined =
+        tab === 'all' ? undefined : [tab as SearchEntityType];
 
-    try {
-      const resp = await api.search(searchQuery, types, 25);
-      setResults(resp.results || []);
-      setSelectedIndex(0);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to fetch search results.');
-      setResults([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeTab]);
+      try {
+        const resp = await api.search(searchQuery, types, 25, mode);
+        setResults(resp.results || []);
+        setSelectedIndex(0);
+      } catch (err: any) {
+        setErrorMessage(err?.message || 'Failed to fetch search results.');
+        setResults([]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [activeTab, searchMode]
+  );
 
   useEffect(() => {
     if (!isOpen || activeTab === 'copilot') return;
     const timer = setTimeout(() => {
-      fetchSearch(query, activeTab);
+      fetchSearch(query, activeTab, searchMode);
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [query, activeTab, isOpen, fetchSearch]);
+  }, [query, activeTab, searchMode, isOpen, fetchSearch]);
 
   // Keyboard navigation through results
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -344,6 +349,60 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
             <Sparkles className="w-3.5 h-3.5" />
             AI Copilot
           </button>
+
+          {/* Mode Switcher (Hybrid, Semantic, Keyword) */}
+          {activeTab !== 'copilot' && (
+            <div className="ml-auto flex items-center bg-slate-900/90 rounded-lg p-0.5 border border-slate-800 shrink-0 text-[11px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchMode('hybrid');
+                  fetchSearch(query, activeTab, 'hybrid');
+                }}
+                className={`px-2 py-0.5 rounded-md font-semibold transition flex items-center gap-1 ${
+                  searchMode === 'hybrid'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Hybrid: Lexical ILIKE + Semantic Cosine Vector Similarity"
+              >
+                <Sparkles className="w-3 h-3 text-indigo-300" />
+                Hybrid
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchMode('semantic');
+                  fetchSearch(query, activeTab, 'semantic');
+                }}
+                className={`px-2 py-0.5 rounded-md font-semibold transition flex items-center gap-1 ${
+                  searchMode === 'semantic'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Semantic: Vector Concept Embedding Clusters"
+              >
+                <Sparkles className="w-3 h-3 text-purple-300" />
+                Semantic
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchMode('keyword');
+                  fetchSearch(query, activeTab, 'keyword');
+                }}
+                className={`px-2 py-0.5 rounded-md font-semibold transition flex items-center gap-1 ${
+                  searchMode === 'keyword'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Keyword: Substring ILIKE exact search"
+              >
+                <Search className="w-3 h-3" />
+                Keyword
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Content Body */}
@@ -572,10 +631,24 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-slate-100 truncate">
                           {item.title}
                         </span>
+                        {item.similarityScore != null && (
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 shadow-sm"
+                            title={`Semantic vector match score: ${(item.similarityScore * 100).toFixed(0)}%`}
+                          >
+                            <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                            {Math.round(item.similarityScore * 100)}% Match
+                          </span>
+                        )}
+                        {item.matchType === 'exact' && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Exact
+                          </span>
+                        )}
                         {item.badge && (
                           <span
                             className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
@@ -594,6 +667,11 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-400 truncate mt-0.5">{item.subtitle}</p>
+                      {item.highlightSnippet && (
+                        <p className="text-[11px] text-slate-300 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800/80 mt-1 line-clamp-1 italic">
+                          "{item.highlightSnippet}"
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1.5 text-slate-500 shrink-0">

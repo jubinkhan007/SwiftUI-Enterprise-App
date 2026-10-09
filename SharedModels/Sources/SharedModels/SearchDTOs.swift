@@ -30,6 +30,22 @@ public enum SearchEntityType: String, Codable, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Search Mode
+
+public enum SearchMode: String, Codable, CaseIterable, Sendable {
+    case hybrid = "hybrid"
+    case semantic = "semantic"
+    case keyword = "keyword"
+
+    public var displayName: String {
+        switch self {
+        case .hybrid: return "Hybrid (AI)"
+        case .semantic: return "Semantic"
+        case .keyword: return "Keyword"
+        }
+    }
+}
+
 // MARK: - Omnibar Search Result Item
 
 public struct SearchResultItemDTO: Codable, Identifiable, Hashable, Sendable {
@@ -41,6 +57,9 @@ public struct SearchResultItemDTO: Codable, Identifiable, Hashable, Sendable {
     public let icon: String
     public let badge: String?
     public let metadata: [String: String]?
+    public let similarityScore: Double?
+    public let matchType: String?
+    public let highlightSnippet: String?
     public let updatedAt: Date?
 
     public init(
@@ -52,6 +71,9 @@ public struct SearchResultItemDTO: Codable, Identifiable, Hashable, Sendable {
         icon: String? = nil,
         badge: String? = nil,
         metadata: [String: String]? = nil,
+        similarityScore: Double? = nil,
+        matchType: String? = nil,
+        highlightSnippet: String? = nil,
         updatedAt: Date? = nil
     ) {
         self.id = id
@@ -62,6 +84,9 @@ public struct SearchResultItemDTO: Codable, Identifiable, Hashable, Sendable {
         self.icon = icon ?? entityType.systemIconName
         self.badge = badge
         self.metadata = metadata
+        self.similarityScore = similarityScore
+        self.matchType = matchType
+        self.highlightSnippet = highlightSnippet
         self.updatedAt = updatedAt
     }
 }
@@ -72,11 +97,21 @@ public struct OmnibarSearchRequest: Codable, Sendable {
     public let query: String
     public let types: [SearchEntityType]?
     public let limit: Int?
+    public let mode: SearchMode?
+    public let threshold: Double?
 
-    public init(query: String, types: [SearchEntityType]? = nil, limit: Int? = 20) {
+    public init(
+        query: String,
+        types: [SearchEntityType]? = nil,
+        limit: Int? = 20,
+        mode: SearchMode? = .hybrid,
+        threshold: Double? = nil
+    ) {
         self.query = query
         self.types = types
         self.limit = limit
+        self.mode = mode
+        self.threshold = threshold
     }
 }
 
@@ -84,11 +119,18 @@ public struct OmnibarSearchResponse: Codable, Sendable {
     public let results: [SearchResultItemDTO]
     public let totalCount: Int
     public let query: String
+    public let mode: SearchMode?
 
-    public init(results: [SearchResultItemDTO], totalCount: Int, query: String) {
+    public init(
+        results: [SearchResultItemDTO],
+        totalCount: Int,
+        query: String,
+        mode: SearchMode? = .hybrid
+    ) {
         self.results = results
         self.totalCount = totalCount
         self.query = query
+        self.mode = mode
     }
 }
 

@@ -623,6 +623,7 @@ export interface RenderedTemplateDTO {
 
 // Phase 17: Omnibar Search & AI Copilot
 export type SearchEntityType = 'task' | 'message' | 'meeting' | 'member' | 'doc';
+export type SearchMode = 'hybrid' | 'semantic' | 'keyword';
 
 export interface SearchResultItemDTO {
   id: string;
@@ -632,6 +633,9 @@ export interface SearchResultItemDTO {
   deepLink: string;
   icon?: string | null;
   badge?: string | null;
+  similarityScore?: number | null;
+  matchType?: string | null;
+  highlightSnippet?: string | null;
   metadata?: Record<string, string> | null;
   updatedAt?: string | null;
 }
@@ -640,12 +644,15 @@ export interface OmnibarSearchRequest {
   query: string;
   types?: SearchEntityType[];
   limit?: number;
+  mode?: SearchMode;
+  threshold?: number;
 }
 
 export interface OmnibarSearchResponse {
   results: SearchResultItemDTO[];
   totalCount: number;
   query: string;
+  mode?: SearchMode;
 }
 
 export type AIAssistantAction =

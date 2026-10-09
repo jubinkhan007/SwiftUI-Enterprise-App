@@ -2,7 +2,7 @@ import Foundation
 import SharedModels
 
 public enum SearchEndpoint {
-    case search(query: String, types: [SearchEntityType]?, limit: Int?, configuration: APIConfiguration)
+    case search(query: String, types: [SearchEntityType]?, limit: Int?, mode: SearchMode? = .hybrid, threshold: Double? = nil, configuration: APIConfiguration)
     case postSearch(payload: OmnibarSearchRequest, configuration: APIConfiguration)
 }
 
@@ -11,7 +11,7 @@ extension SearchEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .search(_, _, _, let c), .postSearch(_, let c):
+        case .search(_, _, _, _, _, let c), .postSearch(_, let c):
             return c
         }
     }
@@ -31,13 +31,19 @@ extension SearchEndpoint: APIEndpoint {
 
     public var queryParameters: [String: String]? {
         switch self {
-        case .search(let query, let types, let limit, _):
+        case .search(let query, let types, let limit, let mode, let threshold, _):
             var q: [String: String] = ["q": query]
             if let types, !types.isEmpty {
                 q["types"] = types.map { $0.rawValue }.joined(separator: ",")
             }
             if let limit {
                 q["limit"] = "\(limit)"
+            }
+            if let mode {
+                q["mode"] = mode.rawValue
+            }
+            if let threshold {
+                q["threshold"] = "\(threshold)"
             }
             return q
         case .postSearch:

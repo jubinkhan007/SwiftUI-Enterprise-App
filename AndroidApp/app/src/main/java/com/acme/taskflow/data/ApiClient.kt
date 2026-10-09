@@ -130,11 +130,16 @@ class ApiClient(
     suspend fun search(
         query: String,
         types: List<String> = emptyList(),
-        limit: Int = 20
+        limit: Int = 20,
+        mode: String = "hybrid",
+        threshold: Double? = null
     ): JsonObject {
-        val qParams = mutableMapOf("q" to query, "limit" to limit.toString())
+        val qParams = mutableMapOf("q" to query, "limit" to limit.toString(), "mode" to mode)
         if (types.isNotEmpty()) {
             qParams["types"] = types.joinToString(",")
+        }
+        if (threshold != null) {
+            qParams["threshold"] = threshold.toString()
         }
         val result = request("/api/org/search", query = qParams)
         return result.data.obj()

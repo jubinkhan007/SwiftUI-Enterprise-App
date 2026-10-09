@@ -114,6 +114,9 @@ func configure(_ app: Application) throws {
     // Phase 19: Push Notifications & Device Tokens
     app.migrations.add(CreateDeviceTokens())
 
+    // Phase 20: Semantic Vector Search & Embeddings
+    app.migrations.add(CreateVectorEmbedding())
+
     // Run migrations automatically in development
     try app.autoMigrate().wait()
 
