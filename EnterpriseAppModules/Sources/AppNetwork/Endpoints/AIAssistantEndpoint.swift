@@ -5,6 +5,7 @@ public enum AIAssistantEndpoint {
     case copilot(payload: AIAssistantRequest, configuration: APIConfiguration)
     case breakdown(payload: AIAssistantRequest, configuration: APIConfiguration)
     case standup(configuration: APIConfiguration)
+    case ask(payload: AIAssistantRequest, configuration: APIConfiguration)
 }
 
 extension AIAssistantEndpoint: APIEndpoint {
@@ -12,7 +13,7 @@ extension AIAssistantEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .copilot(_, let c), .breakdown(_, let c), .standup(let c):
+        case .copilot(_, let c), .breakdown(_, let c), .standup(let c), .ask(_, let c):
             return c
         }
     }
@@ -25,12 +26,14 @@ extension AIAssistantEndpoint: APIEndpoint {
             return "/api/ai/breakdown"
         case .standup:
             return "/api/ai/standup"
+        case .ask:
+            return "/api/ai/ask"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .copilot, .breakdown:
+        case .copilot, .breakdown, .ask:
             return .post
         case .standup:
             return .get
@@ -44,7 +47,7 @@ extension AIAssistantEndpoint: APIEndpoint {
         h["Accept"] = "application/json"
 
         switch self {
-        case .copilot, .breakdown:
+        case .copilot, .breakdown, .ask:
             h["Content-Type"] = "application/json; charset=utf-8"
         default:
             break
@@ -55,7 +58,7 @@ extension AIAssistantEndpoint: APIEndpoint {
 
     public var body: Data? {
         switch self {
-        case .copilot(let payload, _), .breakdown(let payload, _):
+        case .copilot(let payload, _), .breakdown(let payload, _), .ask(let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .standup:
             return nil

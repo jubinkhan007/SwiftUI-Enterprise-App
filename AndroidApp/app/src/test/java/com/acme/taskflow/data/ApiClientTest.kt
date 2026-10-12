@@ -122,4 +122,39 @@ class ApiClientTest {
         assertEquals("generate_standup_summary", body2.text("action"))
         assertTrue(standup.text("summary").contains("Yesterday"))
     }
+
+    @Test fun `copilot ask knowledge base sends RAG action payload and parses citations`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{
+            "success": true,
+            "data": {
+                "action": "ask_knowledge_base",
+                "summary": "Based on [1], login crash was resolved.",
+                "citations": [
+                    {
+                        "id": "c1",
+                        "entity_type": "task",
+                        "title": "Fix OAuth login crash",
+                        "snippet": "Token refresh issue resolved.",
+                        "deep_link": "taskflow://tasks/t1",
+                        "similarity_score": 0.89,
+                        "citation_number": 1
+                    }
+                ],
+                "suggested_follow_ups": ["View task details"]
+            }
+        }"""))
+        val rag = client().askKnowledgeBase("What happened to the login crash?")
+        val req = server.takeRequest()
+        assertEquals("/api/org/ai/copilot", req.path)
+        assertEquals("POST", req.method)
+        val body = JsonParser.parseString(req.body.readUtf8()).obj()
+        assertEquals("ask_knowledge_base", body.text("action"))
+        assertEquals("What happened to the login crash?", body.text("prompt"))
+        assertEquals("Based on [1], login crash was resolved.", rag.text("summary"))
+        val citations = rag.list("citations")
+        assertEquals(1, citations.size)
+        assertEquals("Fix OAuth login crash", citations.first().text("title"))
+        assertEquals(1, citations.first().get("citation_number").asInt)
+        assertEquals(0.89, citations.first().get("similarity_score").asDouble, 0.001)
+    }
 }

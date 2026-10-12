@@ -47,4 +47,19 @@ public final class LiveAIAssistantService: AIAssistantRepositoryProtocol {
         }
         return data
     }
+
+    public func askKnowledgeBase(prompt: String, entityTypes: [SearchEntityType]?, maxSources: Int?) async throws -> AIAssistantResponse {
+        let request = AIAssistantRequest(
+            action: .askKnowledgeBase,
+            prompt: prompt,
+            entityTypes: entityTypes,
+            maxSources: maxSources
+        )
+        let ep = AIAssistantEndpoint.ask(payload: request, configuration: apiConfiguration)
+        let response = try await apiClient.request(ep, responseType: APIResponse<AIAssistantResponse>.self)
+        guard let data = response.data else {
+            throw NetworkError.decodingFailed("Missing response data for knowledge base Q&A.")
+        }
+        return data
+    }
 }

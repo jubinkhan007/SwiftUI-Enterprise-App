@@ -1,4 +1,5 @@
 import XCTest
+import SharedModels
 @testable import App
 
 final class VectorSearchTests: XCTestCase {
@@ -64,5 +65,69 @@ final class VectorSearchTests: XCTestCase {
         XCTAssertTrue(tokens.contains("broken"))
         XCTAssertFalse(tokens.contains("the"))
         XCTAssertFalse(tokens.contains("that"))
+    }
+
+    func testRAGCitationDTOModelAndSerialization() throws {
+        let citation = RAGCitationDTO(
+            id: UUID().uuidString,
+            entityType: .task,
+            title: "Fix OAuth 2.0 PKCE login crash",
+            snippet: "Users on iOS 18 encounter unhandled token refresh failure.",
+            deepLink: "taskflow://tasks/123e4567-e89b-12d3-a456-426614174000",
+            similarityScore: 0.88,
+            citationNumber: 1
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(citation)
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let decoded = try decoder.decode(RAGCitationDTO.self, from: data)
+
+        XCTAssertEqual(decoded.title, citation.title)
+        XCTAssertEqual(decoded.entityType, SearchEntityType.task)
+        XCTAssertEqual(decoded.citationNumber, 1)
+        XCTAssertEqual(decoded.similarityScore, 0.88)
+        XCTAssertEqual(decoded.deepLink, citation.deepLink)
+    }
+
+    func testRAGKnowledgeBaseRequestAndResponse() throws {
+        let request = AIAssistantRequest(
+            action: .askKnowledgeBase,
+            prompt: "What is that bug with the login screen?",
+            entityTypes: [.task, .message],
+            maxSources: 3
+        )
+
+        XCTAssertEqual(request.action, AIAssistantAction.askKnowledgeBase)
+        XCTAssertEqual(request.prompt, "What is that bug with the login screen?")
+        XCTAssertEqual(request.entityTypes?.count, 2)
+        XCTAssertEqual(request.maxSources, 3)
+
+        let citation = RAGCitationDTO(
+            id: "task-001",
+            entityType: .task,
+            title: "Fix OAuth sign in crash",
+            snippet: "Resolves crash when exchanging authorization code.",
+            deepLink: "taskflow://tasks/task-001",
+            similarityScore: 0.91,
+            citationNumber: 1
+        )
+
+        let response = AIAssistantResponse(
+            action: .askKnowledgeBase,
+            summary: "Based on task [1], the login screen issue is caused by an unhandled OAuth exchange error.",
+            actionItems: ["Review [1] Fix OAuth sign in crash"],
+            citations: [citation],
+            suggestedFollowUps: ["Open Fix OAuth sign in crash in detail", "Check sprint blockers"]
+        )
+
+        XCTAssertEqual(response.action, AIAssistantAction.askKnowledgeBase)
+        XCTAssertEqual(response.citations?.count, 1)
+        XCTAssertEqual(response.citations?.first?.citationNumber, 1)
+        XCTAssertEqual(response.suggestedFollowUps?.count, 2)
+        XCTAssertTrue(response.summary.contains("[1]"))
     }
 }

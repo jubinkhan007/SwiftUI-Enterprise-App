@@ -1904,7 +1904,54 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(request),
     });
-    return raw?.data || raw;
+    const data = raw?.data || raw;
+    if (data && data.citations) {
+      data.citations = data.citations.map((c: any) => ({
+        id: c.id,
+        entityType: (c.entity_type || c.entityType) as SearchEntityType,
+        title: c.title || '',
+        snippet: c.snippet || '',
+        deepLink: c.deep_link || c.deepLink || '',
+        similarityScore: c.similarity_score ?? c.similarityScore ?? null,
+        citationNumber: c.citation_number ?? c.citationNumber ?? 1,
+      }));
+    }
+    if (data && data.suggested_follow_ups && !data.suggestedFollowUps) {
+      data.suggestedFollowUps = data.suggested_follow_ups;
+    }
+    return data;
+  }
+
+  async askKnowledgeBase(
+    prompt: string,
+    entityTypes?: SearchEntityType[],
+    maxSources?: number
+  ): Promise<AIAssistantResponse> {
+    const raw = await this.request<any>('/api/ai/ask', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'ask_knowledge_base',
+        prompt,
+        entityTypes,
+        maxSources,
+      }),
+    });
+    const data = raw?.data || raw;
+    if (data && data.citations) {
+      data.citations = data.citations.map((c: any) => ({
+        id: c.id,
+        entityType: (c.entity_type || c.entityType) as SearchEntityType,
+        title: c.title || '',
+        snippet: c.snippet || '',
+        deepLink: c.deep_link || c.deepLink || '',
+        similarityScore: c.similarity_score ?? c.similarityScore ?? null,
+        citationNumber: c.citation_number ?? c.citationNumber ?? 1,
+      }));
+    }
+    if (data && data.suggested_follow_ups && !data.suggestedFollowUps) {
+      data.suggestedFollowUps = data.suggested_follow_ups;
+    }
+    return data;
   }
 
   async breakdownTask(prompt: string, contextId?: string): Promise<AIAssistantResponse> {

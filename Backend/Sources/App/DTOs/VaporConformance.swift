@@ -187,5 +187,6 @@ extension OmnibarSearchRequest: Content {}
 extension OmnibarSearchResponse: Content {}
 extension AIAssistantAction: Content {}
 extension SuggestedTaskDTO: Content {}
+extension RAGCitationDTO: Content {}
 extension AIAssistantRequest: Content {}
 extension AIAssistantResponse: Content {}

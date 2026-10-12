@@ -96,6 +96,28 @@ public final class OmnibarViewModel: ObservableObject {
         self.isCopilotLoading = false
     }
 
+    public func runKnowledgeBaseQAndA(prompt: String? = nil) async {
+        let target = prompt ?? copilotPrompt
+        let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if prompt != nil { copilotPrompt = trimmed }
+        isCopilotLoading = true
+        tasksCreatedSuccess = false
+        errorMessage = nil
+
+        do {
+            let resp = try await aiRepository.askKnowledgeBase(
+                prompt: trimmed,
+                entityTypes: nil,
+                maxSources: 5
+            )
+            self.copilotResponse = resp
+        } catch {
+            self.errorMessage = "Knowledge base search failed: \(error.localizedDescription)"
+        }
+        self.isCopilotLoading = false
+    }
+
     public func runDailyStandup() async {
         isCopilotLoading = true
         tasksCreatedSuccess = false
@@ -143,9 +165,10 @@ public struct OmnibarSearchView: View {
     @StateObject private var viewModel: OmnibarViewModel
     @Binding private var isPresented: Bool
     @FocusState private var isInputFocused: Bool
-    @State private var copilotMode: CopilotMode = .breakdown
+    @State private var copilotMode: CopilotMode = .rag
 
     private enum CopilotMode: String, CaseIterable {
+        case rag = "Ask Knowledge Base"
         case breakdown = "Task Breakdown"
         case standup = "Daily Standup"
     }
@@ -463,7 +486,9 @@ public struct OmnibarSearchView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if copilotMode == .breakdown {
+                if copilotMode == .rag {
+                    knowledgeBaseSection
+                } else if copilotMode == .breakdown {
                     taskBreakdownSection
                 } else {
                     dailyStandupSection
@@ -481,6 +506,64 @@ public struct OmnibarSearchView: View {
             }
             .padding(AppSpacing.md)
         }
+    }
+
+    private var knowledgeBaseSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("Ask Workspace Knowledge Base (RAG)")
+                .font(AppTypography.headline)
+                .foregroundColor(AppColors.textPrimary)
+
+            Text("Query project tasks, chat messages, and meetings. Answers are synthesized using vector embeddings with source citations.")
+                .font(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+
+            TextField("e.g. What was discussed about the login screen bug?", text: $viewModel.copilotPrompt)
+                .textFieldStyle(.roundedBorder)
+                .font(AppTypography.body)
+
+            Button {
+                Task { await viewModel.runKnowledgeBaseQAndA() }
+            } label: {
+                HStack {
+                    if viewModel.isCopilotLoading {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "sparkles")
+                    }
+                    Text("Ask Knowledge Base")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(AppColors.brandPrimary)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .disabled(viewModel.isCopilotLoading || viewModel.copilotPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AppSpacing.xs) {
+                    ForEach(["Bug with login screen", "OAuth PKCE crash", "Sprint blockers"], id: \.self) { chip in
+                        Button {
+                            Task { await viewModel.runKnowledgeBaseQAndA(prompt: chip) }
+                        } label: {
+                            Text(chip)
+                                .font(AppTypography.caption2)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(AppColors.backgroundSecondary)
+                                .foregroundColor(AppColors.textSecondary)
+                                .cornerRadius(12)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(AppSpacing.md)
+        .background(AppColors.surfacePrimary)
+        .cornerRadius(10)
     }
 
     private var taskBreakdownSection: some View {
@@ -590,6 +673,86 @@ public struct OmnibarSearchView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(AppColors.backgroundSecondary)
                     .cornerRadius(8)
+            }
+
+            if let citations = response.citations, !citations.isEmpty {
+                Text("Sources & Grounded Citations (\(citations.count))")
+                    .font(AppTypography.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(AppColors.textPrimary)
+
+                ForEach(citations, id: \.id) { citation in
+                    HStack(alignment: .top, spacing: AppSpacing.sm) {
+                        Text("[\(citation.citationNumber)]")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.indigo.opacity(0.15))
+                            .foregroundColor(.indigo)
+                            .cornerRadius(4)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(citation.title)
+                                    .font(AppTypography.body)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(AppColors.textPrimary)
+
+                                Spacer()
+
+                                if let score = citation.similarityScore {
+                                    Text("\(Int(score * 100))% match")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(Color.green.opacity(0.12))
+                                        .foregroundColor(.green)
+                                        .cornerRadius(4)
+                                }
+                            }
+
+                            Text(citation.snippet)
+                                .font(AppTypography.caption1)
+                                .foregroundColor(AppColors.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(AppSpacing.sm)
+                    .background(AppColors.backgroundSecondary)
+                    .cornerRadius(8)
+                }
+            }
+
+            if let followUps = response.suggestedFollowUps, !followUps.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Suggested Follow-Ups")
+                        .font(AppTypography.caption1)
+                        .fontWeight(.semibold)
+                        .foregroundColor(AppColors.textSecondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: AppSpacing.xs) {
+                            ForEach(followUps, id: \.self) { fu in
+                                Button {
+                                    Task { await viewModel.runKnowledgeBaseQAndA(prompt: fu) }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "sparkles")
+                                            .font(.system(size: 10))
+                                        Text(fu)
+                                            .font(AppTypography.caption2)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.indigo.opacity(0.12))
+                                    .foregroundColor(.indigo)
+                                    .cornerRadius(12)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 4)
             }
 
             if let tasks = response.suggestedTasks, !tasks.isEmpty {

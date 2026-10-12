@@ -141,6 +141,35 @@ public enum AIAssistantAction: String, Codable, CaseIterable, Sendable {
     case generateStandupSummary = "generate_standup_summary"
     case suggestNextActions = "suggest_next_actions"
     case summarizeThread = "summarize_thread"
+    case askKnowledgeBase = "ask_knowledge_base"
+}
+
+public struct RAGCitationDTO: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let entityType: SearchEntityType
+    public let title: String
+    public let snippet: String
+    public let deepLink: String
+    public let similarityScore: Double?
+    public let citationNumber: Int
+
+    public init(
+        id: String,
+        entityType: SearchEntityType,
+        title: String,
+        snippet: String,
+        deepLink: String,
+        similarityScore: Double? = nil,
+        citationNumber: Int = 1
+    ) {
+        self.id = id
+        self.entityType = entityType
+        self.title = title
+        self.snippet = snippet
+        self.deepLink = deepLink
+        self.similarityScore = similarityScore
+        self.citationNumber = citationNumber
+    }
 }
 
 public struct SuggestedTaskDTO: Codable, Identifiable, Hashable, Sendable {
@@ -168,17 +197,23 @@ public struct AIAssistantRequest: Codable, Sendable {
     public let contextId: String?
     public let prompt: String?
     public let entityPayload: [String: String]?
+    public let entityTypes: [SearchEntityType]?
+    public let maxSources: Int?
 
     public init(
         action: AIAssistantAction,
         contextId: String? = nil,
         prompt: String? = nil,
-        entityPayload: [String: String]? = nil
+        entityPayload: [String: String]? = nil,
+        entityTypes: [SearchEntityType]? = nil,
+        maxSources: Int? = nil
     ) {
         self.action = action
         self.contextId = contextId
         self.prompt = prompt
         self.entityPayload = entityPayload
+        self.entityTypes = entityTypes
+        self.maxSources = maxSources
     }
 }
 
@@ -187,16 +222,22 @@ public struct AIAssistantResponse: Codable, Sendable {
     public let summary: String
     public let suggestedTasks: [SuggestedTaskDTO]?
     public let actionItems: [String]?
+    public let citations: [RAGCitationDTO]?
+    public let suggestedFollowUps: [String]?
 
     public init(
         action: AIAssistantAction,
         summary: String,
         suggestedTasks: [SuggestedTaskDTO]? = nil,
-        actionItems: [String]? = nil
+        actionItems: [String]? = nil,
+        citations: [RAGCitationDTO]? = nil,
+        suggestedFollowUps: [String]? = nil
     ) {
         self.action = action
         self.summary = summary
         self.suggestedTasks = suggestedTasks
         self.actionItems = actionItems
+        self.citations = citations
+        self.suggestedFollowUps = suggestedFollowUps
     }
 }

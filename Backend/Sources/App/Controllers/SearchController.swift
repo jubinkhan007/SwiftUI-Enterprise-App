@@ -51,7 +51,7 @@ struct SearchController: RouteCollection {
     @Sendable
     func postReindex(req: Request) async throws -> APIResponse<[String: Int]> {
         let orgId = try req.orgContext.orgId
-        let count = try await indexOrganizationEntities(req: req, orgId: orgId, force: true)
+        let count = try await Self.indexOrganizationEntities(req: req, orgId: orgId, force: true)
         return APIResponse(data: ["indexedCount": count])
     }
 
@@ -104,7 +104,7 @@ struct SearchController: RouteCollection {
 
         // 2. Semantic & Hybrid Search
         // Ensure entity vector embeddings are indexed
-        _ = try? await indexOrganizationEntities(req: req, orgId: orgId, force: false)
+        _ = try? await Self.indexOrganizationEntities(req: req, orgId: orgId, force: false)
 
         let queryVector = EmbeddingService.shared.embed(trimmedQuery)
 
@@ -513,7 +513,7 @@ struct SearchController: RouteCollection {
 
     // MARK: - Auto-Indexing & Vector Management
 
-    private func indexOrganizationEntities(req: Request, orgId: UUID, force: Bool) async throws -> Int {
+    static func indexOrganizationEntities(req: Request, orgId: UUID, force: Bool = false) async throws -> Int {
         var count = 0
 
         // Fetch existing indexed hashes

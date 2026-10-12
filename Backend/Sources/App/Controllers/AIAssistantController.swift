@@ -8,6 +8,7 @@ struct AIAssistantController: RouteCollection {
         ai.post("copilot", use: handleCopilot)
         ai.post("breakdown", use: handleBreakdown)
         ai.get("standup", use: handleStandup)
+        ai.post("ask", use: handleAskKnowledgeBase)
     }
 
     // MARK: - Handlers
@@ -24,6 +25,8 @@ struct AIAssistantController: RouteCollection {
             return try await executeNextActions(req: req, request: requestBody)
         case .summarizeThread:
             return try await executeThreadSummary(req: req, request: requestBody)
+        case .askKnowledgeBase:
+            return try await executeAskKnowledgeBase(req: req, request: requestBody)
         }
     }
 
@@ -37,6 +40,12 @@ struct AIAssistantController: RouteCollection {
     func handleStandup(req: Request) async throws -> APIResponse<AIAssistantResponse> {
         let requestBody = AIAssistantRequest(action: .generateStandupSummary)
         return try await executeStandupSummary(req: req, request: requestBody)
+    }
+
+    @Sendable
+    func handleAskKnowledgeBase(req: Request) async throws -> APIResponse<AIAssistantResponse> {
+        let requestBody = try req.content.decode(AIAssistantRequest.self)
+        return try await executeAskKnowledgeBase(req: req, request: requestBody)
     }
 
     // MARK: - AI Action Implementations
@@ -235,6 +244,193 @@ struct AIAssistantController: RouteCollection {
                 summary: summary,
                 suggestedTasks: nil,
                 actionItems: ["Proceed with planned release checklist", "Review automated test reports"]
+            )
+        )
+    }
+
+    private func executeAskKnowledgeBase(
+        req: Request,
+        request: AIAssistantRequest
+    ) async throws -> APIResponse<AIAssistantResponse> {
+        let orgId = try req.orgContext.orgId
+        let query = request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard !query.isEmpty else {
+            return APIResponse(
+                data: AIAssistantResponse(
+                    action: .askKnowledgeBase,
+                    summary: "Please provide a question or topic so I can search your workspace knowledge base (tasks, messages, and meetings).",
+                    suggestedTasks: nil,
+                    actionItems: ["Ask about recent tasks", "Ask about meeting discussions", "Ask about blocker issues"],
+                    citations: [],
+                    suggestedFollowUps: [
+                        "What tasks are currently in progress?",
+                        "Summarize recent architecture discussions",
+                        "Are there any open blockers on the sprint board?"
+                    ]
+                )
+            )
+        }
+
+        // Auto-index unindexed items
+        _ = try? await SearchController.indexOrganizationEntities(req: req, orgId: orgId, force: false)
+
+        let queryVector = EmbeddingService.shared.embed(query)
+        let searchTypes = request.entityTypes ?? [.task, .message, .meeting]
+        let maxSources = min(max(request.maxSources ?? 4, 1), 8)
+
+        // Query stored vector embeddings for this organization
+        let allEmbeddings = try await VectorEmbeddingModel.query(on: req.db)
+            .filter(\.$organization.$id == orgId)
+            .all()
+
+        struct ScoredCandidate {
+            let embedding: VectorEmbeddingModel
+            let entityType: SearchEntityType
+            let similarity: Double
+        }
+
+        var scoredCandidates: [ScoredCandidate] = []
+        for emb in allEmbeddings {
+            guard let entityType = SearchEntityType(rawValue: emb.entityType),
+                  searchTypes.contains(entityType),
+                  let vec = EmbeddingService.shared.deserializeVector(emb.embeddingJson) else {
+                continue
+            }
+            let sim = EmbeddingService.shared.cosineSimilarity(queryVector, vec)
+            // Relevant semantic score threshold
+            if sim >= 0.20 {
+                scoredCandidates.append(ScoredCandidate(embedding: emb, entityType: entityType, similarity: sim))
+            }
+        }
+
+        scoredCandidates.sort { $0.similarity > $1.similarity }
+        let topCandidates = Array(scoredCandidates.prefix(maxSources))
+
+        if topCandidates.isEmpty {
+            return APIResponse(
+                data: AIAssistantResponse(
+                    action: .askKnowledgeBase,
+                    summary: "I couldn't find any documents, tasks, or discussions matching \"\(query)\" in your workspace knowledge base. Try refining your question with different keywords or check if the relevant items are indexed.",
+                    suggestedTasks: nil,
+                    actionItems: ["Search tasks using keyword search", "Check sprint backlog", "Verify workspace indexing"],
+                    citations: [],
+                    suggestedFollowUps: [
+                        "Search all active tasks",
+                        "Show recent team chat messages",
+                        "Review upcoming meetings"
+                    ]
+                )
+            )
+        }
+
+        var citations: [RAGCitationDTO] = []
+        var sourcePoints: [String] = []
+
+        for (idx, candidate) in topCandidates.enumerated() {
+            let num = idx + 1
+            let emb = candidate.embedding
+            let entityId = emb.entityId
+
+            var title = ""
+            var snippet = emb.contentPreview
+            var deepLink = ""
+
+            switch candidate.entityType {
+            case .task:
+                if let task = try await TaskItemModel.find(entityId, on: req.db) {
+                    title = task.title
+                    let desc = task.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if !desc.isEmpty {
+                        snippet = desc.prefix(200).description
+                    }
+                    deepLink = "taskflow://tasks/\(task.id?.uuidString ?? entityId.uuidString)"
+                } else {
+                    title = "Task #\(entityId.uuidString.prefix(6))"
+                    deepLink = "taskflow://tasks/\(entityId.uuidString)"
+                }
+            case .message:
+                if let msg = try await MessageModel.find(entityId, on: req.db) {
+                    title = "Chat Discussion"
+                    snippet = msg.body.prefix(200).description
+                    deepLink = "taskflow://channels/\(msg.$conversation.id.uuidString)"
+                } else {
+                    title = "Message"
+                    deepLink = "taskflow://channels/\(entityId.uuidString)"
+                }
+            case .meeting:
+                if let meeting = try await MeetingModel.find(entityId, on: req.db) {
+                    title = meeting.title
+                    let notes = meeting.description ?? meeting.agenda ?? emb.contentPreview
+                    snippet = notes.prefix(200).description
+                    deepLink = "taskflow://meetings/\(meeting.id?.uuidString ?? entityId.uuidString)"
+                } else {
+                    title = "Meeting"
+                    deepLink = "taskflow://meetings/\(entityId.uuidString)"
+                }
+            case .member:
+                if let member = try await OrganizationMemberModel.find(entityId, on: req.db) {
+                    try? await member.$user.load(on: req.db)
+                    title = member.user.displayName
+                    snippet = "\(member.user.email) • Role: \(member.role.rawValue)"
+                    deepLink = "taskflow://channels/\(member.user.id?.uuidString ?? entityId.uuidString)"
+                } else {
+                    title = "Team Member"
+                    deepLink = "taskflow://team/\(entityId.uuidString)"
+                }
+            case .doc:
+                title = "Documentation Document"
+                deepLink = "taskflow://docs/\(entityId.uuidString)"
+            }
+
+            if title.isEmpty {
+                title = "\(candidate.entityType.rawValue.capitalized) Item"
+            }
+
+            let citation = RAGCitationDTO(
+                id: entityId.uuidString,
+                entityType: candidate.entityType,
+                title: title,
+                snippet: snippet,
+                deepLink: deepLink,
+                similarityScore: Double(round(100 * candidate.similarity) / 100),
+                citationNumber: num
+            )
+            citations.append(citation)
+            sourcePoints.append("[\(num)] **\(title)**: \(snippet)")
+        }
+
+        let joinedSources = sourcePoints.joined(separator: "\n\n")
+        let citationsList = citations.map { "[\($0.citationNumber)]" }.joined(separator: ", ")
+
+        let summary = """
+        Based on your workspace knowledge base, here is what I found regarding **"\(query)"**:
+
+        \(joinedSources)
+
+        **Summary & Key Takeaway:**
+        The retrieved sources \(citationsList) provide direct context addressing your question. You can click any cited reference to open the corresponding item in TaskFlow.
+        """
+
+        var followUps: [String] = []
+        if let first = citations.first {
+            followUps.append("Open \(first.title) in detail")
+        }
+        if citations.contains(where: { $0.entityType == .task }) {
+            followUps.append("What are the next action items for these tasks?")
+        }
+        followUps.append("Summarize blockers related to this topic")
+
+        let actionItems = citations.prefix(3).map { "Review [\($0.citationNumber)] \($0.title)" }
+
+        return APIResponse(
+            data: AIAssistantResponse(
+                action: .askKnowledgeBase,
+                summary: summary,
+                suggestedTasks: nil,
+                actionItems: actionItems,
+                citations: citations,
+                suggestedFollowUps: followUps
             )
         )
     }

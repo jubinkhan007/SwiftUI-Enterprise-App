@@ -110,4 +110,53 @@ final class SearchAndAITests: XCTestCase {
         XCTAssertEqual(decoded.results.first?.highlightSnippet, "Users encounter freeze on auth modal")
         XCTAssertEqual(decoded.results.first?.badge, "✨ 85% Match")
     }
+
+    func testAIAssistantEndpointAskKnowledgeBase() throws {
+        let config = APIConfiguration(baseURL: URL(string: "http://localhost:8080")!)
+        let req = AIAssistantRequest(
+            action: .askKnowledgeBase,
+            prompt: "What was decided about SAML SSO?",
+            entityTypes: [.task, .message],
+            maxSources: 4
+        )
+        let ep = AIAssistantEndpoint.ask(payload: req, configuration: config)
+
+        XCTAssertEqual(ep.path, "/api/ai/ask")
+        XCTAssertEqual(ep.method, .post)
+        XCTAssertNotNil(ep.body)
+
+        let decoded = try JSONCoding.decoder.decode(AIAssistantRequest.self, from: ep.body!)
+        XCTAssertEqual(decoded.action, .askKnowledgeBase)
+        XCTAssertEqual(decoded.prompt, "What was decided about SAML SSO?")
+        XCTAssertEqual(decoded.maxSources, 4)
+    }
+
+    func testRAGResponseAndCitationsSerialization() throws {
+        let citation = RAGCitationDTO(
+            id: UUID().uuidString,
+            entityType: .message,
+            title: "Architecture Discussion",
+            snippet: "Agreed to adopt SAML 2.0 with Okta and Azure AD.",
+            deepLink: "taskflow://channels/thread-10",
+            similarityScore: 0.92,
+            citationNumber: 1
+        )
+        let response = AIAssistantResponse(
+            action: .askKnowledgeBase,
+            summary: "Based on discussion [1], SAML 2.0 was approved for Okta and Azure AD.",
+            actionItems: ["Review [1] Architecture Discussion"],
+            citations: [citation],
+            suggestedFollowUps: ["Show Azure AD setup tasks", "Who participated in the discussion?"]
+        )
+
+        let data = try JSONCoding.encoder.encode(response)
+        let decoded = try JSONCoding.decoder.decode(AIAssistantResponse.self, from: data)
+
+        XCTAssertEqual(decoded.action, .askKnowledgeBase)
+        XCTAssertEqual(decoded.citations?.count, 1)
+        XCTAssertEqual(decoded.citations?.first?.citationNumber, 1)
+        XCTAssertEqual(decoded.citations?.first?.title, "Architecture Discussion")
+        XCTAssertEqual(decoded.citations?.first?.similarityScore, 0.92)
+        XCTAssertEqual(decoded.suggestedFollowUps?.count, 2)
+    }
 }

@@ -173,6 +173,10 @@ class ApiClient(
         return runAICopilot(action = "generate_standup_summary")
     }
 
+    suspend fun askKnowledgeBase(prompt: String): JsonObject {
+        return runAICopilot(action = "ask_knowledge_base", prompt = prompt)
+    }
+
     companion object {
         val transport = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)

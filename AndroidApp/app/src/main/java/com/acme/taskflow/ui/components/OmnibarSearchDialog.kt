@@ -65,6 +65,16 @@ data class OmnibarSuggestedTask(
     val estimateHours: Double = 2.0
 )
 
+data class OmnibarRAGCitation(
+    val id: String,
+    val entityType: String,
+    val title: String,
+    val snippet: String,
+    val deepLink: String,
+    val similarityScore: Double? = null,
+    val citationNumber: Int = 1
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OmnibarSearchDialog(
@@ -84,11 +94,13 @@ fun OmnibarSearchDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // Copilot State
-    var copilotMode by remember { mutableStateOf("breakdown") } // "breakdown" or "standup"
+    var copilotMode by remember { mutableStateOf("rag") } // "rag", "breakdown", or "standup"
     var copilotPrompt by remember { mutableStateOf("") }
     var isCopilotLoading by remember { mutableStateOf(false) }
     var copilotSummary by remember { mutableStateOf<String?>(null) }
     var copilotTasks by remember { mutableStateOf<List<OmnibarSuggestedTask>>(emptyList()) }
+    var copilotCitations by remember { mutableStateOf<List<OmnibarRAGCitation>>(emptyList()) }
+    var copilotFollowUps by remember { mutableStateOf<List<String>>(emptyList()) }
     var isAddingTasks by remember { mutableStateOf(false) }
     var tasksAddedSuccess by remember { mutableStateOf(false) }
 
@@ -328,7 +340,7 @@ fun OmnibarSearchDialog(
                                 .heightIn(max = 480.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
-                            // Submode Selector (Task Breakdown vs Daily Standup)
+                            // Submode Selector (Ask AI vs Task Breakdown vs Daily Standup)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -339,9 +351,33 @@ fun OmnibarSearchDialog(
                             ) {
                                 Button(
                                     onClick = {
+                                        copilotMode = "rag"
+                                        copilotSummary = null
+                                        copilotTasks = emptyList()
+                                        copilotCitations = emptyList()
+                                        copilotFollowUps = emptyList()
+                                        tasksAddedSuccess = false
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (copilotMode == "rag") AppColors.brandPrimary else Color.Transparent,
+                                        contentColor = if (copilotMode == "rag") Color.White else AppColors.textSecondary
+                                    ),
+                                    shape = RoundedCornerShape(AppRadius.small),
+                                    contentPadding = PaddingValues(vertical = 8.dp)
+                                ) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Ask AI", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
+                                }
+
+                                Button(
+                                    onClick = {
                                         copilotMode = "breakdown"
                                         copilotSummary = null
                                         copilotTasks = emptyList()
+                                        copilotCitations = emptyList()
+                                        copilotFollowUps = emptyList()
                                         tasksAddedSuccess = false
                                     },
                                     modifier = Modifier.weight(1f),
@@ -352,9 +388,9 @@ fun OmnibarSearchDialog(
                                     shape = RoundedCornerShape(AppRadius.small),
                                     contentPadding = PaddingValues(vertical = 8.dp)
                                 ) {
-                                    Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Task Breakdown", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
+                                    Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Breakdown", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
                                 }
 
                                 Button(
@@ -362,6 +398,8 @@ fun OmnibarSearchDialog(
                                         copilotMode = "standup"
                                         copilotSummary = null
                                         copilotTasks = emptyList()
+                                        copilotCitations = emptyList()
+                                        copilotFollowUps = emptyList()
                                         tasksAddedSuccess = false
                                     },
                                     modifier = Modifier.weight(1f),
@@ -372,9 +410,247 @@ fun OmnibarSearchDialog(
                                     shape = RoundedCornerShape(AppRadius.small),
                                     contentPadding = PaddingValues(vertical = 8.dp)
                                 ) {
-                                    Icon(Icons.Default.Today, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Daily Standup", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
+                                    Icon(Icons.Default.Today, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Standup", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+
+                            Spacer(Modifier.height(AppSpacing.md))
+
+                            if (copilotMode == "rag") {
+                                // Ask Knowledge Base (RAG) Mode
+                                Text(
+                                    "Ask questions across project tasks, conversations, and meetings with grounded source citations.",
+                                    style = AppTypography.caption1,
+                                    color = AppColors.textSecondary
+                                )
+                                Spacer(Modifier.height(8.dp))
+
+                                OutlinedTextField(
+                                    value = copilotPrompt,
+                                    onValueChange = { copilotPrompt = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("copilot_rag_input"),
+                                    placeholder = {
+                                        Text("e.g. What was discussed about the login screen bug?")
+                                    },
+                                    minLines = 2,
+                                    maxLines = 4,
+                                    shape = RoundedCornerShape(AppRadius.medium),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = AppColors.brandPrimary,
+                                        unfocusedBorderColor = AppColors.borderDefault
+                                    )
+                                )
+
+                                Spacer(Modifier.height(8.dp))
+
+                                // Quick suggestion chips
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf("Login screen bug", "OAuth PKCE crash", "Sprint blockers").forEach { chip ->
+                                        AssistChip(
+                                            onClick = {
+                                                copilotPrompt = chip
+                                                isCopilotLoading = true
+                                                errorMessage = null
+                                                coroutineScope.launch {
+                                                    try {
+                                                        val res = api.askKnowledgeBase(chip)
+                                                        copilotSummary = res.text("summary")
+                                                        val rawCitations = res.list("citations")
+                                                        copilotCitations = rawCitations.map { item ->
+                                                            OmnibarRAGCitation(
+                                                                id = item.text("id"),
+                                                                entityType = item.text("entity_type").ifBlank { item.text("entityType") }.ifBlank { "task" },
+                                                                title = item.text("title").ifBlank { "Source Item" },
+                                                                snippet = item.text("snippet"),
+                                                                deepLink = item.text("deep_link").ifBlank { item.text("deepLink") },
+                                                                similarityScore = if (item.has("similarity_score")) item.get("similarity_score").asDouble else null,
+                                                                citationNumber = if (item.has("citation_number")) item.get("citation_number").asInt else 1
+                                                            )
+                                                        }
+                                                        val rawFollowUps = res.list("suggested_follow_ups").ifEmpty { res.list("suggestedFollowUps") }
+                                                        copilotFollowUps = rawFollowUps.map { it.asString }
+                                                    } catch (e: Exception) {
+                                                        errorMessage = e.message ?: "Failed to query knowledge base"
+                                                    } finally {
+                                                        isCopilotLoading = false
+                                                    }
+                                                }
+                                            },
+                                            label = { Text(chip, fontSize = 11.sp) }
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+
+                                Button(
+                                    onClick = {
+                                        if (copilotPrompt.isBlank()) return@Button
+                                        isCopilotLoading = true
+                                        errorMessage = null
+                                        coroutineScope.launch {
+                                            try {
+                                                val res = api.askKnowledgeBase(copilotPrompt.trim())
+                                                copilotSummary = res.text("summary")
+                                                val rawCitations = res.list("citations")
+                                                copilotCitations = rawCitations.map { item ->
+                                                    OmnibarRAGCitation(
+                                                        id = item.text("id"),
+                                                        entityType = item.text("entity_type").ifBlank { item.text("entityType") }.ifBlank { "task" },
+                                                        title = item.text("title").ifBlank { "Source Item" },
+                                                        snippet = item.text("snippet"),
+                                                        deepLink = item.text("deep_link").ifBlank { item.text("deepLink") },
+                                                        similarityScore = if (item.has("similarity_score")) item.get("similarity_score").asDouble else null,
+                                                        citationNumber = if (item.has("citation_number")) item.get("citation_number").asInt else 1
+                                                    )
+                                                }
+                                                val rawFollowUps = res.list("suggested_follow_ups").ifEmpty { res.list("suggestedFollowUps") }
+                                                copilotFollowUps = rawFollowUps.map { it.asString }
+                                            } catch (e: Exception) {
+                                                errorMessage = e.message ?: "Failed to query knowledge base"
+                                            } finally {
+                                                isCopilotLoading = false
+                                            }
+                                        }
+                                    },
+                                    enabled = !isCopilotLoading && copilotPrompt.isNotBlank(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_copilot_ask"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                                    shape = RoundedCornerShape(AppRadius.medium)
+                                ) {
+                                    if (isCopilotLoading) {
+                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Searching Knowledge Base...")
+                                    } else {
+                                        Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Ask AI (RAG)", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                if (copilotSummary != null) {
+                                    Spacer(Modifier.height(AppSpacing.md))
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(containerColor = AppColors.backgroundSecondary),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        Column(Modifier.padding(14.dp)) {
+                                            Text("Knowledge Answer", style = AppTypography.headline, color = AppColors.brandPrimary)
+                                            Spacer(Modifier.height(6.dp))
+                                            Text(copilotSummary ?: "", style = AppTypography.callout, color = AppColors.textPrimary)
+                                        }
+                                    }
+                                }
+
+                                if (copilotCitations.isNotEmpty()) {
+                                    Spacer(Modifier.height(AppSpacing.md))
+                                    Text("Sources & Grounded Citations (${copilotCitations.size})", style = AppTypography.headline, color = AppColors.textPrimary)
+                                    Spacer(Modifier.height(6.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        copilotCitations.forEach { citation ->
+                                            Card(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        if (citation.deepLink.isNotBlank()) {
+                                                            onNavigateDeeplink(citation.deepLink)
+                                                            onDismiss()
+                                                        }
+                                                    },
+                                                colors = CardDefaults.cardColors(containerColor = AppColors.backgroundSecondary),
+                                                shape = RoundedCornerShape(AppRadius.medium)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(10.dp),
+                                                    verticalAlignment = Alignment.Top
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(24.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(0xFF6366F1).copy(alpha = 0.2f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            "[${citation.citationNumber}]",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFF6366F1)
+                                                        )
+                                                    }
+                                                    Spacer(Modifier.width(10.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                citation.title,
+                                                                style = AppTypography.body,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                color = AppColors.textPrimary,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                modifier = Modifier.weight(1f)
+                                                            )
+                                                            if (citation.similarityScore != null) {
+                                                                Text(
+                                                                    "${(citation.similarityScore * 100).toInt()}% match",
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color(0xFF10B981)
+                                                                )
+                                                            }
+                                                        }
+                                                        if (citation.snippet.isNotBlank()) {
+                                                            Spacer(Modifier.height(2.dp))
+                                                            Text(
+                                                                citation.snippet,
+                                                                style = AppTypography.caption1,
+                                                                color = AppColors.textSecondary,
+                                                                maxLines = 2,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (copilotFollowUps.isNotEmpty()) {
+                                    Spacer(Modifier.height(AppSpacing.md))
+                                    Text("Suggested Follow-Ups", style = AppTypography.caption1, fontWeight = FontWeight.Bold, color = AppColors.textSecondary)
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        copilotFollowUps.forEach { fu ->
+                                            AssistChip(
+                                                onClick = {
+                                                    copilotPrompt = fu
+                                                },
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.AutoAwesome, null, Modifier.size(12.dp), tint = Color(0xFF6366F1))
+                                                },
+                                                label = { Text(fu, fontSize = 11.sp) }
+                                            )
+                                        }
+                                    }
                                 }
                             }
 

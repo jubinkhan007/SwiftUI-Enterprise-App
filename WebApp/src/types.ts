@@ -659,7 +659,18 @@ export type AIAssistantAction =
   | 'breakdown_task'
   | 'generate_standup_summary'
   | 'suggest_next_actions'
-  | 'summarize_thread';
+  | 'summarize_thread'
+  | 'ask_knowledge_base';
+
+export interface RAGCitationDTO {
+  id: string;
+  entityType: SearchEntityType;
+  title: string;
+  snippet: string;
+  deepLink: string;
+  similarityScore?: number | null;
+  citationNumber: number;
+}
 
 export interface SuggestedTaskDTO {
   id?: string;
@@ -674,6 +685,8 @@ export interface AIAssistantRequest {
   contextId?: string | null;
   prompt?: string | null;
   entityPayload?: Record<string, string> | null;
+  entityTypes?: SearchEntityType[] | null;
+  maxSources?: number | null;
 }
 
 export interface AIAssistantResponse {
@@ -681,6 +694,8 @@ export interface AIAssistantResponse {
   summary: string;
   suggestedTasks?: SuggestedTaskDTO[] | null;
   actionItems?: string[] | null;
+  citations?: RAGCitationDTO[] | null;
+  suggestedFollowUps?: string[] | null;
 }
 
 
