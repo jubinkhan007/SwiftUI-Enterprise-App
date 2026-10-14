@@ -44,7 +44,34 @@ public protocol APIEndpoint {
 
 public extension APIEndpoint {
     var queryParameters: [String: String]? { nil }
+
+    func makeURLRequest() -> URLRequest? {
+        guard let base = URL(string: path, relativeTo: baseURL) else { return nil }
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: true) else { return nil }
+        if let params = queryParameters, !params.isEmpty {
+            var items = components.queryItems ?? []
+            items.append(contentsOf: params.map { URLQueryItem(name: $0.key, value: $0.value) })
+            components.queryItems = items
+        }
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = method.rawValue
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        var headers = self.headers ?? [:]
+        if headers["Accept"] == nil {
+            headers["Accept"] = "application/json"
+        }
+        if headers["Content-Type"] == nil, body != nil {
+            headers["Content-Type"] = "application/json; charset=utf-8"
+        }
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        request.httpBody = body
+        return request
+    }
 }
+
 
 public enum HTTPMethod: String {
     case get = "GET"

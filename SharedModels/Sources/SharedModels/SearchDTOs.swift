@@ -241,3 +241,40 @@ public struct AIAssistantResponse: Codable, Sendable {
         self.suggestedFollowUps = suggestedFollowUps
     }
 }
+
+// MARK: - AI Copilot Streaming Types
+
+public enum AIAssistantStreamEventType: String, Codable, CaseIterable, Sendable {
+    case start = "start"
+    case token = "token"
+    case citations = "citations"
+    case followUps = "follow_ups"
+    case done = "done"
+    case error = "error"
+}
+
+public struct AIAssistantStreamEvent: Codable, Sendable {
+    public let event: AIAssistantStreamEventType
+    public let token: String?
+    public let citations: [RAGCitationDTO]?
+    public let suggestedFollowUps: [String]?
+    public let response: AIAssistantResponse?
+    public let error: String?
+
+    public init(
+        event: AIAssistantStreamEventType,
+        token: String? = nil,
+        citations: [RAGCitationDTO]? = nil,
+        suggestedFollowUps: [String]? = nil,
+        response: AIAssistantResponse? = nil,
+        error: String? = nil
+    ) {
+        self.event = event
+        self.token = token
+        self.citations = citations
+        self.suggestedFollowUps = suggestedFollowUps
+        self.response = response
+        self.error = error
+    }
+}
+

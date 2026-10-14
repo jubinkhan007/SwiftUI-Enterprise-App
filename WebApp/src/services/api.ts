@@ -68,8 +68,11 @@ import {
   OmnibarSearchResponse,
   AIAssistantAction,
   SuggestedTaskDTO,
+  RAGCitationDTO,
   AIAssistantRequest,
-  AIAssistantResponse
+  AIAssistantResponse,
+  AIAssistantStreamEvent,
+  AIAssistantStreamEventType
 } from '../types';
 
 class ApiService {
@@ -1966,7 +1969,123 @@ class ApiService {
     const raw = await this.request<any>('/api/ai/standup');
     return raw?.data || raw;
   }
+
+  streamCopilot(
+    request: AIAssistantRequest,
+    callbacks: {
+      onToken?: (token: string) => void;
+      onCitations?: (citations: RAGCitationDTO[]) => void;
+      onFollowUps?: (followUps: string[]) => void;
+      onDone?: (response: AIAssistantResponse) => void;
+      onError?: (error: Error) => void;
+    }
+  ): () => void {
+    const controller = new AbortController();
+    const endpoint = this.baseUrl ? `${this.baseUrl}/api/ai/stream` : '/api/ai/stream';
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    };
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    if (this.selectedOrgId) {
+      headers['X-Org-Id'] = this.selectedOrgId;
+    }
+
+    (async () => {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Streaming failed with HTTP ${response.status}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Streaming response body is unavailable.');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data:')) {
+              const jsonStr = trimmed.slice(5).trim();
+              if (!jsonStr) continue;
+              try {
+                const eventPayload: AIAssistantStreamEvent = JSON.parse(jsonStr);
+                if (eventPayload.token && callbacks.onToken) {
+                  callbacks.onToken(eventPayload.token);
+                }
+                if (eventPayload.citations && callbacks.onCitations) {
+                  const mappedCitations: RAGCitationDTO[] = eventPayload.citations.map((c: any) => ({
+                    id: c.id,
+                    entityType: (c.entity_type || c.entityType) as SearchEntityType,
+                    title: c.title || '',
+                    snippet: c.snippet || '',
+                    deepLink: c.deep_link || c.deepLink || '',
+                    similarityScore: c.similarity_score ?? c.similarityScore ?? null,
+                    citationNumber: c.citation_number ?? c.citationNumber ?? 1,
+                  }));
+                  callbacks.onCitations(mappedCitations);
+                }
+                const followUps = eventPayload.suggestedFollowUps || eventPayload.suggested_follow_ups;
+                if (followUps && callbacks.onFollowUps) {
+                  callbacks.onFollowUps(followUps);
+                }
+                if (eventPayload.event === 'done' && eventPayload.response && callbacks.onDone) {
+                  const resp = eventPayload.response;
+                  if (resp.citations) {
+                    resp.citations = resp.citations.map((c: any) => ({
+                      id: c.id,
+                      entityType: (c.entity_type || c.entityType) as SearchEntityType,
+                      title: c.title || '',
+                      snippet: c.snippet || '',
+                      deepLink: c.deep_link || c.deepLink || '',
+                      similarityScore: c.similarity_score ?? c.similarityScore ?? null,
+                      citationNumber: c.citation_number ?? c.citationNumber ?? 1,
+                    }));
+                  }
+                  if ((resp as any).suggested_follow_ups && !resp.suggestedFollowUps) {
+                    resp.suggestedFollowUps = (resp as any).suggested_follow_ups;
+                  }
+                  callbacks.onDone(resp);
+                }
+                if (eventPayload.event === 'error' && eventPayload.error && callbacks.onError) {
+                  callbacks.onError(new Error(eventPayload.error));
+                }
+              } catch {
+                // Ignore json parse error in partial chunk
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+      }
+    })();
+
+    return () => controller.abort();
+  }
 }
+
 
 export function buildReleaseNotesMarkdown(
   release: ReleaseDTO,

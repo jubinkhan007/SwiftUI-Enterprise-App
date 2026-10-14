@@ -43,6 +43,7 @@ import com.acme.taskflow.ui.theme.AppRadius
 import com.acme.taskflow.ui.theme.AppSpacing
 import com.acme.taskflow.ui.theme.AppTypography
 import com.google.gson.JsonObject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -103,6 +104,185 @@ fun OmnibarSearchDialog(
     var copilotFollowUps by remember { mutableStateOf<List<String>>(emptyList()) }
     var isAddingTasks by remember { mutableStateOf(false) }
     var tasksAddedSuccess by remember { mutableStateOf(false) }
+
+    var isStreaming by remember { mutableStateOf(false) }
+    var streamingJob by remember { mutableStateOf<Job?>(null) }
+    var cursorVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(isStreaming) {
+        if (isStreaming) {
+            while (true) {
+                delay(500)
+                cursorVisible = !cursorVisible
+            }
+        } else {
+            cursorVisible = false
+        }
+    }
+
+    fun startStreamingAsk(query: String) {
+        if (query.isBlank()) return
+        streamingJob?.cancel()
+        isStreaming = true
+        isCopilotLoading = true
+        errorMessage = null
+        copilotSummary = ""
+        copilotCitations = emptyList()
+        copilotFollowUps = emptyList()
+
+        streamingJob = coroutineScope.launch {
+            try {
+                api.streamAskKnowledgeBase(query.trim()).collect { event ->
+                    when (event.event) {
+                        "start" -> {
+                            isCopilotLoading = false
+                        }
+                        "citations" -> {
+                            val items = event.citations ?: emptyList()
+                            copilotCitations = items.map { item ->
+                                OmnibarRAGCitation(
+                                    id = item.text("id"),
+                                    entityType = item.text("entity_type").ifBlank { item.text("entityType") }.ifBlank { "task" },
+                                    title = item.text("title").ifBlank { "Source Item" },
+                                    snippet = item.text("snippet"),
+                                    deepLink = item.text("deep_link").ifBlank { item.text("deepLink") },
+                                    similarityScore = if (item.has("similarity_score")) item.get("similarity_score").asDouble else null,
+                                    citationNumber = if (item.has("citation_number")) item.get("citation_number").asInt else 1
+                                )
+                            }
+                        }
+                        "token" -> {
+                            isCopilotLoading = false
+                            val tok = event.token ?: ""
+                            copilotSummary = (copilotSummary ?: "") + tok
+                        }
+                        "follow_ups" -> {
+                            val fu = event.suggestedFollowUps ?: emptyList()
+                            copilotFollowUps = fu
+                        }
+                        "done" -> {
+                            val resp = event.response
+                            if (resp != null) {
+                                if (copilotSummary.isNullOrBlank() && resp.has("summary")) {
+                                    copilotSummary = resp.text("summary")
+                                }
+                            }
+                            isStreaming = false
+                            isCopilotLoading = false
+                        }
+                        "error" -> {
+                            errorMessage = event.error ?: "Streaming error occurred"
+                            isStreaming = false
+                            isCopilotLoading = false
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    errorMessage = e.message ?: "Failed to stream knowledge response"
+                }
+            } finally {
+                isStreaming = false
+                isCopilotLoading = false
+            }
+        }
+    }
+
+    fun startStreamingBreakdown(query: String) {
+        if (query.isBlank()) return
+        streamingJob?.cancel()
+        isStreaming = true
+        isCopilotLoading = true
+        errorMessage = null
+        copilotSummary = ""
+        copilotTasks = emptyList()
+
+        streamingJob = coroutineScope.launch {
+            try {
+                api.streamBreakdownTask(query.trim()).collect { event ->
+                    when (event.event) {
+                        "start" -> {
+                            isCopilotLoading = false
+                        }
+                        "token" -> {
+                            isCopilotLoading = false
+                            val tok = event.token ?: ""
+                            copilotSummary = (copilotSummary ?: "") + tok
+                        }
+                        "done" -> {
+                            val resp = event.response
+                            if (resp != null) {
+                                val rawTasks = resp.list("suggestedTasks").ifEmpty { resp.list("suggested_tasks") }
+                                copilotTasks = rawTasks.map { item ->
+                                    OmnibarSuggestedTask(
+                                        title = item.text("title").ifBlank { "Subtask" },
+                                        description = item.text("description").takeIf { it.isNotBlank() },
+                                        priority = item.text("priority").ifBlank { "medium" },
+                                        estimateHours = item.double("estimateHours", item.double("estimate_hours", 2.0))
+                                    )
+                                }
+                            }
+                            isStreaming = false
+                            isCopilotLoading = false
+                        }
+                        "error" -> {
+                            errorMessage = event.error ?: "Failed to breakdown task"
+                            isStreaming = false
+                            isCopilotLoading = false
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    errorMessage = e.message ?: "Failed to decompose task."
+                }
+            } finally {
+                isStreaming = false
+                isCopilotLoading = false
+            }
+        }
+    }
+
+    fun startStreamingStandup() {
+        streamingJob?.cancel()
+        isStreaming = true
+        isCopilotLoading = true
+        errorMessage = null
+        copilotSummary = ""
+
+        streamingJob = coroutineScope.launch {
+            try {
+                api.streamGenerateStandupSummary().collect { event ->
+                    when (event.event) {
+                        "start" -> {
+                            isCopilotLoading = false
+                        }
+                        "token" -> {
+                            isCopilotLoading = false
+                            val tok = event.token ?: ""
+                            copilotSummary = (copilotSummary ?: "") + tok
+                        }
+                        "done" -> {
+                            isStreaming = false
+                            isCopilotLoading = false
+                        }
+                        "error" -> {
+                            errorMessage = event.error ?: "Failed to generate standup report"
+                            isStreaming = false
+                            isCopilotLoading = false
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    errorMessage = e.message ?: "Failed to generate standup report."
+                }
+            } finally {
+                isStreaming = false
+                isCopilotLoading = false
+            }
+        }
+    }
 
     // Search query debounced runner
     LaunchedEffect(searchQuery, activeTab, searchMode) {
@@ -456,32 +636,7 @@ fun OmnibarSearchDialog(
                                         AssistChip(
                                             onClick = {
                                                 copilotPrompt = chip
-                                                isCopilotLoading = true
-                                                errorMessage = null
-                                                coroutineScope.launch {
-                                                    try {
-                                                        val res = api.askKnowledgeBase(chip)
-                                                        copilotSummary = res.text("summary")
-                                                        val rawCitations = res.list("citations")
-                                                        copilotCitations = rawCitations.map { item ->
-                                                            OmnibarRAGCitation(
-                                                                id = item.text("id"),
-                                                                entityType = item.text("entity_type").ifBlank { item.text("entityType") }.ifBlank { "task" },
-                                                                title = item.text("title").ifBlank { "Source Item" },
-                                                                snippet = item.text("snippet"),
-                                                                deepLink = item.text("deep_link").ifBlank { item.text("deepLink") },
-                                                                similarityScore = if (item.has("similarity_score")) item.get("similarity_score").asDouble else null,
-                                                                citationNumber = if (item.has("citation_number")) item.get("citation_number").asInt else 1
-                                                            )
-                                                        }
-                                                        val rawFollowUps = res.list("suggested_follow_ups").ifEmpty { res.list("suggestedFollowUps") }
-                                                        copilotFollowUps = rawFollowUps.map { it.asString }
-                                                    } catch (e: Exception) {
-                                                        errorMessage = e.message ?: "Failed to query knowledge base"
-                                                    } finally {
-                                                        isCopilotLoading = false
-                                                    }
-                                                }
+                                                startStreamingAsk(chip)
                                             },
                                             label = { Text(chip, fontSize = 11.sp) }
                                         )
@@ -490,51 +645,43 @@ fun OmnibarSearchDialog(
 
                                 Spacer(Modifier.height(10.dp))
 
-                                Button(
-                                    onClick = {
-                                        if (copilotPrompt.isBlank()) return@Button
-                                        isCopilotLoading = true
-                                        errorMessage = null
-                                        coroutineScope.launch {
-                                            try {
-                                                val res = api.askKnowledgeBase(copilotPrompt.trim())
-                                                copilotSummary = res.text("summary")
-                                                val rawCitations = res.list("citations")
-                                                copilotCitations = rawCitations.map { item ->
-                                                    OmnibarRAGCitation(
-                                                        id = item.text("id"),
-                                                        entityType = item.text("entity_type").ifBlank { item.text("entityType") }.ifBlank { "task" },
-                                                        title = item.text("title").ifBlank { "Source Item" },
-                                                        snippet = item.text("snippet"),
-                                                        deepLink = item.text("deep_link").ifBlank { item.text("deepLink") },
-                                                        similarityScore = if (item.has("similarity_score")) item.get("similarity_score").asDouble else null,
-                                                        citationNumber = if (item.has("citation_number")) item.get("citation_number").asInt else 1
-                                                    )
-                                                }
-                                                val rawFollowUps = res.list("suggested_follow_ups").ifEmpty { res.list("suggestedFollowUps") }
-                                                copilotFollowUps = rawFollowUps.map { it.asString }
-                                            } catch (e: Exception) {
-                                                errorMessage = e.message ?: "Failed to query knowledge base"
-                                            } finally {
-                                                isCopilotLoading = false
-                                            }
+                                if (isStreaming) {
+                                    Button(
+                                        onClick = {
+                                            streamingJob?.cancel()
+                                            isStreaming = false
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_copilot_stop"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.statusError),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        Icon(Icons.Default.Stop, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Stop Generating", fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            startStreamingAsk(copilotPrompt)
+                                        },
+                                        enabled = !isCopilotLoading && copilotPrompt.isNotBlank(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_copilot_ask"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        if (isCopilotLoading) {
+                                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Connecting to stream...")
+                                        } else {
+                                            Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Ask AI (RAG)", fontWeight = FontWeight.Bold)
                                         }
-                                    },
-                                    enabled = !isCopilotLoading && copilotPrompt.isNotBlank(),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("btn_copilot_ask"),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                                    shape = RoundedCornerShape(AppRadius.medium)
-                                ) {
-                                    if (isCopilotLoading) {
-                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Searching Knowledge Base...")
-                                    } else {
-                                        Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Ask AI (RAG)", fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -546,9 +693,50 @@ fun OmnibarSearchDialog(
                                         shape = RoundedCornerShape(AppRadius.medium)
                                     ) {
                                         Column(Modifier.padding(14.dp)) {
-                                            Text("Knowledge Answer", style = AppTypography.headline, color = AppColors.brandPrimary)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("Knowledge Answer", style = AppTypography.headline, color = AppColors.brandPrimary)
+                                                    if (isStreaming) {
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = Color(0xFF6366F1).copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                "Streaming...",
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                style = AppTypography.caption2,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color(0xFF6366F1)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                if (isStreaming) {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            streamingJob?.cancel()
+                                                            isStreaming = false
+                                                        },
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                        modifier = Modifier.height(28.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Stop, null, modifier = Modifier.size(14.dp), tint = AppColors.statusError)
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text("Stop", fontSize = 11.sp, color = AppColors.statusError)
+                                                    }
+                                                }
+                                            }
                                             Spacer(Modifier.height(6.dp))
-                                            Text(copilotSummary ?: "", style = AppTypography.callout, color = AppColors.textPrimary)
+                                            Text(
+                                                text = (copilotSummary ?: "") + if (isStreaming && cursorVisible) " ▎" else "",
+                                                style = AppTypography.callout,
+                                                color = AppColors.textPrimary
+                                            )
                                         }
                                     }
                                 }
@@ -685,46 +873,43 @@ fun OmnibarSearchDialog(
 
                                 Spacer(Modifier.height(10.dp))
 
-                                Button(
-                                    onClick = {
-                                        if (copilotPrompt.isBlank()) return@Button
-                                        isCopilotLoading = true
-                                        errorMessage = null
-                                        coroutineScope.launch {
-                                            try {
-                                                val res = api.breakdownTask(copilotPrompt.trim())
-                                                copilotSummary = res.text("summary")
-                                                val rawTasks = res.list("suggestedTasks").ifEmpty { res.list("suggested_tasks") }
-                                                copilotTasks = rawTasks.map { item ->
-                                                    OmnibarSuggestedTask(
-                                                        title = item.text("title").ifBlank { "Subtask" },
-                                                        description = item.text("description").takeIf { it.isNotBlank() },
-                                                        priority = item.text("priority").ifBlank { "medium" },
-                                                        estimateHours = item.double("estimateHours", item.double("estimate_hours", 2.0))
-                                                    )
-                                                }
-                                            } catch (e: Exception) {
-                                                errorMessage = e.message ?: "Failed to decompose task."
-                                            } finally {
-                                                isCopilotLoading = false
-                                            }
+                                if (isStreaming) {
+                                    Button(
+                                        onClick = {
+                                            streamingJob?.cancel()
+                                            isStreaming = false
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_copilot_stop_breakdown"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.statusError),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        Icon(Icons.Default.Stop, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Stop Generating", fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            startStreamingBreakdown(copilotPrompt)
+                                        },
+                                        enabled = !isCopilotLoading && copilotPrompt.isNotBlank(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_copilot_generate"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        if (isCopilotLoading) {
+                                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Connecting to stream...")
+                                        } else {
+                                            Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Generate Task Breakdown", fontWeight = FontWeight.Bold)
                                         }
-                                    },
-                                    enabled = !isCopilotLoading && copilotPrompt.isNotBlank(),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("btn_copilot_generate"),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                                    shape = RoundedCornerShape(AppRadius.medium)
-                                ) {
-                                    if (isCopilotLoading) {
-                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Decomposing with AI...")
-                                    } else {
-                                        Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Generate Task Breakdown", fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -736,9 +921,33 @@ fun OmnibarSearchDialog(
                                         shape = RoundedCornerShape(AppRadius.medium)
                                     ) {
                                         Column(Modifier.padding(12.dp)) {
-                                            Text("Summary", style = AppTypography.footnote, fontWeight = FontWeight.Bold, color = AppColors.brandPrimary)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("Summary", style = AppTypography.footnote, fontWeight = FontWeight.Bold, color = AppColors.brandPrimary)
+                                                if (isStreaming) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = Color(0xFF6366F1).copy(alpha = 0.15f)
+                                                    ) {
+                                                        Text(
+                                                            "Streaming...",
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                            style = AppTypography.caption2,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFF6366F1)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             Spacer(Modifier.height(4.dp))
-                                            Text(copilotSummary ?: "", style = AppTypography.callout, color = AppColors.textPrimary)
+                                            Text(
+                                                text = (copilotSummary ?: "") + if (isStreaming && cursorVisible) " ▎" else "",
+                                                style = AppTypography.callout,
+                                                color = AppColors.textPrimary
+                                            )
                                         }
                                     }
                                 }
@@ -861,36 +1070,43 @@ fun OmnibarSearchDialog(
                                 )
                                 Spacer(Modifier.height(12.dp))
 
-                                Button(
-                                    onClick = {
-                                        isCopilotLoading = true
-                                        errorMessage = null
-                                        coroutineScope.launch {
-                                            try {
-                                                val res = api.generateStandupSummary()
-                                                copilotSummary = res.text("summary")
-                                            } catch (e: Exception) {
-                                                errorMessage = e.message ?: "Failed to generate standup report."
-                                            } finally {
-                                                isCopilotLoading = false
-                                            }
+                                if (isStreaming) {
+                                    Button(
+                                        onClick = {
+                                            streamingJob?.cancel()
+                                            isStreaming = false
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_copilot_stop_standup"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.statusError),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        Icon(Icons.Default.Stop, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Stop Generating", fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            startStreamingStandup()
+                                        },
+                                        enabled = !isCopilotLoading,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_generate_standup"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        if (isCopilotLoading) {
+                                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Connecting to stream...")
+                                        } else {
+                                            Icon(Icons.Default.Today, null, Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Generate Daily Standup Report", fontWeight = FontWeight.Bold)
                                         }
-                                    },
-                                    enabled = !isCopilotLoading,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("btn_generate_standup"),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                                    shape = RoundedCornerShape(AppRadius.medium)
-                                ) {
-                                    if (isCopilotLoading) {
-                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Analyzing your activity...")
-                                    } else {
-                                        Icon(Icons.Default.Today, null, Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Generate Daily Standup Report", fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -907,7 +1123,24 @@ fun OmnibarSearchDialog(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("Daily Standup Report", style = AppTypography.headline, color = AppColors.brandPrimary)
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("Daily Standup Report", style = AppTypography.headline, color = AppColors.brandPrimary)
+                                                    if (isStreaming) {
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = Color(0xFF6366F1).copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                "Streaming...",
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                style = AppTypography.caption2,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color(0xFF6366F1)
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                                 IconButton(
                                                     onClick = {
                                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -921,7 +1154,7 @@ fun OmnibarSearchDialog(
                                             }
                                             Spacer(Modifier.height(8.dp))
                                             Text(
-                                                copilotSummary ?: "",
+                                                text = (copilotSummary ?: "") + if (isStreaming && cursorVisible) " ▎" else "",
                                                 style = AppTypography.callout,
                                                 color = AppColors.textPrimary,
                                                 lineHeight = 22.sp

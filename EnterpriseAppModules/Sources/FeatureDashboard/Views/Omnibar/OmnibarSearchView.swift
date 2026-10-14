@@ -18,8 +18,13 @@ public final class OmnibarViewModel: ObservableObject {
     @Published public var copilotPrompt: String = ""
     @Published public var isCopilotLoading: Bool = false
     @Published public var copilotResponse: AIAssistantResponse? = nil
+    @Published public var isStreaming: Bool = false
+    @Published public var streamingText: String = ""
+    @Published public var streamingCitations: [RAGCitationDTO] = []
+    @Published public var streamingFollowUps: [String] = []
     @Published public var isCreatingTasks: Bool = false
     @Published public var tasksCreatedSuccess: Bool = false
+    private var streamTask: Task<Void, Never>? = nil
 
     private let searchRepository: SearchRepositoryProtocol
     private let aiRepository: AIAssistantRepositoryProtocol
@@ -76,24 +81,73 @@ public final class OmnibarViewModel: ObservableObject {
         self.selectedFilter = nil
     }
 
+    public func stopStreaming() {
+        streamTask?.cancel()
+        streamTask = nil
+        isStreaming = false
+        isCopilotLoading = false
+        if !streamingText.isEmpty && copilotResponse == nil {
+            self.copilotResponse = AIAssistantResponse(
+                action: .askKnowledgeBase,
+                summary: streamingText,
+                citations: streamingCitations.isEmpty ? nil : streamingCitations,
+                suggestedFollowUps: streamingFollowUps.isEmpty ? nil : streamingFollowUps
+            )
+        }
+    }
+
     public func runTaskBreakdown() async {
         let trimmed = copilotPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        stopStreaming()
         isCopilotLoading = true
+        isStreaming = true
+        streamingText = ""
+        streamingCitations = []
+        streamingFollowUps = []
+        copilotResponse = nil
         tasksCreatedSuccess = false
         errorMessage = nil
 
-        do {
-            let resp = try await aiRepository.breakdownTask(
-                title: trimmed,
-                description: nil,
-                contextId: nil
-            )
-            self.copilotResponse = resp
-        } catch {
-            self.errorMessage = "Task breakdown failed: \(error.localizedDescription)"
+        let request = AIAssistantRequest(
+            action: .breakdownTask,
+            prompt: trimmed
+        )
+
+        streamTask = Task { @MainActor in
+            do {
+                for try await event in aiRepository.streamAction(request) {
+                    if Task.isCancelled { break }
+                    switch event.event {
+                    case .token:
+                        if let token = event.token {
+                            self.streamingText += token
+                        }
+                    case .done:
+                        if let resp = event.response {
+                            self.copilotResponse = resp
+                        }
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    case .error:
+                        self.errorMessage = event.error ?? "Task breakdown streaming failed"
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    default:
+                        break
+                    }
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            } catch {
+                if !Task.isCancelled {
+                    self.errorMessage = "Task breakdown failed: \(error.localizedDescription)"
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            }
         }
-        self.isCopilotLoading = false
+        await streamTask?.value
     }
 
     public func runKnowledgeBaseQAndA(prompt: String? = nil) async {
@@ -101,35 +155,123 @@ public final class OmnibarViewModel: ObservableObject {
         let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if prompt != nil { copilotPrompt = trimmed }
+        stopStreaming()
         isCopilotLoading = true
+        isStreaming = true
+        streamingText = ""
+        streamingCitations = []
+        streamingFollowUps = []
+        copilotResponse = nil
         tasksCreatedSuccess = false
         errorMessage = nil
 
-        do {
-            let resp = try await aiRepository.askKnowledgeBase(
-                prompt: trimmed,
-                entityTypes: nil,
-                maxSources: 5
-            )
-            self.copilotResponse = resp
-        } catch {
-            self.errorMessage = "Knowledge base search failed: \(error.localizedDescription)"
+        let request = AIAssistantRequest(
+            action: .askKnowledgeBase,
+            prompt: trimmed,
+            entityTypes: nil,
+            maxSources: 5
+        )
+
+        streamTask = Task { @MainActor in
+            do {
+                for try await event in aiRepository.streamAction(request) {
+                    if Task.isCancelled { break }
+                    switch event.event {
+                    case .start:
+                        break
+                    case .token:
+                        if let token = event.token {
+                            self.streamingText += token
+                        }
+                    case .citations:
+                        if let citations = event.citations {
+                            self.streamingCitations = citations
+                        }
+                    case .followUps:
+                        if let fus = event.suggestedFollowUps {
+                            self.streamingFollowUps = fus
+                        }
+                    case .done:
+                        if let resp = event.response {
+                            self.copilotResponse = resp
+                        } else {
+                            self.copilotResponse = AIAssistantResponse(
+                                action: .askKnowledgeBase,
+                                summary: self.streamingText,
+                                citations: self.streamingCitations.isEmpty ? nil : self.streamingCitations,
+                                suggestedFollowUps: self.streamingFollowUps.isEmpty ? nil : self.streamingFollowUps
+                            )
+                        }
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    case .error:
+                        self.errorMessage = event.error ?? "Knowledge base streaming failed"
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    }
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            } catch {
+                if !Task.isCancelled {
+                    self.errorMessage = "Knowledge base search failed: \(error.localizedDescription)"
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            }
         }
-        self.isCopilotLoading = false
+        await streamTask?.value
     }
 
     public func runDailyStandup() async {
+        stopStreaming()
         isCopilotLoading = true
+        isStreaming = true
+        streamingText = ""
+        streamingCitations = []
+        streamingFollowUps = []
+        copilotResponse = nil
         tasksCreatedSuccess = false
         errorMessage = nil
 
-        do {
-            let resp = try await aiRepository.generateStandup()
-            self.copilotResponse = resp
-        } catch {
-            self.errorMessage = "Standup generation failed: \(error.localizedDescription)"
+        let request = AIAssistantRequest(
+            action: .generateStandupSummary
+        )
+
+        streamTask = Task { @MainActor in
+            do {
+                for try await event in aiRepository.streamAction(request) {
+                    if Task.isCancelled { break }
+                    switch event.event {
+                    case .token:
+                        if let token = event.token {
+                            self.streamingText += token
+                        }
+                    case .done:
+                        if let resp = event.response {
+                            self.copilotResponse = resp
+                        }
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    case .error:
+                        self.errorMessage = event.error ?? "Standup streaming failed"
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    default:
+                        break
+                    }
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            } catch {
+                if !Task.isCancelled {
+                    self.errorMessage = "Standup generation failed: \(error.localizedDescription)"
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            }
         }
-        self.isCopilotLoading = false
+        await streamTask?.value
     }
 
     public func createSuggestedTasks(listId: UUID? = nil) async {
@@ -500,12 +642,98 @@ public struct OmnibarSearchView: View {
                         .foregroundColor(AppColors.statusError)
                 }
 
-                if let response = viewModel.copilotResponse {
+                if viewModel.isStreaming {
+                    streamingSection
+                } else if let response = viewModel.copilotResponse {
                     copilotResultsSection(response)
                 }
             }
             .padding(AppSpacing.md)
         }
+    }
+
+    private var streamingSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Streaming Response...")
+                        .font(AppTypography.caption1)
+                        .fontWeight(.semibold)
+                        .foregroundColor(AppColors.brandPrimary)
+                }
+
+                Spacer()
+
+                Button {
+                    viewModel.stopStreaming()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "stop.fill")
+                        Text("Stop")
+                    }
+                    .font(AppTypography.caption2)
+                    .foregroundColor(AppColors.statusError)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(AppColors.statusError.opacity(0.12))
+                    .cornerRadius(6)
+                }
+            }
+
+            HStack(alignment: .top, spacing: 2) {
+                Text(viewModel.streamingText)
+                    .font(AppTypography.body)
+                    .foregroundColor(AppColors.textPrimary)
+                Text("|")
+                    .font(AppTypography.body)
+                    .fontWeight(.bold)
+                    .foregroundColor(AppColors.brandPrimary)
+                    .opacity(0.8)
+            }
+            .padding(AppSpacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColors.backgroundSecondary)
+            .cornerRadius(8)
+
+            if !viewModel.streamingCitations.isEmpty {
+                Text("Sources & Grounded Citations (\(viewModel.streamingCitations.count))")
+                    .font(AppTypography.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(AppColors.textPrimary)
+                    .padding(.top, 4)
+
+                ForEach(viewModel.streamingCitations, id: \.id) { citation in
+                    HStack(alignment: .top, spacing: AppSpacing.sm) {
+                        Text("[\(citation.citationNumber)]")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.indigo.opacity(0.15))
+                            .foregroundColor(.indigo)
+                            .cornerRadius(4)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(citation.title)
+                                .font(AppTypography.body)
+                                .fontWeight(.medium)
+                                .foregroundColor(AppColors.textPrimary)
+
+                            Text(citation.snippet)
+                                .font(AppTypography.caption1)
+                                .foregroundColor(AppColors.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(AppSpacing.sm)
+                    .background(AppColors.backgroundSecondary)
+                    .cornerRadius(8)
+                }
+            }
+        }
+        .padding(AppSpacing.md)
+        .background(AppColors.surfacePrimary)
+        .cornerRadius(10)
     }
 
     private var knowledgeBaseSection: some View {
@@ -523,24 +751,34 @@ public struct OmnibarSearchView: View {
                 .font(AppTypography.body)
 
             Button {
-                Task { await viewModel.runKnowledgeBaseQAndA() }
+                if viewModel.isStreaming {
+                    viewModel.stopStreaming()
+                } else {
+                    Task { await viewModel.runKnowledgeBaseQAndA() }
+                }
             } label: {
                 HStack {
-                    if viewModel.isCopilotLoading {
+                    if viewModel.isStreaming {
+                        Image(systemName: "stop.fill")
+                        Text("Stop Generating")
+                            .fontWeight(.semibold)
+                    } else if viewModel.isCopilotLoading {
                         ProgressView().controlSize(.small).tint(.white)
                     } else {
                         Image(systemName: "sparkles")
                     }
-                    Text("Ask Knowledge Base")
-                        .fontWeight(.semibold)
+                    if !viewModel.isStreaming {
+                        Text("Ask Knowledge Base")
+                            .fontWeight(.semibold)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(AppColors.brandPrimary)
+                .background(viewModel.isStreaming ? AppColors.statusError : AppColors.brandPrimary)
                 .foregroundColor(.white)
                 .cornerRadius(8)
             }
-            .disabled(viewModel.isCopilotLoading || viewModel.copilotPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(!viewModel.isStreaming && (viewModel.isCopilotLoading || viewModel.copilotPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AppSpacing.xs) {

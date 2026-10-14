@@ -3,6 +3,7 @@ package com.acme.taskflow.data
 import com.google.gson.JsonParser
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -156,5 +157,37 @@ class ApiClientTest {
         assertEquals("Fix OAuth login crash", citations.first().text("title"))
         assertEquals(1, citations.first().get("citation_number").asInt)
         assertEquals(0.89, citations.first().get("similarity_score").asDouble, 0.001)
+    }
+
+    @Test fun `streamAICopilot parses SSE chunks and emits stream events`() = runBlocking {
+        val sseBody = "event: start\ndata: {\"event\":\"start\"}\n\n" +
+            "event: citations\ndata: {\"event\":\"citations\",\"citations\":[{\"id\":\"c1\",\"title\":\"Auth PR\",\"snippet\":\"Added PKCE flow\"}]}\n\n" +
+            "event: token\ndata: {\"event\":\"token\",\"token\":\"Hello \"}\n\n" +
+            "event: token\ndata: {\"event\":\"token\",\"token\":\"world!\"}\n\n" +
+            "event: follow_ups\ndata: {\"event\":\"follow_ups\",\"suggestedFollowUps\":[\"Tell me more\"]}\n\n" +
+            "event: done\ndata: {\"event\":\"done\",\"response\":{\"summary\":\"Hello world!\"}}\n\n"
+
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(sseBody))
+        val events = client().streamAICopilot(action = "ask_knowledge_base", prompt = "Hello").toList()
+
+        val req = server.takeRequest()
+        assertEquals("/api/ai/stream", req.path)
+        assertEquals("POST", req.method)
+        assertEquals("text/event-stream", req.getHeader("Accept"))
+        assertEquals("org-a", req.getHeader("X-Org-Id"))
+
+        assertEquals(6, events.size)
+        assertEquals("start", events[0].event)
+        assertEquals("citations", events[1].event)
+        assertEquals(1, events[1].citations?.size)
+        assertEquals("Auth PR", events[1].citations?.first()?.text("title"))
+        assertEquals("token", events[2].event)
+        assertEquals("Hello ", events[2].token)
+        assertEquals("token", events[3].event)
+        assertEquals("world!", events[3].token)
+        assertEquals("follow_ups", events[4].event)
+        assertEquals(listOf("Tell me more"), events[4].suggestedFollowUps)
+        assertEquals("done", events[5].event)
+        assertEquals("Hello world!", events[5].response?.text("summary"))
     }
 }

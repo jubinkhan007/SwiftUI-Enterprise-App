@@ -190,3 +190,5 @@ extension SuggestedTaskDTO: Content {}
 extension RAGCitationDTO: Content {}
 extension AIAssistantRequest: Content {}
 extension AIAssistantResponse: Content {}
+extension AIAssistantStreamEventType: Content {}
+extension AIAssistantStreamEvent: Content {}

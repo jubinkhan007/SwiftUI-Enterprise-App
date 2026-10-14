@@ -698,5 +698,23 @@ export interface AIAssistantResponse {
   suggestedFollowUps?: string[] | null;
 }
 
+export type AIAssistantStreamEventType =
+  | 'start'
+  | 'token'
+  | 'citations'
+  | 'follow_ups'
+  | 'done'
+  | 'error';
+
+export interface AIAssistantStreamEvent {
+  event: AIAssistantStreamEventType;
+  token?: string;
+  citations?: RAGCitationDTO[];
+  suggestedFollowUps?: string[];
+  suggested_follow_ups?: string[];
+  response?: AIAssistantResponse;
+  error?: string;
+}
+
 
 

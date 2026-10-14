@@ -9,9 +9,126 @@ struct AIAssistantController: RouteCollection {
         ai.post("breakdown", use: handleBreakdown)
         ai.get("standup", use: handleStandup)
         ai.post("ask", use: handleAskKnowledgeBase)
+        ai.post("stream", use: handleStreamCopilot)
+        ai.get("stream", use: handleStreamCopilotGet)
     }
 
     // MARK: - Handlers
+
+    @Sendable
+    func handleStreamCopilot(req: Request) async throws -> Response {
+        let requestBody = try req.content.decode(AIAssistantRequest.self)
+        return streamResponse(req: req, request: requestBody)
+    }
+
+    @Sendable
+    func handleStreamCopilotGet(req: Request) async throws -> Response {
+        let prompt: String = (try? req.query.get(String.self, at: "prompt")) ?? ""
+        let actionStr: String? = try? req.query.get(String.self, at: "action")
+        let action = actionStr.flatMap { AIAssistantAction(rawValue: $0) } ?? .askKnowledgeBase
+        let request = AIAssistantRequest(action: action, prompt: prompt)
+        return streamResponse(req: req, request: request)
+    }
+
+    private func streamResponse(req: Request, request: AIAssistantRequest) -> Response {
+        let response = Response(status: .ok)
+        response.headers.replaceOrAdd(name: .contentType, value: "text/event-stream; charset=utf-8")
+        response.headers.replaceOrAdd(name: .cacheControl, value: "no-cache, no-transform")
+        response.headers.replaceOrAdd(name: .connection, value: "keep-alive")
+        response.headers.replaceOrAdd(name: "X-Accel-Buffering", value: "no")
+
+        response.body = .init(stream: { writer in
+            Task {
+                await self.executeStreamingPipeline(req: req, request: request, writer: writer)
+            }
+        })
+        return response
+    }
+
+    private func executeStreamingPipeline(
+        req: Request,
+        request: AIAssistantRequest,
+        writer: any BodyStreamWriter
+    ) async {
+        Self.sendSSE(writer: writer, event: AIAssistantStreamEvent(event: .start))
+
+        let finalResponse: AIAssistantResponse
+        do {
+            let apiResp: APIResponse<AIAssistantResponse>
+            switch request.action {
+            case .breakdownTask:
+                apiResp = try await executeTaskBreakdown(req: req, request: request)
+            case .generateStandupSummary:
+                apiResp = try await executeStandupSummary(req: req, request: request)
+            case .suggestNextActions:
+                apiResp = try await executeNextActions(req: req, request: request)
+            case .summarizeThread:
+                apiResp = try await executeThreadSummary(req: req, request: request)
+            case .askKnowledgeBase:
+                apiResp = try await executeAskKnowledgeBase(req: req, request: request)
+            }
+            guard let unwrapped = apiResp.data else {
+                throw Abort(.internalServerError, reason: "Missing AI response data")
+            }
+            finalResponse = unwrapped
+        } catch {
+            Self.sendSSE(writer: writer, event: AIAssistantStreamEvent(event: .error, error: error.localizedDescription))
+            _ = writer.write(.end)
+            return
+        }
+
+        // Emit citations immediately for grounded RAG UI
+        if let citations = finalResponse.citations, !citations.isEmpty {
+            Self.sendSSE(writer: writer, event: AIAssistantStreamEvent(event: .citations, citations: citations))
+        }
+
+        // Stream tokens with typing animation cadence
+        let chunks = Self.tokenizeIntoChunks(finalResponse.summary)
+        for chunk in chunks {
+            Self.sendSSE(writer: writer, event: AIAssistantStreamEvent(event: .token, token: chunk))
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        // Emit follow ups
+        if let followUps = finalResponse.suggestedFollowUps, !followUps.isEmpty {
+            Self.sendSSE(writer: writer, event: AIAssistantStreamEvent(event: .followUps, suggestedFollowUps: followUps))
+        }
+
+        // Emit final done payload
+        Self.sendSSE(writer: writer, event: AIAssistantStreamEvent(event: .done, response: finalResponse))
+        _ = writer.write(.end)
+    }
+
+    static func sendSSE(writer: any BodyStreamWriter, event: AIAssistantStreamEvent) {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        guard let data = try? encoder.encode(event),
+              let jsonString = String(data: data, encoding: .utf8) else {
+            return
+        }
+        let payload = "event: \(event.event.rawValue)\ndata: \(jsonString)\n\n"
+        var buffer = ByteBufferAllocator().buffer(capacity: payload.utf8.count)
+        buffer.writeString(payload)
+        _ = writer.write(.buffer(buffer))
+    }
+
+    static func tokenizeIntoChunks(_ text: String) -> [String] {
+        var chunks: [String] = []
+        let lines = text.components(separatedBy: "\n")
+        for (lineIdx, line) in lines.enumerated() {
+            let words = line.components(separatedBy: " ")
+            for (wIdx, word) in words.enumerated() {
+                let suffix = (wIdx < words.count - 1) ? " " : ""
+                if !word.isEmpty || !suffix.isEmpty {
+                    chunks.append(word + suffix)
+                }
+            }
+            if lineIdx < lines.count - 1 {
+                chunks.append("\n")
+            }
+        }
+        return chunks
+    }
 
     @Sendable
     func handleCopilot(req: Request) async throws -> APIResponse<AIAssistantResponse> {

@@ -130,4 +130,79 @@ final class VectorSearchTests: XCTestCase {
         XCTAssertEqual(response.suggestedFollowUps?.count, 2)
         XCTAssertTrue(response.summary.contains("[1]"))
     }
+
+    func testAIAssistantStreamEventSerialization() throws {
+        let citation = RAGCitationDTO(
+            id: "task-002",
+            entityType: .task,
+            title: "Optimize Search indexing",
+            snippet: "Adds background vector indexing",
+            deepLink: "taskflow://tasks/task-002",
+            similarityScore: 0.95,
+            citationNumber: 1
+        )
+
+        let tokenEvent = AIAssistantStreamEvent(
+            event: .token,
+            token: "Hello "
+        )
+
+        let citationsEvent = AIAssistantStreamEvent(
+            event: .citations,
+            citations: [citation]
+        )
+
+        let doneEvent = AIAssistantStreamEvent(
+            event: .done,
+            response: AIAssistantResponse(
+                action: .askKnowledgeBase,
+                summary: "Hello world",
+                citations: [citation]
+            )
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+
+        let tokenData = try encoder.encode(tokenEvent)
+        let citationsData = try encoder.encode(citationsEvent)
+        let doneData = try encoder.encode(doneEvent)
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        let decodedToken = try decoder.decode(AIAssistantStreamEvent.self, from: tokenData)
+        let decodedCitations = try decoder.decode(AIAssistantStreamEvent.self, from: citationsData)
+        let decodedDone = try decoder.decode(AIAssistantStreamEvent.self, from: doneData)
+
+        XCTAssertEqual(decodedToken.event, .token)
+        XCTAssertEqual(decodedToken.token, "Hello ")
+
+        XCTAssertEqual(decodedCitations.event, .citations)
+        XCTAssertEqual(decodedCitations.citations?.count, 1)
+        XCTAssertEqual(decodedCitations.citations?.first?.title, "Optimize Search indexing")
+
+        XCTAssertEqual(decodedDone.event, .done)
+        XCTAssertEqual(decodedDone.response?.action, .askKnowledgeBase)
+        XCTAssertEqual(decodedDone.response?.summary, "Hello world")
+    }
+
+    func testTokenizeIntoChunksPreservesText() {
+        let original = """
+        Based on your workspace knowledge base:
+
+        [1] **Task Item**: Critical bug details.
+
+        Next steps:
+        - Check tests
+        - Review release notes
+        """
+
+        let chunks = AIAssistantController.tokenizeIntoChunks(original)
+        let reconstructed = chunks.joined()
+
+        XCTAssertEqual(reconstructed, original)
+        XCTAssertGreaterThan(chunks.count, 10)
+    }
 }
+

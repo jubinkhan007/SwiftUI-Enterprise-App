@@ -6,6 +6,7 @@ public enum AIAssistantEndpoint {
     case breakdown(payload: AIAssistantRequest, configuration: APIConfiguration)
     case standup(configuration: APIConfiguration)
     case ask(payload: AIAssistantRequest, configuration: APIConfiguration)
+    case stream(payload: AIAssistantRequest, configuration: APIConfiguration)
 }
 
 extension AIAssistantEndpoint: APIEndpoint {
@@ -13,7 +14,7 @@ extension AIAssistantEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .copilot(_, let c), .breakdown(_, let c), .standup(let c), .ask(_, let c):
+        case .copilot(_, let c), .breakdown(_, let c), .standup(let c), .ask(_, let c), .stream(_, let c):
             return c
         }
     }
@@ -28,12 +29,14 @@ extension AIAssistantEndpoint: APIEndpoint {
             return "/api/ai/standup"
         case .ask:
             return "/api/ai/ask"
+        case .stream:
+            return "/api/ai/stream"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .copilot, .breakdown, .ask:
+        case .copilot, .breakdown, .ask, .stream:
             return .post
         case .standup:
             return .get
@@ -44,12 +47,16 @@ extension AIAssistantEndpoint: APIEndpoint {
         var h: [String: String] = [:]
         if let token = TokenStore.shared.token { h["Authorization"] = "Bearer \(token)" }
         if let orgId = OrganizationContext.shared.orgId { h["X-Org-Id"] = orgId.uuidString }
-        h["Accept"] = "application/json"
 
         switch self {
+        case .stream:
+            h["Accept"] = "text/event-stream"
+            h["Content-Type"] = "application/json; charset=utf-8"
         case .copilot, .breakdown, .ask:
+            h["Accept"] = "application/json"
             h["Content-Type"] = "application/json; charset=utf-8"
         default:
+            h["Accept"] = "application/json"
             break
         }
 
@@ -58,10 +65,11 @@ extension AIAssistantEndpoint: APIEndpoint {
 
     public var body: Data? {
         switch self {
-        case .copilot(let payload, _), .breakdown(let payload, _), .ask(let payload, _):
+        case .copilot(let payload, _), .breakdown(let payload, _), .ask(let payload, _), .stream(let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .standup:
             return nil
         }
     }
 }
+

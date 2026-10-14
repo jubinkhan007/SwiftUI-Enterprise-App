@@ -16,7 +16,8 @@ import {
   PlusCircle,
   Loader2,
   BookOpen,
-  ExternalLink
+  ExternalLink,
+  Square
 } from 'lucide-react';
 import { api } from '../services/api';
 import {
@@ -24,7 +25,8 @@ import {
   SearchMode,
   SearchResultItemDTO,
   AIAssistantResponse,
-  SuggestedTaskDTO
+  SuggestedTaskDTO,
+  RAGCitationDTO
 } from '../types';
 import { DeeplinkRoute, parseDeeplink } from '../services/deeplink';
 
@@ -57,6 +59,11 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
   const [copilotPrompt, setCopilotPrompt] = useState('');
   const [isCopilotLoading, setIsCopilotLoading] = useState(false);
   const [copilotResponse, setCopilotResponse] = useState<AIAssistantResponse | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const [streamingCitations, setStreamingCitations] = useState<RAGCitationDTO[]>([]);
+  const [streamingFollowUps, setStreamingFollowUps] = useState<string[]>([]);
+  const abortStreamRef = useRef<(() => void) | null>(null);
   const [isAddingTasks, setIsAddingTasks] = useState(false);
   const [tasksAddedSuccess, setTasksAddedSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -98,8 +105,14 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
       setErrorMessage(null);
       setCopilotResponse(null);
       setTasksAddedSuccess(false);
+      abortStreamRef.current?.();
+      setIsStreaming(false);
+      setStreamingText('');
+      setStreamingCitations([]);
+      setStreamingFollowUps([]);
     }
   }, [isOpen]);
+
 
   // Debounced search with searchMode support
   const fetchSearch = useCallback(
@@ -161,59 +174,133 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
   };
 
   // AI Copilot Actions
-  const handleRunAsk = async (customPrompt?: string) => {
+  const handleStopStream = () => {
+    abortStreamRef.current?.();
+    setIsStreaming(false);
+    setIsCopilotLoading(false);
+    if (streamingText.trim()) {
+      setCopilotResponse({
+        action: copilotMode === 'rag' ? 'ask_knowledge_base' : copilotMode === 'breakdown' ? 'breakdown_task' : 'generate_standup_summary',
+        summary: streamingText,
+        citations: streamingCitations.length > 0 ? streamingCitations : null,
+        suggestedFollowUps: streamingFollowUps.length > 0 ? streamingFollowUps : null,
+      });
+    }
+  };
+
+  const handleRunAsk = (customPrompt?: string) => {
     const textToAsk = (customPrompt ?? copilotPrompt).trim();
     if (!textToAsk) return;
     if (customPrompt) {
       setCopilotPrompt(customPrompt);
     }
+    abortStreamRef.current?.();
     setIsCopilotLoading(true);
+    setIsStreaming(true);
+    setStreamingText('');
+    setStreamingCitations([]);
+    setStreamingFollowUps([]);
     setCopilotResponse(null);
     setTasksAddedSuccess(false);
     setErrorMessage(null);
 
-    try {
-      const resp = await api.askKnowledgeBase(textToAsk);
-      setCopilotResponse(resp);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to query workspace knowledge base.');
-    } finally {
-      setIsCopilotLoading(false);
-    }
+    abortStreamRef.current = api.streamCopilot(
+      {
+        action: 'ask_knowledge_base',
+        prompt: textToAsk,
+      },
+      {
+        onToken: (tok) => {
+          setStreamingText((prev) => prev + tok);
+        },
+        onCitations: (citations) => {
+          setStreamingCitations(citations);
+        },
+        onFollowUps: (fus) => {
+          setStreamingFollowUps(fus);
+        },
+        onDone: (resp) => {
+          setCopilotResponse(resp);
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+        onError: (err) => {
+          setErrorMessage(err.message || 'Failed to query workspace knowledge base.');
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+      }
+    );
   };
 
-  const handleRunBreakdown = async () => {
+  const handleRunBreakdown = () => {
     if (!copilotPrompt.trim()) return;
+    abortStreamRef.current?.();
     setIsCopilotLoading(true);
+    setIsStreaming(true);
+    setStreamingText('');
+    setStreamingCitations([]);
+    setStreamingFollowUps([]);
     setCopilotResponse(null);
     setTasksAddedSuccess(false);
     setErrorMessage(null);
 
-    try {
-      const resp = await api.breakdownTask(copilotPrompt.trim());
-      setCopilotResponse(resp);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to decompose task.');
-    } finally {
-      setIsCopilotLoading(false);
-    }
+    abortStreamRef.current = api.streamCopilot(
+      {
+        action: 'breakdown_task',
+        prompt: copilotPrompt.trim(),
+      },
+      {
+        onToken: (tok) => {
+          setStreamingText((prev) => prev + tok);
+        },
+        onDone: (resp) => {
+          setCopilotResponse(resp);
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+        onError: (err) => {
+          setErrorMessage(err.message || 'Failed to decompose task.');
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+      }
+    );
   };
 
-  const handleRunStandup = async () => {
+  const handleRunStandup = () => {
+    abortStreamRef.current?.();
     setIsCopilotLoading(true);
+    setIsStreaming(true);
+    setStreamingText('');
+    setStreamingCitations([]);
+    setStreamingFollowUps([]);
     setCopilotResponse(null);
     setTasksAddedSuccess(false);
     setErrorMessage(null);
 
-    try {
-      const resp = await api.generateStandupSummary();
-      setCopilotResponse(resp);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to generate standup summary.');
-    } finally {
-      setIsCopilotLoading(false);
-    }
+    abortStreamRef.current = api.streamCopilot(
+      {
+        action: 'generate_standup_summary',
+      },
+      {
+        onToken: (tok) => {
+          setStreamingText((prev) => prev + tok);
+        },
+        onDone: (resp) => {
+          setCopilotResponse(resp);
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+        onError: (err) => {
+          setErrorMessage(err.message || 'Failed to generate standup summary.');
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+      }
+    );
   };
+
 
   const handleAddAllTasks = async () => {
     if (!copilotResponse?.suggestedTasks || copilotResponse.suggestedTasks.length === 0) return;
@@ -511,18 +598,28 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                         }
                       }}
                     />
-                    <button
-                      onClick={() => handleRunAsk()}
-                      disabled={isCopilotLoading || !copilotPrompt.trim()}
-                      className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm shrink-0"
-                    >
-                      {isCopilotLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-4 h-4" />
-                      )}
-                      Ask AI
-                    </button>
+                    {isStreaming ? (
+                      <button
+                        onClick={handleStopStream}
+                        className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm shrink-0"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        Stop
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleRunAsk()}
+                        disabled={isCopilotLoading || !copilotPrompt.trim()}
+                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm shrink-0"
+                      >
+                        {isCopilotLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-4 h-4" />
+                        )}
+                        Ask AI
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap pt-1">
@@ -570,18 +667,28 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                         }
                       }}
                     />
-                    <button
-                      onClick={handleRunBreakdown}
-                      disabled={isCopilotLoading || !copilotPrompt.trim()}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm"
-                    >
-                      {isCopilotLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-4 h-4" />
-                      )}
-                      Decompose
-                    </button>
+                    {isStreaming ? (
+                      <button
+                        onClick={handleStopStream}
+                        className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm shrink-0"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        Stop
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleRunBreakdown}
+                        disabled={isCopilotLoading || !copilotPrompt.trim()}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm"
+                      >
+                        {isCopilotLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-4 h-4" />
+                        )}
+                        Decompose
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -597,20 +704,86 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                     </span>
                   </div>
 
-                  <button
-                    onClick={handleRunStandup}
-                    disabled={isCopilotLoading}
-                    className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition shadow-md"
-                  >
-                    {isCopilotLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Calendar className="w-4 h-4" />
-                    )}
-                    Generate Today's Standup Summary
-                  </button>
+                  {isStreaming ? (
+                    <button
+                      onClick={handleStopStream}
+                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition shadow-md"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      Stop Generating
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleRunStandup}
+                      disabled={isCopilotLoading}
+                      className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition shadow-md"
+                    >
+                      {isCopilotLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Calendar className="w-4 h-4" />
+                      )}
+                      Generate Today's Standup Summary
+                    </button>
+                  )}
                 </div>
               )}
+
+              {/* Live Streaming Response Preview */}
+              {isStreaming && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                      Streaming Response...
+                    </span>
+                    <button
+                      onClick={handleStopStream}
+                      className="flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition px-2 py-1 bg-rose-950/40 border border-rose-800/60 rounded-md"
+                    >
+                      <Square className="w-3 h-3 fill-current" />
+                      Stop
+                    </button>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-950/80 border border-indigo-500/30 rounded-xl text-xs sm:text-sm text-slate-200 whitespace-pre-wrap font-sans leading-relaxed min-h-[50px]">
+                    {streamingText}
+                    <span className="inline-block w-1.5 h-3.5 ml-0.5 bg-indigo-400 animate-pulse align-middle" />
+                  </div>
+
+                  {streamingCitations.length > 0 && (
+                    <div className="space-y-2 mt-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                          <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+                          Sources & Grounded Citations ({streamingCitations.length})
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {streamingCitations.map((c) => (
+                          <div
+                            key={c.id}
+                            className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl flex items-start gap-3"
+                          >
+                            <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 border border-indigo-500/30">
+                              {c.citationNumber}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-semibold text-xs text-slate-200 block mb-1">
+                                {c.title}
+                              </span>
+                              <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                                {c.snippet}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
 
               {/* Copilot Response Preview */}
               {copilotResponse && (

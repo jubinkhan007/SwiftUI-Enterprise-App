@@ -159,4 +159,69 @@ final class SearchAndAITests: XCTestCase {
         XCTAssertEqual(decoded.citations?.first?.similarityScore, 0.92)
         XCTAssertEqual(decoded.suggestedFollowUps?.count, 2)
     }
+
+    func testAIAssistantEndpointStream() throws {
+        let config = APIConfiguration(baseURL: URL(string: "http://localhost:8080")!)
+        let req = AIAssistantRequest(
+            action: .askKnowledgeBase,
+            prompt: "Explain stream feature",
+            entityTypes: [.task]
+        )
+        let ep = AIAssistantEndpoint.stream(payload: req, configuration: config)
+
+        XCTAssertEqual(ep.path, "/api/ai/stream")
+        XCTAssertEqual(ep.method, .post)
+        XCTAssertEqual(ep.headers?["Accept"], "text/event-stream")
+        XCTAssertNotNil(ep.body)
+
+        let decoded = try JSONCoding.decoder.decode(AIAssistantRequest.self, from: ep.body!)
+        XCTAssertEqual(decoded.action, .askKnowledgeBase)
+        XCTAssertEqual(decoded.prompt, "Explain stream feature")
+
+        let urlReq = ep.makeURLRequest()
+        XCTAssertNotNil(urlReq)
+        XCTAssertEqual(urlReq?.url?.absoluteString, "http://localhost:8080/api/ai/stream")
+        XCTAssertEqual(urlReq?.httpMethod, "POST")
+        XCTAssertEqual(urlReq?.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+    }
+
+    func testAIAssistantStreamEventSerialization() throws {
+        let citation = RAGCitationDTO(
+            id: "cit-1",
+            entityType: .task,
+            title: "Task Streaming",
+            snippet: "Streaming token chunks via SSE",
+            deepLink: "taskflow://tasks/stream",
+            similarityScore: 0.95,
+            citationNumber: 1
+        )
+        let tokenEvent = AIAssistantStreamEvent(
+            event: .token,
+            token: "Hello world"
+        )
+        let citationsEvent = AIAssistantStreamEvent(
+            event: .citations,
+            citations: [citation]
+        )
+        let followUpsEvent = AIAssistantStreamEvent(
+            event: .followUps,
+            suggestedFollowUps: ["What about error handling?", "Show code example"]
+        )
+
+        let tokenData = try JSONCoding.encoder.encode(tokenEvent)
+        let decodedToken = try JSONCoding.decoder.decode(AIAssistantStreamEvent.self, from: tokenData)
+        XCTAssertEqual(decodedToken.event, .token)
+        XCTAssertEqual(decodedToken.token, "Hello world")
+
+        let citData = try JSONCoding.encoder.encode(citationsEvent)
+        let decodedCit = try JSONCoding.decoder.decode(AIAssistantStreamEvent.self, from: citData)
+        XCTAssertEqual(decodedCit.event, .citations)
+        XCTAssertEqual(decodedCit.citations?.first?.title, "Task Streaming")
+
+        let followUpsData = try JSONCoding.encoder.encode(followUpsEvent)
+        let decodedFollowUps = try JSONCoding.decoder.decode(AIAssistantStreamEvent.self, from: followUpsData)
+        XCTAssertEqual(decodedFollowUps.event, .followUps)
+        XCTAssertEqual(decodedFollowUps.suggestedFollowUps?.count, 2)
+    }
 }
+

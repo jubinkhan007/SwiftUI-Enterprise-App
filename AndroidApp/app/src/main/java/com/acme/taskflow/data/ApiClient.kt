@@ -19,6 +19,7 @@ import okhttp3.Response
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -36,6 +37,15 @@ val JsonObject.id: String get() = text("id")
 
 class ApiFailure(val status: Int, message: String, val rawBody: String = "") : IOException(message)
 data class ApiResult(val data: JsonElement, val pagination: JsonObject)
+
+data class AIAssistantStreamEvent(
+    val event: String,
+    val token: String? = null,
+    val citations: List<JsonObject>? = null,
+    val suggestedFollowUps: List<String>? = null,
+    val response: JsonObject? = null,
+    val error: String? = null
+)
 
 class ApiClient(
     val baseUrl: String,
@@ -175,6 +185,147 @@ class ApiClient(
 
     suspend fun askKnowledgeBase(prompt: String): JsonObject {
         return runAICopilot(action = "ask_knowledge_base", prompt = prompt)
+    }
+
+    fun streamAICopilot(
+        action: String,
+        prompt: String? = null,
+        contextId: String? = null,
+        entityPayload: Map<String, String>? = null,
+        entityTypes: List<String>? = null,
+        maxSources: Int? = null
+    ): Flow<AIAssistantStreamEvent> = callbackFlow {
+        val payload = JsonObject().apply {
+            addProperty("action", action)
+            if (prompt != null) addProperty("prompt", prompt)
+            if (contextId != null) addProperty("contextId", contextId)
+            if (entityPayload != null) {
+                val entityObj = JsonObject()
+                entityPayload.forEach { (k, v) -> entityObj.addProperty(k, v) }
+                add("entityPayload", entityObj)
+            }
+            if (entityTypes != null) {
+                val arr = com.google.gson.JsonArray()
+                entityTypes.forEach { arr.add(it) }
+                add("entityTypes", arr)
+            }
+            if (maxSources != null) {
+                addProperty("maxSources", maxSources)
+            }
+        }
+
+        val url = baseUrl.toHttpUrl().newBuilder().encodedPath("/api/ai/stream").build()
+        val reqBuilder = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "text/event-stream")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+
+        if (orgId.isNotBlank()) {
+            reqBuilder.header("X-Org-Id", orgId)
+        }
+
+        val call = client.newCall(reqBuilder.build())
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                close(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (!response.isSuccessful) {
+                    close(ApiFailure(response.code, "Streaming failed with HTTP ${response.code}", response.body?.string().orEmpty()))
+                    return
+                }
+                val source = response.body?.source()
+                if (source == null) {
+                    close(IOException("Response body is null"))
+                    return
+                }
+
+                try {
+                    var currentEvent: String? = null
+                    val dataBuffer = StringBuilder()
+
+                    while (!source.exhausted()) {
+                        val line = source.readUtf8Line() ?: break
+                        if (line.isEmpty()) {
+                            if (dataBuffer.isNotEmpty()) {
+                                val dataStr = dataBuffer.toString().trim()
+                                dataBuffer.setLength(0)
+                                try {
+                                    val parsed = JsonParser.parseString(dataStr).asJsonObject
+                                    val eventType = currentEvent ?: parsed.text("event", "token")
+                                    val token = if (parsed.has("token") && !parsed.get("token").isJsonNull) parsed.get("token").asString else null
+                                    val citations = if (parsed.has("citations") && parsed.get("citations").isJsonArray) {
+                                        parsed.getAsJsonArray("citations").map { it.asJsonObject }
+                                    } else null
+                                    val followUps = if (parsed.has("suggestedFollowUps") && parsed.get("suggestedFollowUps").isJsonArray) {
+                                        parsed.getAsJsonArray("suggestedFollowUps").map { it.asString }
+                                    } else if (parsed.has("suggested_follow_ups") && parsed.get("suggested_follow_ups").isJsonArray) {
+                                        parsed.getAsJsonArray("suggested_follow_ups").map { it.asString }
+                                    } else null
+                                    val respObj = if (parsed.has("response") && parsed.get("response").isJsonObject) {
+                                        parsed.getAsJsonObject("response")
+                                    } else null
+                                    val err = if (parsed.has("error") && !parsed.get("error").isJsonNull) parsed.get("error").asString else null
+
+                                    trySend(AIAssistantStreamEvent(
+                                        event = eventType,
+                                        token = token,
+                                        citations = citations,
+                                        suggestedFollowUps = followUps,
+                                        response = respObj,
+                                        error = err
+                                    ))
+                                } catch (e: Exception) {
+                                    // ignore parse err
+                                }
+                            }
+                            currentEvent = null
+                            continue
+                        }
+
+                        if (line.startsWith("event:")) {
+                            currentEvent = line.substring(6).trim()
+                        } else if (line.startsWith("data:")) {
+                            val dataPart = line.substring(5).trim()
+                            if (dataBuffer.isNotEmpty()) dataBuffer.append("\n")
+                            dataBuffer.append(dataPart)
+                        }
+                    }
+                    close()
+                } catch (e: Exception) {
+                    close(e)
+                } finally {
+                    response.close()
+                }
+            }
+        })
+
+        awaitClose {
+            call.cancel()
+        }
+    }
+
+    fun streamAskKnowledgeBase(
+        prompt: String,
+        entityTypes: List<String>? = null,
+        maxSources: Int? = null
+    ): Flow<AIAssistantStreamEvent> {
+        return streamAICopilot(
+            action = "ask_knowledge_base",
+            prompt = prompt,
+            entityTypes = entityTypes,
+            maxSources = maxSources
+        )
+    }
+
+    fun streamBreakdownTask(prompt: String): Flow<AIAssistantStreamEvent> {
+        return streamAICopilot(action = "breakdown_task", prompt = prompt)
+    }
+
+    fun streamGenerateStandupSummary(): Flow<AIAssistantStreamEvent> {
+        return streamAICopilot(action = "generate_standup_summary")
     }
 
     companion object {
