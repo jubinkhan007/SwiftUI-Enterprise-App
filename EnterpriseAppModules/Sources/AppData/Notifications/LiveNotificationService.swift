@@ -16,9 +16,25 @@ public final class LiveNotificationService: NotificationRepositoryProtocol {
         let endpoint = NotificationEndpoint.getNotifications(unreadOnly: unreadOnly, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<[NotificationDTO]>.self)
     }
+
+    public func getNotifications(category: String?, unreadOnly: Bool) async throws -> APIResponse<[NotificationDTO]> {
+        let endpoint = NotificationEndpoint.getNotificationsFiltered(category: category, unreadOnly: unreadOnly, configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<[NotificationDTO]>.self)
+    }
     
     public func markRead(id: UUID) async throws -> APIResponse<NotificationDTO> {
         let endpoint = NotificationEndpoint.markRead(id: id, configuration: apiConfiguration)
         return try await apiClient.request(endpoint, responseType: APIResponse<NotificationDTO>.self)
     }
+
+    public func markAllRead() async throws -> APIResponse<NotificationBatchReadResponse> {
+        let endpoint = NotificationEndpoint.markAllRead(configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<NotificationBatchReadResponse>.self)
+    }
+
+    public func getUnreadCount() async throws -> APIResponse<NotificationUnreadCountDTO> {
+        let endpoint = NotificationEndpoint.unreadCount(configuration: apiConfiguration)
+        return try await apiClient.request(endpoint, responseType: APIResponse<NotificationUnreadCountDTO>.self)
+    }
 }
+

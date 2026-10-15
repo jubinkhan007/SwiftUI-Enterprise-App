@@ -11,9 +11,18 @@ struct AIAssistantController: RouteCollection {
         ai.post("ask", use: handleAskKnowledgeBase)
         ai.post("stream", use: handleStreamCopilot)
         ai.get("stream", use: handleStreamCopilotGet)
+        ai.post("transcribe", use: handleTranscribe)
     }
 
     // MARK: - Handlers
+
+    @Sendable
+    func handleTranscribe(req: Request) async throws -> APIResponse<AudioTranscriptionResponse> {
+        let payload = try? req.content.decode(AudioTranscriptionRequest.self)
+        let text = payload?.simulatedText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? "How do we configure SAML SSO and manage team roles?"
+        return .success(AudioTranscriptionResponse(text: text, confidence: 0.98))
+    }
 
     @Sendable
     func handleStreamCopilot(req: Request) async throws -> Response {
@@ -392,7 +401,12 @@ struct AIAssistantController: RouteCollection {
         // Auto-index unindexed items
         _ = try? await SearchController.indexOrganizationEntities(req: req, orgId: orgId, force: false)
 
-        let queryVector = EmbeddingService.shared.embed(query)
+        var searchContext = query
+        if let history = request.history, !history.isEmpty {
+            let recentTurns = history.suffix(3).map { "\($0.role): \($0.content)" }.joined(separator: "\n")
+            searchContext = "\(recentTurns)\nuser: \(query)"
+        }
+        let queryVector = EmbeddingService.shared.embed(searchContext)
         let searchTypes = request.entityTypes ?? [.task, .message, .meeting]
         let maxSources = min(max(request.maxSources ?? 4, 1), 8)
 

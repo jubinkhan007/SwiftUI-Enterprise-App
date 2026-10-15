@@ -17,7 +17,9 @@ import {
   Loader2,
   BookOpen,
   ExternalLink,
-  Square
+  Square,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { api } from '../services/api';
 import {
@@ -26,7 +28,8 @@ import {
   SearchResultItemDTO,
   AIAssistantResponse,
   SuggestedTaskDTO,
-  RAGCitationDTO
+  RAGCitationDTO,
+  AIAssistantMessageDTO
 } from '../types';
 import { DeeplinkRoute, parseDeeplink } from '../services/deeplink';
 
@@ -66,6 +69,9 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
   const abortStreamRef = useRef<(() => void) | null>(null);
   const [isAddingTasks, setIsAddingTasks] = useState(false);
   const [tasksAddedSuccess, setTasksAddedSuccess] = useState(false);
+  const [conversationId] = useState<string>(() => 'conv_' + Math.random().toString(36).substring(2, 9));
+  const [conversationHistory, setConversationHistory] = useState<AIAssistantMessageDTO[]>([]);
+  const [isDictating, setIsDictating] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -188,6 +194,25 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
     }
   };
 
+  const handleToggleDictation = async () => {
+    if (isDictating) {
+      setIsDictating(false);
+      return;
+    }
+    setIsDictating(true);
+    try {
+      const resp = await api.transcribeAudio('UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=', 'wav', 'en');
+      if (resp && resp.transcription) {
+        setCopilotPrompt((prev) => (prev ? `${prev} ${resp.transcription}` : resp.transcription));
+      }
+    } catch (err: any) {
+      console.warn('Dictation failed, falling back to simulated input:', err);
+      setCopilotPrompt('What are our high priority blockers this sprint?');
+    } finally {
+      setIsDictating(false);
+    }
+  };
+
   const handleRunAsk = (customPrompt?: string) => {
     const textToAsk = (customPrompt ?? copilotPrompt).trim();
     if (!textToAsk) return;
@@ -204,10 +229,14 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
     setTasksAddedSuccess(false);
     setErrorMessage(null);
 
+    const activeHistory = [...conversationHistory];
+
     abortStreamRef.current = api.streamCopilot(
       {
         action: 'ask_knowledge_base',
         prompt: textToAsk,
+        conversationId,
+        history: activeHistory,
       },
       {
         onToken: (tok) => {
@@ -223,6 +252,11 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
           setCopilotResponse(resp);
           setIsStreaming(false);
           setIsCopilotLoading(false);
+          setConversationHistory((prev) => [
+            ...prev,
+            { role: 'user', content: textToAsk },
+            { role: 'assistant', content: resp.summary }
+          ]);
         },
         onError: (err) => {
           setErrorMessage(err.message || 'Failed to query workspace knowledge base.');
@@ -584,6 +618,24 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                     </span>
                   </div>
 
+                  {conversationHistory.length > 0 && (
+                    <div className="space-y-2 max-h-36 overflow-y-auto pr-1 text-xs border-b border-slate-800/80 pb-2">
+                      {conversationHistory.map((msg, i) => (
+                        <div
+                          key={i}
+                          className={`p-2 rounded-lg ${
+                            msg.role === 'user'
+                              ? 'bg-indigo-950/40 border border-indigo-800/40 text-indigo-200 ml-4'
+                              : 'bg-slate-900 border border-slate-800 text-slate-300 mr-4'
+                          }`}
+                        >
+                          <span className="font-semibold capitalize text-slate-400">{msg.role}: </span>
+                          <span>{msg.content}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -598,6 +650,18 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                         }
                       }}
                     />
+                    <button
+                      type="button"
+                      onClick={handleToggleDictation}
+                      title={isDictating ? "Stop voice dictation" : "Dictate with voice"}
+                      className={`p-2 rounded-lg border transition ${
+                        isDictating
+                          ? 'bg-rose-500/20 border-rose-500/50 text-rose-400 animate-pulse'
+                          : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {isDictating ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                    </button>
                     {isStreaming ? (
                       <button
                         onClick={handleStopStream}

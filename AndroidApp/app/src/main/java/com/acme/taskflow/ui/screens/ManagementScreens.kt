@@ -46,7 +46,7 @@ fun InboxScreen(vm: AppViewModel, api: ApiClient) {
     val remote = rememberRemote(api, "/api/notifications", vm.revision, query = mapOf("unread" to unreadOnly.toString()), paged = true)
     val action = rememberAction()
 
-    val categories = listOf("All", "Mentions", "Assignments", "Updates")
+    val categories = listOf("All", "Mentions", "Assignments", "Updates", "Messages", "Meetings")
 
     LaunchedEffect(Unit) {
         while (kotlinx.coroutines.currentCoroutineContext().isActive) {
@@ -62,6 +62,8 @@ fun InboxScreen(vm: AppViewModel, api: ApiClient) {
             "Mentions" -> itemType.contains("mention")
             "Assignments" -> itemType.contains("assign")
             "Updates" -> itemType.contains("update") || itemType.contains("status")
+            "Messages" -> itemType.contains("message") || itemType.contains("chat")
+            "Meetings" -> itemType.contains("meeting") || itemType.contains("call")
             else -> true
         }
     }
@@ -78,12 +80,31 @@ fun InboxScreen(vm: AppViewModel, api: ApiClient) {
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Inbox",
-                    style = AppTypography.largeTitle,
-                    color = AppColors.textPrimary,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
-                )
+                ) {
+                    Text(
+                        text = "Inbox",
+                        style = AppTypography.largeTitle,
+                        color = AppColors.textPrimary
+                    )
+                    val unreadCount = allRows.count { it.text("read_at").isEmpty() && it.text("readAt").isEmpty() }
+                    if (unreadCount > 0) {
+                        Surface(
+                            shape = CircleShape,
+                            color = AppColors.brandPrimary,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = "$unreadCount",
+                                style = AppTypography.caption1,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

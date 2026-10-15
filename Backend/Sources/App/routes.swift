@@ -83,6 +83,7 @@ func routes(_ app: Application) throws {
 
     let notificationController = NotificationController()
     try orgScopedAPI.register(collection: notificationController)
+    try orgScopedAPI.grouped("org").register(collection: notificationController)
 
     let conversationController = ConversationController()
     try orgScopedAPI.register(collection: conversationController)

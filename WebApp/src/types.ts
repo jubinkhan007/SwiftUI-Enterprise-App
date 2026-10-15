@@ -680,6 +680,33 @@ export interface SuggestedTaskDTO {
   estimateHours?: number | null;
 }
 
+export interface AIAssistantMessageDTO {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface AudioTranscriptionRequest {
+  audioBase64: string;
+  format?: string;
+  language?: string;
+}
+
+export interface AudioTranscriptionResponse {
+  transcription: string;
+  confidence: number;
+  durationSeconds?: number;
+}
+
+export interface NotificationUnreadCountDTO {
+  count: number;
+  unread: number;
+}
+
+export interface NotificationBatchReadResponse {
+  markedCount: number;
+  success: boolean;
+}
+
 export interface AIAssistantRequest {
   action: AIAssistantAction;
   contextId?: string | null;
@@ -687,6 +714,8 @@ export interface AIAssistantRequest {
   entityPayload?: Record<string, string> | null;
   entityTypes?: SearchEntityType[] | null;
   maxSources?: number | null;
+  conversationId?: string | null;
+  history?: AIAssistantMessageDTO[] | null;
 }
 
 export interface AIAssistantResponse {

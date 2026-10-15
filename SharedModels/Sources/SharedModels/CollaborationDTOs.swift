@@ -108,3 +108,23 @@ public struct NotificationDTO: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+public struct NotificationUnreadCountDTO: Codable, Sendable, Equatable {
+    public let count: Int
+    public let unread: Int
+
+    public init(count: Int, unread: Int) {
+        self.count = count
+        self.unread = unread
+    }
+}
+
+public struct NotificationBatchReadResponse: Codable, Sendable, Equatable {
+    public let markedCount: Int
+    public let success: Bool
+
+    public init(markedCount: Int, success: Bool = true) {
+        self.markedCount = markedCount
+        self.success = success
+    }
+}
+

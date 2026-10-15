@@ -192,3 +192,8 @@ extension AIAssistantRequest: Content {}
 extension AIAssistantResponse: Content {}
 extension AIAssistantStreamEventType: Content {}
 extension AIAssistantStreamEvent: Content {}
+extension AIAssistantMessageDTO: Content {}
+extension AudioTranscriptionRequest: Content {}
+extension AudioTranscriptionResponse: Content {}
+extension NotificationUnreadCountDTO: Content {}
+extension NotificationBatchReadResponse: Content {}

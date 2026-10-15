@@ -75,7 +75,11 @@ class AppViewModel @JvmOverloads constructor(
         }
     }
 
-    fun selectWorkspace(value: JsonObject?) { workspace = value; revision++ }
+    fun selectWorkspace(value: JsonObject?) {
+        workspace = value
+        api.orgId = value?.id.orEmpty()
+        revision++
+    }
     fun changed() { revision++ }
 
     fun updateProfile(displayName: String, email: String, onSaved: () -> Unit = {}) {

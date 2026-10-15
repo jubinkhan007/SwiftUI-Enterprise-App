@@ -61,6 +61,7 @@ export const WorkspaceSwitcherModal: React.FC<WorkspaceSwitcherModalProps> = ({
   const handleSelectWorkspace = (ws: WorkspaceDTO) => {
     setActiveOrgId(ws.id);
     api.setOrgId(ws.id);
+    window.dispatchEvent(new CustomEvent('tenant-changed', { detail: { workspace: ws, orgId: ws.id } }));
     onWorkspaceSelected?.(ws);
     onClose();
   };

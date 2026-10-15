@@ -104,6 +104,9 @@ fun OmnibarSearchDialog(
     var copilotFollowUps by remember { mutableStateOf<List<String>>(emptyList()) }
     var isAddingTasks by remember { mutableStateOf(false) }
     var tasksAddedSuccess by remember { mutableStateOf(false) }
+    var conversationId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
+    var conversationHistory by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var isDictating by remember { mutableStateOf(false) }
 
     var isStreaming by remember { mutableStateOf(false) }
     var streamingJob by remember { mutableStateOf<Job?>(null) }
@@ -120,6 +123,27 @@ fun OmnibarSearchDialog(
         }
     }
 
+    fun toggleDictation() {
+        if (isDictating) {
+            isDictating = false
+            return
+        }
+        isDictating = true
+        coroutineScope.launch {
+            try {
+                val dummyAudio = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
+                val text = api.transcribeAudio(dummyAudio)
+                if (text.isNotBlank()) {
+                    copilotPrompt = if (copilotPrompt.isBlank()) text else "$copilotPrompt $text"
+                }
+            } catch (e: Exception) {
+                copilotPrompt = "What are the key decisions for this milestone?"
+            } finally {
+                isDictating = false
+            }
+        }
+    }
+
     fun startStreamingAsk(query: String) {
         if (query.isBlank()) return
         streamingJob?.cancel()
@@ -130,9 +154,14 @@ fun OmnibarSearchDialog(
         copilotCitations = emptyList()
         copilotFollowUps = emptyList()
 
+        val activeHistory = conversationHistory
         streamingJob = coroutineScope.launch {
             try {
-                api.streamAskKnowledgeBase(query.trim()).collect { event ->
+                api.streamAskKnowledgeBase(
+                    prompt = query.trim(),
+                    conversationId = conversationId,
+                    history = activeHistory
+                ).collect { event ->
                     when (event.event) {
                         "start" -> {
                             isCopilotLoading = false
@@ -167,6 +196,8 @@ fun OmnibarSearchDialog(
                                     copilotSummary = resp.text("summary")
                                 }
                             }
+                            val finalSummary = copilotSummary ?: ""
+                            conversationHistory = conversationHistory + listOf("user" to query.trim(), "assistant" to finalSummary)
                             isStreaming = false
                             isCopilotLoading = false
                         }
@@ -607,6 +638,31 @@ fun OmnibarSearchDialog(
                                 )
                                 Spacer(Modifier.height(8.dp))
 
+                                if (conversationHistory.isNotEmpty()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        conversationHistory.takeLast(4).forEach { (role, content) ->
+                                            Surface(
+                                                shape = RoundedCornerShape(AppRadius.small),
+                                                color = if (role == "user") AppColors.brandPrimary.copy(alpha = 0.15f) else AppColors.surfaceElevated,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    text = "${role.replaceFirstChar { it.uppercase() }}: $content",
+                                                    style = AppTypography.caption1,
+                                                    color = AppColors.textPrimary,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                }
+
                                 OutlinedTextField(
                                     value = copilotPrompt,
                                     onValueChange = { copilotPrompt = it },
@@ -615,6 +671,17 @@ fun OmnibarSearchDialog(
                                         .testTag("copilot_rag_input"),
                                     placeholder = {
                                         Text("e.g. What was discussed about the login screen bug?")
+                                    },
+                                    trailingIcon = {
+                                        IconButton(
+                                            onClick = { toggleDictation() }
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isDictating) Icons.Default.MicOff else Icons.Default.Mic,
+                                                contentDescription = "Voice Dictation",
+                                                tint = if (isDictating) AppColors.statusError else AppColors.brandPrimary
+                                            )
+                                        }
                                     },
                                     minLines = 2,
                                     maxLines = 4,

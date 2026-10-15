@@ -50,7 +50,7 @@ data class AIAssistantStreamEvent(
 class ApiClient(
     val baseUrl: String,
     private val token: String = "",
-    val orgId: String = "",
+    var orgId: String = "",
     private val client: OkHttpClient = transport,
     private val onUnauthorized: () -> Unit = {}
 ) {
@@ -193,12 +193,25 @@ class ApiClient(
         contextId: String? = null,
         entityPayload: Map<String, String>? = null,
         entityTypes: List<String>? = null,
-        maxSources: Int? = null
+        maxSources: Int? = null,
+        conversationId: String? = null,
+        history: List<Pair<String, String>>? = null
     ): Flow<AIAssistantStreamEvent> = callbackFlow {
         val payload = JsonObject().apply {
             addProperty("action", action)
             if (prompt != null) addProperty("prompt", prompt)
             if (contextId != null) addProperty("contextId", contextId)
+            if (conversationId != null) addProperty("conversationId", conversationId)
+            if (history != null && history.isNotEmpty()) {
+                val arr = com.google.gson.JsonArray()
+                history.forEach { (role, content) ->
+                    val msg = JsonObject()
+                    msg.addProperty("role", role)
+                    msg.addProperty("content", content)
+                    arr.add(msg)
+                }
+                add("history", arr)
+            }
             if (entityPayload != null) {
                 val entityObj = JsonObject()
                 entityPayload.forEach { (k, v) -> entityObj.addProperty(k, v) }
@@ -310,14 +323,44 @@ class ApiClient(
     fun streamAskKnowledgeBase(
         prompt: String,
         entityTypes: List<String>? = null,
-        maxSources: Int? = null
+        maxSources: Int? = null,
+        conversationId: String? = null,
+        history: List<Pair<String, String>>? = null
     ): Flow<AIAssistantStreamEvent> {
         return streamAICopilot(
             action = "ask_knowledge_base",
             prompt = prompt,
             entityTypes = entityTypes,
-            maxSources = maxSources
+            maxSources = maxSources,
+            conversationId = conversationId,
+            history = history
         )
+    }
+
+    suspend fun transcribeAudio(
+        audioBase64: String,
+        format: String = "wav",
+        language: String = "en"
+    ): String {
+        val payload = json(
+            "audioBase64" to audioBase64,
+            "format" to format,
+            "language" to language
+        )
+        val res = request("/api/ai/transcribe", "POST", payload)
+        return res.data.obj().text("transcription")
+    }
+
+    suspend fun getUnreadNotificationCount(): Int {
+        return try {
+            val res = request("/api/notifications/unread-count", "GET")
+            val obj = res.data.obj()
+            if (obj.has("count")) obj.get("count").asInt
+            else if (obj.has("unread")) obj.get("unread").asInt
+            else 0
+        } catch (e: Exception) {
+            0
+        }
     }
 
     fun streamBreakdownTask(prompt: String): Flow<AIAssistantStreamEvent> {

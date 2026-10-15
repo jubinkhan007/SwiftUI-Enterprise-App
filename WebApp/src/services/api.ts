@@ -72,7 +72,12 @@ import {
   AIAssistantRequest,
   AIAssistantResponse,
   AIAssistantStreamEvent,
-  AIAssistantStreamEventType
+  AIAssistantStreamEventType,
+  AIAssistantMessageDTO,
+  AudioTranscriptionRequest,
+  AudioTranscriptionResponse,
+  NotificationUnreadCountDTO,
+  NotificationBatchReadResponse
 } from '../types';
 
 class ApiService {
@@ -392,8 +397,13 @@ class ApiService {
   }
 
   // --- Notifications ---
-  async getNotifications(): Promise<NotificationDTO[]> {
-    const raw = await this.request<any>('/api/notifications');
+  async getNotifications(unreadOnly?: boolean, category?: string): Promise<NotificationDTO[]> {
+    const params = new URLSearchParams();
+    if (unreadOnly) params.append('unreadOnly', 'true');
+    if (category && category !== 'All') params.append('category', category.toLowerCase());
+    const query = params.toString() ? `?${params.toString()}` : '';
+
+    const raw = await this.request<any>(`/api/notifications${query}`);
     const items: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
     return items.map((n: any) => {
       let payload: any = {};
@@ -431,6 +441,17 @@ class ApiService {
     });
   }
 
+  async getNotificationUnreadCount(): Promise<number> {
+    try {
+      const res = await this.request<any>('/api/notifications/unread-count');
+      const count = res?.count ?? res?.unread ?? 0;
+      return typeof count === 'number' ? count : 0;
+    } catch (e) {
+      console.warn('Could not fetch unread count:', e);
+      return 0;
+    }
+  }
+
   async markNotificationRead(notificationId: string): Promise<void> {
     try {
       await this.request(`/api/notifications/${notificationId}/read`, { method: 'POST' });
@@ -439,10 +460,20 @@ class ApiService {
     }
   }
 
-  async markAllNotificationsRead(): Promise<void> {
-    const unread = await this.getNotifications();
-    for (const item of unread.filter(n => !n.isRead)) {
-      await this.markNotificationRead(item.id);
+  async markAllNotificationsRead(): Promise<NotificationBatchReadResponse> {
+    try {
+      const res = await this.request<any>('/api/notifications/mark-all-read', { method: 'POST' });
+      return {
+        markedCount: res?.markedCount ?? res?.marked_count ?? 0,
+        success: res?.success ?? true
+      };
+    } catch (e) {
+      console.warn('Batch mark-all-read failed, falling back to manual loop:', e);
+      const unread = await this.getNotifications();
+      for (const item of unread.filter(n => !n.isRead)) {
+        await this.markNotificationRead(item.id);
+      }
+      return { markedCount: 0, success: true };
     }
   }
 
@@ -2083,6 +2114,22 @@ class ApiService {
     })();
 
     return () => controller.abort();
+  }
+
+  async transcribeAudio(
+    audioBase64: string,
+    format: string = 'wav',
+    language: string = 'en'
+  ): Promise<AudioTranscriptionResponse> {
+    const raw = await this.request<any>('/api/ai/transcribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        audioBase64,
+        format,
+        language,
+      }),
+    });
+    return raw?.data || raw;
   }
 }
 

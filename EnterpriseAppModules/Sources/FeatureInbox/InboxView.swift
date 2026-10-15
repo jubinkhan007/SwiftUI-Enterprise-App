@@ -34,9 +34,22 @@ public struct InboxView: View {
 
     private var headerBar: some View {
         HStack(spacing: AppSpacing.md) {
-            Text("Inbox")
-                .appFont(AppTypography.title1)
-                .foregroundColor(AppColors.textPrimary)
+            HStack(spacing: 8) {
+                Text("Inbox")
+                    .appFont(AppTypography.title1)
+                    .foregroundColor(AppColors.textPrimary)
+
+                if viewModel.unreadCount > 0 {
+                    Text("\(viewModel.unreadCount)")
+                        .appFont(AppTypography.caption1)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(AppColors.brandPrimary)
+                        .clipShape(Capsule())
+                }
+            }
 
             Spacer()
 

@@ -192,6 +192,16 @@ public struct SuggestedTaskDTO: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+public struct AIAssistantMessageDTO: Codable, Sendable, Equatable, Hashable {
+    public let role: String // "user" or "assistant"
+    public let content: String
+
+    public init(role: String, content: String) {
+        self.role = role
+        self.content = content
+    }
+}
+
 public struct AIAssistantRequest: Codable, Sendable {
     public let action: AIAssistantAction
     public let contextId: String?
@@ -199,6 +209,8 @@ public struct AIAssistantRequest: Codable, Sendable {
     public let entityPayload: [String: String]?
     public let entityTypes: [SearchEntityType]?
     public let maxSources: Int?
+    public let conversationId: String?
+    public let history: [AIAssistantMessageDTO]?
 
     public init(
         action: AIAssistantAction,
@@ -206,7 +218,9 @@ public struct AIAssistantRequest: Codable, Sendable {
         prompt: String? = nil,
         entityPayload: [String: String]? = nil,
         entityTypes: [SearchEntityType]? = nil,
-        maxSources: Int? = nil
+        maxSources: Int? = nil,
+        conversationId: String? = nil,
+        history: [AIAssistantMessageDTO]? = nil
     ) {
         self.action = action
         self.contextId = contextId
@@ -214,6 +228,28 @@ public struct AIAssistantRequest: Codable, Sendable {
         self.entityPayload = entityPayload
         self.entityTypes = entityTypes
         self.maxSources = maxSources
+        self.conversationId = conversationId
+        self.history = history
+    }
+}
+
+public struct AudioTranscriptionRequest: Codable, Sendable {
+    public let audioBase64: String?
+    public let simulatedText: String?
+
+    public init(audioBase64: String? = nil, simulatedText: String? = nil) {
+        self.audioBase64 = audioBase64
+        self.simulatedText = simulatedText
+    }
+}
+
+public struct AudioTranscriptionResponse: Codable, Sendable {
+    public let text: String
+    public let confidence: Double
+
+    public init(text: String, confidence: Double = 0.98) {
+        self.text = text
+        self.confidence = confidence
     }
 }
 

@@ -8,12 +8,15 @@ import SharedModels
 public final class InboxViewModel: ObservableObject {
     @Published public private(set) var notifications: [NotificationDTO] = []
     @Published public private(set) var isLoading: Bool = false
+    @Published public private(set) var unreadCount: Int = 0
     @Published public var error: Error?
     public enum NotificationFilter: String, CaseIterable, Identifiable {
         case all = "All"
         case mentions = "Mentions"
         case assignments = "Assignments"
         case updates = "Updates"
+        case messages = "Messages"
+        case meetings = "Meetings"
         
         public var id: String { self.rawValue }
     }
@@ -38,6 +41,10 @@ public final class InboxViewModel: ObservableObject {
             return base.filter { $0.type.lowercased().contains("assign") }
         case .updates:
             return base.filter { $0.type.lowercased().contains("update") || $0.type.lowercased().contains("status") }
+        case .messages:
+            return base.filter { $0.type.lowercased().contains("message") || $0.type.lowercased().contains("chat") }
+        case .meetings:
+            return base.filter { $0.type.lowercased().contains("meeting") || $0.type.lowercased().contains("call") }
         }
     }
     
@@ -55,6 +62,11 @@ public final class InboxViewModel: ObservableObject {
         do {
             let response = try await notificationRepository.getNotifications(unreadOnly: unreadOnly)
             self.notifications = response.data ?? []
+            if let countDTO = try? await notificationRepository.getUnreadCount(), let count = countDTO.data?.count {
+                self.unreadCount = count
+            } else {
+                self.unreadCount = self.notifications.filter { $0.readAt == nil }.count
+            }
         } catch {
              self.error = error
         }
@@ -72,6 +84,7 @@ public final class InboxViewModel: ObservableObject {
                     } else {
                         notifications[index] = updated
                     }
+                    self.unreadCount = self.notifications.filter { $0.readAt == nil }.count
                 }
             }
         } catch {
@@ -80,9 +93,29 @@ public final class InboxViewModel: ObservableObject {
     }
     
     public func markAllAsRead() async {
-        let unread = notifications.filter { $0.readAt == nil }
-        for notification in unread {
-            await markAsRead(notification)
+        do {
+            _ = try await notificationRepository.markAllRead()
+            let now = Date()
+            notifications = notifications.map { item in
+                NotificationDTO(
+                    id: item.id,
+                    userId: item.userId,
+                    orgId: item.orgId,
+                    actorUserId: item.actorUserId,
+                    entityType: item.entityType,
+                    entityId: item.entityId,
+                    type: item.type,
+                    payloadJson: item.payloadJson,
+                    readAt: now,
+                    createdAt: item.createdAt
+                )
+            }
+            if unreadOnly {
+                notifications.removeAll()
+            }
+            self.unreadCount = 0
+        } catch {
+            self.error = error
         }
     }
 }

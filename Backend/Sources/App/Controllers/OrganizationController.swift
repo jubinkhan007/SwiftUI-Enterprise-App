@@ -23,6 +23,8 @@ struct OrganizationController: RouteCollection {
             org.post("invites", use: createInvite)
             org.get("invites", use: listInvites)
             org.put("members", ":memberID", "role", use: updateMemberRole)
+            org.put("members", ":memberID", use: updateMemberRole)
+            org.patch("members", ":memberID", use: updateMemberRole)
             org.delete("members", ":memberID", use: removeMember)
             org.post("invites", ":inviteID", "revoke", use: revokeInvite)
             org.get("audit-log", use: listAuditLog)
