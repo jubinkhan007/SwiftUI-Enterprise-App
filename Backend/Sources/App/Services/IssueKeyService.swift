@@ -23,18 +23,46 @@ enum IssueKeyService {
             try await project.save(on: db)
         }
 
-        if let counter = try await IssueKeyCounterModel.query(on: db)
+        let existingCounter = try await IssueKeyCounterModel.query(on: db)
             .filter(\.$project.$id == projectId)
             .first()
-        {
-            let n = max(counter.nextNumber, 1)
-            counter.nextNumber = n + 1
-            try await counter.save(on: db)
-            return "\(desiredPrefix)-\(n)"
+
+        let baseNumber: Int
+        let counter: IssueKeyCounterModel
+        if let existing = existingCounter {
+            counter = existing
+            baseNumber = max(counter.nextNumber, 1)
         } else {
-            let counter = IssueKeyCounterModel(projectId: projectId, nextNumber: 2)
-            try await counter.save(on: db)
-            return "\(desiredPrefix)-1"
+            // Find highest existing issue key number for this project if tasks already exist
+            let tasks = try await TaskItemModel.query(on: db)
+                .filter(\.$project.$id == projectId)
+                .all()
+            var maxExisting = 0
+            for t in tasks {
+                if let key = t.issueKey, let numStr = key.split(separator: "-").last, let num = Int(numStr) {
+                    if num > maxExisting {
+                        maxExisting = num
+                    }
+                }
+            }
+            baseNumber = maxExisting + 1
+            counter = IssueKeyCounterModel(projectId: projectId, nextNumber: baseNumber)
+        }
+
+        var candidate = baseNumber
+        // Ensure no collision if seed or manual insertion bypassed counter
+        while true {
+            let key = "\(desiredPrefix)-\(candidate)"
+            let exists = try await TaskItemModel.query(on: db)
+                .filter(\.$project.$id == projectId)
+                .filter(\.$issueKey == key)
+                .first() != nil
+            if !exists {
+                counter.nextNumber = candidate + 1
+                try await counter.save(on: db)
+                return key
+            }
+            candidate += 1
         }
     }
 }
