@@ -1,0 +1,67 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile
+    container_name: enterprise_backend
+    ports:
+      - "8080:8080"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-enterprise-app-production-secret-key-change-me}
+      - DATABASE_PATH=/data/enterprise_app.db
+      - OPENSSL_ia32cap=0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - backend_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - enterprise-net
+
+  webapp:
+    build:
+      context: ./WebApp
+      dockerfile: Dockerfile
+    container_name: enterprise_webapp
+    ports:
+      - "3000:80"
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - enterprise-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: enterprise_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - enterprise-net
+
+volumes:
+  backend_data:
+    name: enterprise_backend_data
+  redis_data:
+    name: enterprise_redis_data
+
+networks:
+  enterprise-net:
+    name: enterprise_network
+    driver: bridge

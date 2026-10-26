@@ -1,4 +1,4 @@
-name: Enterprise App CI
+name: Enterprise App Multi-Platform CI
 
 on:
   push:
@@ -6,17 +6,97 @@ on:
   pull_request:
     branches: [ "main" ]
 
-jobs:
-  build_and_test_modules:
-    runs-on: macos-14 # Ensures we have Xcode 15+ and iOS 17 support
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
+  ios-modules:
+    name: iOS SPM Modules & SwiftData
+    runs-on: macos-14
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Select Xcode Version
-      run: sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
-      
-    - name: Build and Test SPM Modules
-      run: |
-        cd EnterpriseAppModules
-        swift test
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
+
+      - name: Build and Test SPM Modules
+        run: |
+          cd EnterpriseAppModules
+          swift test
+
+  backend:
+    name: Backend (Swift / Vapor 4)
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.0-jammy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Backend Tests
+        run: |
+          cd Backend
+          swift test
+
+  webapp:
+    name: WebApp (React / TypeScript / Vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'WebApp/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          cd WebApp
+          npm ci
+
+      - name: Typecheck
+        run: |
+          cd WebApp
+          npm run typecheck
+
+      - name: Run Unit & OCC Stress Tests
+        run: |
+          cd WebApp
+          npm test
+
+      - name: Build Production Bundle
+        run: |
+          cd WebApp
+          npm run build
+
+  android:
+    name: Android (Kotlin / Jetpack Compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Run Android Unit & Sync Stress Tests
+        run: |
+          cd AndroidApp
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest
+
+  docker-compose-validate:
+    name: Docker Compose Syntax Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Local Docker Compose
+        run: docker compose -f docker-compose.yml config
+
+      - name: Validate Production Docker Compose
+        run: docker compose -f docker-compose.prod.yml config
