@@ -13,6 +13,8 @@ import {
   CreditCard,
   Palette,
   Key,
+  Shield,
+  Laptop,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -32,14 +34,22 @@ const platformNav: NavItem[] = [
   { to: "/platform/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
-const orgNav: NavItem[] = [
-  { to: "/org/members", label: "Members", icon: UsersRound },
+const adminSettingsNav: NavItem[] = [
   { to: "/org/retention", label: "Retention", icon: Clock },
   { to: "/org/compliance", label: "Compliance", icon: FileArchive },
   { to: "/org/moderation", label: "Moderation", icon: ShieldAlert },
   { to: "/org/billing", label: "Billing", icon: CreditCard },
   { to: "/org/branding", label: "Branding", icon: Palette },
   { to: "/org/sso", label: "SSO Config", icon: Key },
+];
+
+const workspaceNav: NavItem[] = [
+  { to: "/org/members", label: "Members", icon: UsersRound },
+  { to: "/org/permissions", label: "Role & Permissions", icon: Shield },
+];
+
+const accountNav: NavItem[] = [
+  { to: "/org/sessions", label: "Active Sessions", icon: Laptop },
 ];
 
 function NavSection({ title, items }: { title: string; items: NavItem[] }) {
@@ -72,7 +82,9 @@ function NavSection({ title, items }: { title: string; items: NavItem[] }) {
 }
 
 export function Sidebar() {
-  const { isSuperAdmin, adminOrgs, activeOrgId } = useAuth();
+  const { isSuperAdmin, isAdminOrOwner, allOrgs } = useAuth();
+  const hasWorkspace = allOrgs.length > 0;
+
   return (
     <aside className="glass m-3 flex w-60 shrink-0 flex-col rounded-2xl p-4">
       <div className="mb-7 flex items-center gap-2.5 px-1">
@@ -87,7 +99,11 @@ export function Sidebar() {
 
       <div className="flex-1 overflow-y-auto">
         {isSuperAdmin && <NavSection title="Platform" items={platformNav} />}
-        {(adminOrgs.length > 0 || (isSuperAdmin && activeOrgId)) && <NavSection title="Workspace" items={orgNav} />}
+        {hasWorkspace && <NavSection title="Workspace" items={workspaceNav} />}
+        {(isAdminOrOwner || isSuperAdmin) && hasWorkspace && (
+          <NavSection title="Administration" items={adminSettingsNav} />
+        )}
+        <NavSection title="Account Security" items={accountNav} />
       </div>
     </aside>
   );

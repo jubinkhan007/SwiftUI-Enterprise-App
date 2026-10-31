@@ -17,6 +17,9 @@ struct AdminMeResponse: Content {
     let isSuperAdmin: Bool
     /// Organizations where the user is admin/owner — drives the org-admin portal selector.
     let adminOrgs: [AdminOrgSummary]
+    /// Every organization the user belongs to, with their role in each. Drives the
+    /// role-aware workspace sections for manager/member/viewer/guest.
+    let memberships: [AdminOrgSummary]
 }
 
 /// Web admin panel authentication: HttpOnly cookie sessions with a short-lived
@@ -144,15 +147,20 @@ struct AdminAuthController: RouteCollection {
         guard let userId = user.id else {
             throw Abort(.internalServerError, reason: "User record missing id.")
         }
-        let memberships = try await OrganizationMemberModel.query(on: req.db)
+        let rows = try await OrganizationMemberModel.query(on: req.db)
             .filter(\.$user.$id == userId)
-            .filter(\.$role ~~ [UserRole.admin, UserRole.owner])
             .with(\.$organization)
             .all()
-        let adminOrgs = memberships.map {
-            AdminOrgSummary(id: $0.$organization.id, name: $0.organization.name, slug: $0.organization.slug, role: $0.role)
-        }
-        return AdminMeResponse(user: user.toDTO(), isSuperAdmin: user.isSuperAdmin, adminOrgs: adminOrgs)
+        let memberships = rows
+            .map { AdminOrgSummary(id: $0.$organization.id, name: $0.organization.name, slug: $0.organization.slug, role: $0.role) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let adminOrgs = memberships.filter { $0.role == .admin || $0.role == .owner }
+        return AdminMeResponse(
+            user: user.toDTO(),
+            isSuperAdmin: user.isSuperAdmin,
+            adminOrgs: adminOrgs,
+            memberships: memberships
+        )
     }
 
     private func promoteIfAllowlisted(_ user: UserModel, on req: Request) async throws {

@@ -29,6 +29,14 @@ export interface AdminMeResponse {
   user: AdminUserSelf;
   is_super_admin: boolean;
   admin_orgs: AdminOrgSummary[];
+  memberships: AdminOrgSummary[];
+}
+
+export interface PermissionDefinition {
+  key: string;
+  label: string;
+  category: "Tasks" | "Team & Members" | "Projects" | "Analytics & Reports" | "Agile & Releases" | "Workspace Settings";
+  description: string;
 }
 
 // ---- Super-admin platform ----

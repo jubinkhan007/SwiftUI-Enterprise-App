@@ -7,15 +7,37 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "../lib/api";
-import type { AdminMeResponse, AdminOrgSummary, AdminUserSelf } from "../types";
+import type { AdminMeResponse, AdminOrgSummary, AdminUserSelf, UserRole } from "../types";
 
-interface AuthState {
+export interface AuthState {
   loading: boolean;
   user: AdminUserSelf | null;
   isSuperAdmin: boolean;
+  /** Organizations where the user is admin/owner. */
   adminOrgs: AdminOrgSummary[];
-  /** Currently selected org for the tenant portal. */
+  /** All organizations the user is a member of across any role. */
+  memberships: AdminOrgSummary[];
+  /** All accessible organizations for the selector. */
+  allOrgs: AdminOrgSummary[];
+  /** Currently selected org id. */
   activeOrgId: string | null;
+  /** Active organization summary with current role. */
+  activeOrg: AdminOrgSummary | null;
+  /** User's role in the active organization. */
+  activeRole: UserRole | null;
+
+  // RBAC capability helpers
+  isOwner: boolean;
+  isAdmin: boolean;
+  isAdminOrOwner: boolean;
+  isManager: boolean;
+  isManagerOrAbove: boolean;
+  canManageMembers: boolean;
+  canInviteMembers: boolean;
+  canManageSettings: boolean;
+  canViewAnalytics: boolean;
+  canViewAudit: boolean;
+
   setActiveOrgId: (id: string) => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -32,9 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function applyMe(next: AdminMeResponse | null) {
     setMe(next);
     if (next) {
+      const orgList = (next.memberships && next.memberships.length > 0)
+        ? next.memberships
+        : next.admin_orgs;
       setActiveOrgIdState((cur) => {
-        if (cur && next.admin_orgs.some((o) => o.id === cur)) return cur;
-        return next.admin_orgs[0]?.id ?? null;
+        if (cur && orgList.some((o) => o.id === cur)) return cur;
+        return orgList[0]?.id ?? null;
       });
     } else {
       setActiveOrgIdState(null);
@@ -54,13 +79,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void loadMe().finally(() => setLoading(false));
   }, []);
 
-  const value = useMemo<AuthState>(
-    () => ({
+  const value = useMemo<AuthState>(() => {
+    const user = me?.user ?? null;
+    const isSuperAdmin = me?.is_super_admin ?? false;
+    const adminOrgs = me?.admin_orgs ?? [];
+    const memberships = me?.memberships ?? [];
+    const allOrgs = memberships.length > 0 ? memberships : adminOrgs;
+
+    const activeOrg = allOrgs.find((o) => o.id === activeOrgId) ?? allOrgs[0] ?? null;
+    const activeRole = activeOrg?.role ?? user?.role ?? null;
+
+    const isOwner = activeRole === "owner";
+    const isAdmin = activeRole === "admin";
+    const isAdminOrOwner = isOwner || isAdmin;
+    const isManager = activeRole === "manager";
+    const isManagerOrAbove = isOwner || isAdmin || isManager;
+
+    // Permissions according to SharedModels default mapping
+    const canManageMembers = isAdminOrOwner;
+    const canInviteMembers = isManagerOrAbove;
+    const canManageSettings = isAdminOrOwner;
+    const canViewAnalytics = isManagerOrAbove || activeRole === "viewer";
+    const canViewAudit = isAdminOrOwner;
+
+    return {
       loading,
-      user: me?.user ?? null,
-      isSuperAdmin: me?.is_super_admin ?? false,
-      adminOrgs: me?.admin_orgs ?? [],
-      activeOrgId,
+      user,
+      isSuperAdmin,
+      adminOrgs,
+      memberships,
+      allOrgs,
+      activeOrgId: activeOrg?.id ?? activeOrgId,
+      activeOrg,
+      activeRole,
+      isOwner,
+      isAdmin,
+      isAdminOrOwner,
+      isManager,
+      isManagerOrAbove,
+      canManageMembers,
+      canInviteMembers,
+      canManageSettings,
+      canViewAnalytics,
+      canViewAudit,
       setActiveOrgId: setActiveOrgIdState,
       async login(email, password) {
         const data = await api<AdminMeResponse>("/admin/auth/login", {
@@ -76,9 +137,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async refresh() {
         await loadMe();
       },
-    }),
-    [loading, me, activeOrgId],
-  );
+    };
+  }, [loading, me, activeOrgId]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

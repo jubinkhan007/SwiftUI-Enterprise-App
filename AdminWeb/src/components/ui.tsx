@@ -60,7 +60,7 @@ export function Button({
 
 // ---- Badge ----
 
-type Tone = "emerald" | "amber" | "rose" | "blue" | "slate";
+type Tone = "emerald" | "amber" | "rose" | "blue" | "slate" | "purple";
 
 const toneClasses: Record<Tone, string> = {
   emerald: "bg-emerald/15 text-emerald border-emerald/25",
@@ -68,6 +68,7 @@ const toneClasses: Record<Tone, string> = {
   rose: "bg-rose/15 text-rose border-rose/25",
   blue: "bg-primary/15 text-primary border-primary/25",
   slate: "bg-white/5 text-muted border-white/10",
+  purple: "bg-purple-500/15 text-purple-400 border-purple-500/25",
 };
 
 export function Badge({ tone = "slate", children }: { tone?: Tone; children: ReactNode }) {

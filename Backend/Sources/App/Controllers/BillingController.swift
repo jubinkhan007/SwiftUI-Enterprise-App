@@ -18,6 +18,7 @@ struct BillingController: RouteCollection {
     @Sendable
     func createCheckoutSession(req: Request) async throws -> Response {
         let ctx = try req.orgContext
+        try req.requirePermission(.orgSettings)
         guard let _ = try await OrganizationModel.find(ctx.orgId, on: req.db) else {
             throw Abort(.notFound, reason: "Organization not found.")
         }
@@ -80,6 +81,7 @@ struct BillingController: RouteCollection {
     @Sendable
     func createPortalSession(req: Request) async throws -> Response {
         let ctx = try req.orgContext
+        try req.requirePermission(.orgSettings)
         guard let org = try await OrganizationModel.find(ctx.orgId, on: req.db) else {
             throw Abort(.notFound, reason: "Organization not found.")
         }
