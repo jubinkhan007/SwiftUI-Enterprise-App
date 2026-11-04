@@ -420,9 +420,6 @@ fun NotificationPreferencesModal(
 
 @Composable
 fun SessionsScreen(vm: AppViewModel, api: ApiClient) {
-    val remote = rememberRemote(api, "/api/me/sessions", vm.revision)
-    var selected by remember { mutableStateOf<JsonObject?>(null) }
-
     Column(Modifier.fillMaxSize().background(AppColors.backgroundPrimary)) {
         Column(
             modifier = Modifier
@@ -430,49 +427,11 @@ fun SessionsScreen(vm: AppViewModel, api: ApiClient) {
                 .background(AppColors.surfacePrimary)
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            Text("Active Sessions", style = AppTypography.largeTitle, color = AppColors.textPrimary)
+            Text("Security & Sessions", style = AppTypography.largeTitle, color = AppColors.textPrimary)
         }
         HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
 
-        RemoteStatus(remote)
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(remote.data.rows(), key = { it.id }) { session ->
-                IosCard(Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(AppRadius.small))
-                                .background(AppColors.brandPrimary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Devices, null, tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(session.text("device_type", "Device"), style = AppTypography.headline)
-                            Text(session.text("ip_address"), style = AppTypography.caption1, color = AppColors.textSecondary)
-                            Text("Expires ${dateLabel(session.text("expires_at"))}", style = AppTypography.caption2, color = AppColors.textTertiary)
-                        }
-                        IconButton(onClick = { selected = session }) {
-                            Icon(Icons.AutoMirrored.Filled.Logout, "Revoke session", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    selected?.let { session ->
-        ConfirmDialog("Revoke session?", "This device will need to sign in again.", { selected = null }) {
-            api.request("/api/me/sessions/${session.id}", "DELETE")
-            vm.changed()
-        }
+        SecuritySessionsContent(vm = vm, api = api, modifier = Modifier.fillMaxSize())
     }
 }
 
@@ -490,6 +449,9 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Members, 1 = Invites, 2 = Requests
     var showInviteModal by remember { mutableStateOf(false) }
     var showBillingModal by remember { mutableStateOf(false) }
+    var showGovernanceMenu by remember { mutableStateOf(false) }
+    var showRolesModal by remember { mutableStateOf(false) }
+    var showSessionsModal by remember { mutableStateOf(false) }
     var memberBeingEdited by remember { mutableStateOf<JsonObject?>(null) }
     var memberToRemove by remember { mutableStateOf<JsonObject?>(null) }
     var inviteToRevoke by remember { mutableStateOf<JsonObject?>(null) }
@@ -532,6 +494,40 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
                     color = AppColors.textPrimary,
                     modifier = Modifier.weight(1f)
                 )
+                Box {
+                    IconButton(
+                        onClick = { showGovernanceMenu = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(AppColors.brandPrimary.copy(alpha = 0.12f))
+                            .testTag("btn_governance_menu")
+                    ) {
+                        Icon(Icons.Default.Security, "Governance", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                    }
+                    DropdownMenu(
+                        expanded = showGovernanceMenu,
+                        onDismissRequest = { showGovernanceMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Roles & Permissions") },
+                            leadingIcon = { Icon(Icons.Default.VerifiedUser, contentDescription = null) },
+                            onClick = {
+                                showGovernanceMenu = false
+                                showRolesModal = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Security & Sessions") },
+                            leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
+                            onClick = {
+                                showGovernanceMenu = false
+                                showSessionsModal = true
+                            }
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
                 IconButton(
                     onClick = { showBillingModal = true },
                     modifier = Modifier
@@ -879,6 +875,22 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
             vm = vm,
             api = api,
             onDismiss = { showBillingModal = false }
+        )
+    }
+
+    if (showRolesModal) {
+        RolesPermissionsModal(
+            vm = vm,
+            api = api,
+            onDismiss = { showRolesModal = false }
+        )
+    }
+
+    if (showSessionsModal) {
+        SecuritySessionsModal(
+            vm = vm,
+            api = api,
+            onDismiss = { showSessionsModal = false }
         )
     }
 }

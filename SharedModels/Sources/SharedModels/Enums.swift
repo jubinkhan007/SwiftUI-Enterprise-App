@@ -261,7 +261,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
                 .viewsCreate, .viewsUpdate, .viewsDelete, .viewsShare, .viewsSetDefault,
                 .membersView, .membersInvite,
-                .projectsCreate, .projectsEdit,
+                .projectsRead, .projectsCreate, .projectsEdit,
                 .analyticsView, .analyticsExport, .reportsExport,
                 .sprintsManage, .releasesManage, .issuesEditBugFields,
                 .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
@@ -272,7 +272,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
                 .viewsCreate, .viewsUpdate, .viewsDelete, .viewsShare, .viewsSetDefault,
                 .membersView, .membersInvite, .membersManage, .membersRemove,
-                .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
+                .projectsRead, .projectsCreate, .projectsEdit, .projectsDelete, .projectsArchive,
                 .analyticsView, .analyticsExport, .reportsExport,
                 .sprintsManage, .releasesManage, .issuesEditBugFields,
                 .orgSettings, .auditLogView,

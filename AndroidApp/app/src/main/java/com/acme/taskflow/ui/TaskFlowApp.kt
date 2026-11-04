@@ -207,7 +207,8 @@ private fun AuthenticatedShell(
                         val navItems = listOf(
                             Destination.AllTasks, Destination.MyTasks, Destination.Inbox,
                             Destination.Messages, Destination.Meetings, Destination.Calls,
-                            Destination.Productivity, Destination.Team
+                            Destination.Productivity, Destination.Team,
+                            Destination.Roles, Destination.Sessions
                         )
                         navItems.forEachIndexed { index, item ->
                             val isSelected = destination == item && listId.isBlank() && projectId.isBlank()
@@ -447,6 +448,7 @@ private fun AuthenticatedShell(
                     Destination.Calls -> CallsScreen(vm, api)
                     Destination.Productivity -> ProductivityScreen(vm, api)
                     Destination.Team -> TeamScreen(vm, api)
+                    Destination.Roles -> RolesPermissionsScreen(vm, api)
                     Destination.Sessions -> SessionsScreen(vm, api)
                 }
             }
@@ -838,6 +840,10 @@ private fun CompactWorkspaceNavigation(
         Destination.Productivity,
         Destination.Team
     )
+    val governanceNavItems = listOf(
+        Destination.Roles,
+        Destination.Sessions
+    )
     val spaces = hierarchy.data.obj().list("spaces")
 
     LazyColumn(
@@ -975,6 +981,24 @@ private fun CompactWorkspaceNavigation(
                         iconTint = Color(0xFF007AFF),
                         showChevron = true,
                         showDivider = index < secondaryNavItems.lastIndex,
+                        onClick = { onSelect(item) }
+                    )
+                }
+            }
+        }
+
+        // Governance & Security section (Roles & Permissions, Security & Sessions)
+        item {
+            IosSectionHeader("GOVERNANCE & SECURITY")
+            IosInsetGroupedCard {
+                governanceNavItems.forEachIndexed { index, item ->
+                    IosGroupedRow(
+                        title = item.title,
+                        modifier = Modifier.testTag("nav_item_${item.name.lowercase()}"),
+                        icon = item.icon,
+                        iconTint = Color(0xFF6E56CF),
+                        showChevron = true,
+                        showDivider = index < governanceNavItems.lastIndex,
                         onClick = { onSelect(item) }
                     )
                 }

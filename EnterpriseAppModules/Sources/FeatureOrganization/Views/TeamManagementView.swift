@@ -12,6 +12,8 @@ public struct TeamManagementView: View {
     @StateObject private var viewModel: TeamManagementViewModel
     @State private var selectedTab = 0
     @State private var toast: ToastMessage?
+    @State private var showRolesSheet = false
+    @State private var showSessionsSheet = false
 
     public init(orgId: UUID) {
         self._viewModel = StateObject(wrappedValue: TeamManagementViewModel(orgId: orgId))
@@ -72,6 +74,26 @@ public struct TeamManagementView: View {
             .navigationBarTitleDisplayMode(.large)
             #endif
             .toolbar {
+                // Governance menu — available to every role (read-only matrix + own sessions).
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button {
+                            showRolesSheet = true
+                        } label: {
+                            Label("Roles & Permissions", systemImage: "person.badge.shield.checkmark")
+                        }
+                        Button {
+                            showSessionsSheet = true
+                        } label: {
+                            Label("Security & Sessions", systemImage: "lock.shield")
+                        }
+                    } label: {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .foregroundColor(AppColors.brandPrimary)
+                    }
+                    .accessibilityLabel("Governance")
+                }
+
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         viewModel.showBillingSheet = true
@@ -97,6 +119,12 @@ public struct TeamManagementView: View {
             }
             .sheet(isPresented: $viewModel.showInviteSheet) {
                 inviteSheet
+            }
+            .sheet(isPresented: $showRolesSheet) {
+                OrganizationRolesView(currentRole: viewModel.currentRole)
+            }
+            .sheet(isPresented: $showSessionsSheet) {
+                SecuritySessionsView()
             }
             .sheet(item: $viewModel.memberBeingEdited) { member in
                 roleEditSheet(for: member)

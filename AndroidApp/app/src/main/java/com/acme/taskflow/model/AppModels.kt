@@ -13,7 +13,8 @@ enum class Destination(val title: String, val icon: ImageVector) {
     Calls("Calls", Icons.Default.VideoCall),
     Productivity("Productivity", Icons.Default.Bolt),
     Team("Team", Icons.Default.Groups),
-    Sessions("Security Sessions", Icons.Default.Security)
+    Roles("Roles & Permissions", Icons.Default.VerifiedUser),
+    Sessions("Security & Sessions", Icons.Default.Security)
 }
 
 data class Workspace(val name: String, val slug: String, val tier: String, val owner: String)

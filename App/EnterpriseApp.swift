@@ -115,6 +115,8 @@ struct AuthenticatedRootView: View {
     @ObservedObject private var pushNotificationManager: PushNotificationManager = .shared
     @State private var showTeamManagement = false
     @State private var showBillingSheet = false
+    @State private var showRolesSheet = false
+    @State private var showSessionsSheet = false
     @State private var showingCreateTask = false
     @State private var showingOmnibar = false
     @State private var viewType: DashboardViewType = .list
@@ -345,6 +347,12 @@ struct AuthenticatedRootView: View {
                 .sheet(isPresented: $showBillingSheet) {
                     BillingSettingsView(orgId: selectedOrg.id)
                 }
+                .sheet(isPresented: $showRolesSheet) {
+                    OrganizationRolesView(currentRole: session.user.role)
+                }
+                .sheet(isPresented: $showSessionsSheet) {
+                    SecuritySessionsView()
+                }
                 .sheet(item: $selectedMeetingSheet) { item in
                     NavigationStack {
                         MeetingDetailView(
@@ -454,6 +462,16 @@ struct AuthenticatedRootView: View {
                 showTeamManagement = true
             } label: {
                 Label("Team Management", systemImage: "person.3")
+            }
+            Button {
+                showRolesSheet = true
+            } label: {
+                Label("Roles & Permissions", systemImage: "person.badge.shield.checkmark")
+            }
+            Button {
+                showSessionsSheet = true
+            } label: {
+                Label("Security & Sessions", systemImage: "lock.shield")
             }
             Divider()
             Button("Sign Out", role: .destructive) {

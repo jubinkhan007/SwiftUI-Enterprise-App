@@ -91,7 +91,7 @@ let package = Package(
         ),
         .testTarget(
             name: "EnterpriseAppModulesTests",
-            dependencies: ["Core", "AppNetwork", "Domain", "AppData", .product(name: "SharedModels", package: "SharedModels")]
+            dependencies: ["Core", "AppNetwork", "Domain", "AppData", "FeatureOrganization", .product(name: "SharedModels", package: "SharedModels")]
         ),
     ]
 )
