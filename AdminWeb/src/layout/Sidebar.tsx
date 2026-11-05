@@ -35,6 +35,7 @@ const platformNav: NavItem[] = [
 ];
 
 const adminSettingsNav: NavItem[] = [
+  { to: "/org/audit", label: "Audit Log", icon: ScrollText },
   { to: "/org/retention", label: "Retention", icon: Clock },
   { to: "/org/compliance", label: "Compliance", icon: FileArchive },
   { to: "/org/moderation", label: "Moderation", icon: ShieldAlert },

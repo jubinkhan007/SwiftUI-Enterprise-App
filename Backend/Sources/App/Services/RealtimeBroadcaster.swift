@@ -62,7 +62,9 @@ enum RealtimeBroadcaster {
             updatedAt: Date(),
             payload: payload
         )
-        guard let data = try? JSONEncoder().encode(event),
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(event),
               let text = String(data: data, encoding: .utf8)
         else { return }
 
@@ -76,5 +78,34 @@ enum RealtimeBroadcaster {
         for channel in channels {
             app.realtimeHub.broadcast(channel: channel, text: text)
         }
+    }
+
+    static func broadcastAuditLog(_ dto: AuditLogDTO, app: Application? = nil) {
+        guard let hub = app?.realtimeHub ?? RealtimeHub.current else { return }
+        let payload: [String: String] = [
+            "id": dto.id.uuidString,
+            "orgId": dto.orgId.uuidString,
+            "userId": dto.userId.uuidString,
+            "userEmail": dto.userEmail,
+            "action": dto.action,
+            "resourceType": dto.resourceType,
+            "resourceId": dto.resourceId?.uuidString ?? "",
+            "details": dto.details ?? ""
+        ]
+        let event = ServerEvent(
+            eventId: UUID().uuidString,
+            orgId: dto.orgId,
+            type: "audit.created",
+            entityId: dto.id,
+            updatedAt: dto.createdAt ?? Date(),
+            payload: payload
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(event),
+              let text = String(data: data, encoding: .utf8)
+        else { return }
+
+        hub.broadcast(channel: "org:\(dto.orgId.uuidString)", text: text)
     }
 }

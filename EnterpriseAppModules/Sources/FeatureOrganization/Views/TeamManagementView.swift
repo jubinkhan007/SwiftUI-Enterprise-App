@@ -14,6 +14,7 @@ public struct TeamManagementView: View {
     @State private var toast: ToastMessage?
     @State private var showRolesSheet = false
     @State private var showSessionsSheet = false
+    @State private var showAuditLogSheet = false
 
     public init(orgId: UUID) {
         self._viewModel = StateObject(wrappedValue: TeamManagementViewModel(orgId: orgId))
@@ -87,6 +88,13 @@ public struct TeamManagementView: View {
                         } label: {
                             Label("Security & Sessions", systemImage: "lock.shield")
                         }
+                        if viewModel.canViewAuditLog {
+                            Button {
+                                showAuditLogSheet = true
+                            } label: {
+                                Label("Workspace Audit Log", systemImage: "list.bullet.clipboard")
+                            }
+                        }
                     } label: {
                         Image(systemName: "shield.lefthalf.filled")
                             .foregroundColor(AppColors.brandPrimary)
@@ -125,6 +133,9 @@ public struct TeamManagementView: View {
             }
             .sheet(isPresented: $showSessionsSheet) {
                 SecuritySessionsView()
+            }
+            .sheet(isPresented: $showAuditLogSheet) {
+                AuditLogView(orgId: viewModel.orgId)
             }
             .sheet(item: $viewModel.memberBeingEdited) { member in
                 roleEditSheet(for: member)

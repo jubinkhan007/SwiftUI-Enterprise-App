@@ -747,10 +747,22 @@ struct OrganizationController: RouteCollection {
         let ctx = try req.orgContext
         try req.requirePermission(.auditLogView)
 
-        let logs = try await AuditLogModel.query(on: req.db)
+        let rawLimit = (try? req.query.get(Int.self, at: "limit")) ?? 100
+        let limit = max(1, min(rawLimit, 300))
+
+        var query = AuditLogModel.query(on: req.db)
             .filter(\.$organization.$id == ctx.orgId)
+
+        if let action = try? req.query.get(String.self, at: "action"), !action.isEmpty {
+            query = query.filter(\.$action == action)
+        }
+        if let resourceType = try? req.query.get(String.self, at: "resource_type"), !resourceType.isEmpty {
+            query = query.filter(\.$resourceType == resourceType)
+        }
+
+        let logs = try await query
             .sort(\.$createdAt, .descending)
-            .range(..<50)
+            .range(..<limit)
             .all()
 
         return .success(logs.map { $0.toDTO() })

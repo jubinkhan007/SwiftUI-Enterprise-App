@@ -1,6 +1,7 @@
 package com.acme.taskflow
 
 import com.acme.taskflow.ui.screens.RolePermissions
+import com.acme.taskflow.ui.screens.auditCategoryFor
 import com.acme.taskflow.ui.screens.sessionClientLabel
 import com.google.gson.JsonObject
 import org.junit.Assert.assertEquals
@@ -37,6 +38,19 @@ class RolePermissionsTest {
         assertEquals("Android App", sessionClientLabel(android))
         assertEquals("iOS App", sessionClientLabel(ios))
         assertEquals("Chrome", sessionClientLabel(chrome))
+    }
+
+    @Test
+    fun `auditCategoryFor classifies member security channel and settings actions`() {
+        val memberAction = JsonObject().apply { addProperty("action", "member.role_changed") }
+        val sessionAction = JsonObject().apply { addProperty("action", "session.revoked") }
+        val channelAction = JsonObject().apply { addProperty("action", "channel.locked") }
+        val retentionAction = JsonObject().apply { addProperty("action", "org.retention_changed") }
+
+        assertEquals("members", auditCategoryFor(memberAction))
+        assertEquals("security", auditCategoryFor(sessionAction))
+        assertEquals("channels", auditCategoryFor(channelAction))
+        assertEquals("settings", auditCategoryFor(retentionAction))
     }
 }
 

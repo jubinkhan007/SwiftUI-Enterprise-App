@@ -38,6 +38,10 @@ struct UserSessionController: RouteCollection {
 
         session.isRevoked = true
         try await session.save(on: req.db)
+
+        // Record in organization audit logs if an X-Org-Id header is present or for the user's memberships.
+        await logSessionRevocation(req: req, actorId: auth.userId, session: session, details: "Revoked session (\(session.deviceType), \(session.ipAddress))")
+
         return .success(EmptyResponse())
     }
 
@@ -64,7 +68,46 @@ struct UserSessionController: RouteCollection {
 
         session.isRevoked = true
         try await session.save(on: req.db)
+
+        let actorId = (try? req.authContext.userId) ?? session.$user.id
+        await logSessionRevocation(req: req, actorId: actorId, session: session, details: "Admin force-revoked session (\(session.deviceType), \(session.ipAddress))")
+
         return .success(EmptyResponse())
+    }
+
+    private func logSessionRevocation(req: Request, actorId: UUID, session: UserSessionModel, details: String) async {
+        let sessionId = session.id
+        if let headerOrg = req.headers.first(name: "X-Org-Id"),
+           let orgId = UUID(uuidString: headerOrg) {
+            _ = try? await AuditLogModel.log(
+                on: req.db,
+                orgId: orgId,
+                userId: actorId,
+                userEmail: "",
+                action: "session.revoked",
+                resourceType: "session",
+                resourceId: sessionId,
+                details: details,
+                app: req.application
+            )
+            return
+        }
+        let memberships = (try? await OrganizationMemberModel.query(on: req.db)
+            .filter(\.$user.$id == session.$user.id)
+            .all()) ?? []
+        for m in memberships {
+            _ = try? await AuditLogModel.log(
+                on: req.db,
+                orgId: m.$organization.id,
+                userId: actorId,
+                userEmail: "",
+                action: "session.revoked",
+                resourceType: "session",
+                resourceId: sessionId,
+                details: details,
+                app: req.application
+            )
+        }
     }
 }
 

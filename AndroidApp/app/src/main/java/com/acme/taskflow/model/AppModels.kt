@@ -14,7 +14,8 @@ enum class Destination(val title: String, val icon: ImageVector) {
     Productivity("Productivity", Icons.Default.Bolt),
     Team("Team", Icons.Default.Groups),
     Roles("Roles & Permissions", Icons.Default.VerifiedUser),
-    Sessions("Security & Sessions", Icons.Default.Security)
+    Sessions("Security & Sessions", Icons.Default.Security),
+    AuditLog("Audit Log", Icons.Default.History)
 }
 
 data class Workspace(val name: String, val slug: String, val tier: String, val owner: String)

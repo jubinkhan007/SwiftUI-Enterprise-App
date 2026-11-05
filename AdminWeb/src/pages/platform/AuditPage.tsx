@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ScrollText } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Radio, ScrollText } from "lucide-react";
+import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../lib/api";
+import { useAuditStream } from "../../lib/useAuditStream";
 import type { AuditLog } from "../../types";
 import {
   Badge,
@@ -16,22 +18,37 @@ import {
   Th,
 } from "../../components/ui";
 import { relativeTime, formatDate } from "../../lib/format";
-
-function toneForAction(action: string): "rose" | "amber" | "emerald" | "blue" | "slate" {
-  if (action.includes("delete") || action.includes("eject") || action.includes("suspend")) return "rose";
-  if (action.includes("lock") || action.includes("archived") || action.includes("purge")) return "amber";
-  if (action.includes("create") || action.includes("invite") || action.includes("activate")) return "emerald";
-  if (action.includes("role") || action.includes("export") || action.includes("retention")) return "blue";
-  return "slate";
-}
+import { toneForAuditAction } from "../org/OrgAuditPage";
 
 export function AuditPage() {
+  const { activeOrg } = useAuth();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [recentLiveIds, setRecentLiveIds] = useState<Set<string>>(new Set());
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin", "audit"],
     queryFn: () => api<AuditLog[]>("/admin/audit?limit=300"),
     refetchInterval: 20000,
   });
+
+  const handleAuditCreated = useCallback(
+    (entry: AuditLog) => {
+      setRecentLiveIds((prev) => {
+        const next = new Set(prev);
+        next.add(entry.id);
+        return next;
+      });
+      queryClient.setQueryData<AuditLog[]>(["admin", "audit"], (old) => {
+        const list = old ?? [];
+        if (list.some((x) => x.id === entry.id)) return list;
+        return [entry, ...list];
+      });
+    },
+    [queryClient],
+  );
+
+  const { connected, liveCount } = useAuditStream(activeOrg?.id, handleAuditCreated);
 
   const filtered = useMemo(() => {
     const logs = data ?? [];
@@ -41,17 +58,34 @@ export function AuditPage() {
       (l) =>
         l.action.toLowerCase().includes(q) ||
         l.user_email.toLowerCase().includes(q) ||
-        l.resource_type.toLowerCase().includes(q),
+        l.resource_type.toLowerCase().includes(q) ||
+        (l.details ?? "").toLowerCase().includes(q),
     );
   }, [data, search]);
 
   return (
     <div>
-      <PageHeader title="Audit Trail" subtitle="Platform-wide record of administrative activity" />
+      <PageHeader
+        title="Audit Trail"
+        subtitle="Platform-wide record of administrative activity"
+        actions={
+          activeOrg ? (
+            <div className="flex items-center gap-2">
+              <Badge tone={connected ? "emerald" : "slate"}>
+                <span className="inline-flex items-center gap-1.5">
+                  <Radio size={12} className={connected ? "animate-pulse" : ""} />
+                  {connected ? `Live (${activeOrg.name})` : "Polling"}
+                </span>
+              </Badge>
+              {liveCount > 0 && <Badge tone="purple">+{liveCount} live</Badge>}
+            </div>
+          ) : undefined
+        }
+      />
 
       <GlassCard className="p-5">
         <SearchInput
-          placeholder="Filter by action, email, or resource…"
+          placeholder="Filter by action, email, resource, or details…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="mb-4 max-w-sm"
@@ -75,24 +109,33 @@ export function AuditPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l) => (
-                <tr key={l.id} className="transition hover:bg-white/[0.03]">
-                  <Td>
-                    <Badge tone={toneForAction(l.action)}>{l.action}</Badge>
-                  </Td>
-                  <Td className="text-muted">{l.user_email}</Td>
-                  <Td className="text-muted">
-                    {l.resource_type}
-                    {l.resource_id && (
-                      <span className="ml-1 text-xs text-faint">#{l.resource_id.slice(0, 8)}</span>
-                    )}
-                  </Td>
-                  <Td className="max-w-xs truncate text-muted" >{l.details ?? "—"}</Td>
-                  <Td className="text-right text-muted" title={formatDate(l.created_at)}>
-                    {relativeTime(l.created_at)}
-                  </Td>
-                </tr>
-              ))}
+              {filtered.map((l) => {
+                const isLive = recentLiveIds.has(l.id);
+                return (
+                  <tr
+                    key={l.id}
+                    className={`transition hover:bg-white/[0.03] ${isLive ? "bg-emerald-500/[0.06]" : ""}`}
+                  >
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <Badge tone={toneForAuditAction(l.action)}>{l.action}</Badge>
+                        {isLive && <Badge tone="emerald">LIVE</Badge>}
+                      </div>
+                    </Td>
+                    <Td className="text-muted">{l.user_email}</Td>
+                    <Td className="text-muted">
+                      {l.resource_type}
+                      {l.resource_id && (
+                        <span className="ml-1 text-xs text-faint">#{l.resource_id.slice(0, 8)}</span>
+                      )}
+                    </Td>
+                    <Td className="max-w-xs truncate text-muted">{l.details ?? "—"}</Td>
+                    <Td className="text-right text-muted" title={formatDate(l.created_at)}>
+                      {relativeTime(l.created_at)}
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}

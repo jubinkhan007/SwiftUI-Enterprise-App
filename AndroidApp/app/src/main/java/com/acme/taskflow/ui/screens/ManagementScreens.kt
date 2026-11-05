@@ -445,6 +445,7 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
     val canInvite = "members.invite" in permissions || me.data.obj().text("role") in listOf("owner", "admin")
     val canManageRoles = "members.manage" in permissions || me.data.obj().text("role") in listOf("owner", "admin")
     val canRemoveMembers = "members.remove" in permissions || me.data.obj().text("role") in listOf("owner", "admin")
+    val canViewAudit = "audit_log.view" in permissions || me.data.obj().text("role") in listOf("owner", "admin")
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Members, 1 = Invites, 2 = Requests
     var showInviteModal by remember { mutableStateOf(false) }
@@ -452,6 +453,7 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
     var showGovernanceMenu by remember { mutableStateOf(false) }
     var showRolesModal by remember { mutableStateOf(false) }
     var showSessionsModal by remember { mutableStateOf(false) }
+    var showAuditModal by remember { mutableStateOf(false) }
     var memberBeingEdited by remember { mutableStateOf<JsonObject?>(null) }
     var memberToRemove by remember { mutableStateOf<JsonObject?>(null) }
     var inviteToRevoke by remember { mutableStateOf<JsonObject?>(null) }
@@ -525,6 +527,16 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
                                 showSessionsModal = true
                             }
                         )
+                        if (canViewAudit) {
+                            DropdownMenuItem(
+                                text = { Text("Workspace Audit Log") },
+                                leadingIcon = { Icon(Icons.Default.History, contentDescription = null) },
+                                onClick = {
+                                    showGovernanceMenu = false
+                                    showAuditModal = true
+                                }
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.width(8.dp))
@@ -891,6 +903,14 @@ fun TeamScreen(vm: AppViewModel, api: ApiClient) {
             vm = vm,
             api = api,
             onDismiss = { showSessionsModal = false }
+        )
+    }
+
+    if (showAuditModal) {
+        AuditLogModal(
+            vm = vm,
+            api = api,
+            onDismiss = { showAuditModal = false }
         )
     }
 }

@@ -75,5 +75,39 @@ final class GovernanceTests: XCTestCase {
         XCTAssertTrue(admin.isStrictSubset(of: owner))
         XCTAssertEqual(owner.count, Permission.allCases.count)
     }
+
+    @MainActor
+    func testAuditLogCategoryAndLiveEventIngestion() {
+        let orgId = UUID()
+        let vm = AuditLogViewModel(orgId: orgId)
+        let eventId = UUID()
+        let event = RealTimeProvider.ServerEvent(
+            eventId: UUID().uuidString,
+            orgId: orgId,
+            type: "audit.created",
+            entityId: eventId,
+            updatedAt: Date(),
+            payload: [
+                "id": eventId.uuidString,
+                "orgId": orgId.uuidString,
+                "userEmail": "alice@acme.com",
+                "action": "session.revoked",
+                "resourceType": "session",
+                "details": "Revoked session (mobile, 10.0.0.1)"
+            ]
+        )
+
+        vm.ingestLiveEvent(event)
+        XCTAssertEqual(vm.logs.count, 1)
+        XCTAssertTrue(vm.liveEventIds.contains(eventId))
+        XCTAssertEqual(vm.logs.first?.auditCategory, .security)
+
+        vm.selectedCategory = .members
+        XCTAssertTrue(vm.filteredLogs.isEmpty)
+
+        vm.selectedCategory = .security
+        vm.searchText = "10.0.0.1"
+        XCTAssertEqual(vm.filteredLogs.count, 1)
+    }
 }
 

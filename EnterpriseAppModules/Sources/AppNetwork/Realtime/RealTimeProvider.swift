@@ -9,6 +9,22 @@ public final class RealTimeProvider: ObservableObject {
         public let entityId: UUID
         public let updatedAt: Date
         public let payload: [String: String]?
+
+        public init(
+            eventId: String,
+            orgId: UUID,
+            type: String,
+            entityId: UUID,
+            updatedAt: Date,
+            payload: [String: String]? = nil
+        ) {
+            self.eventId = eventId
+            self.orgId = orgId
+            self.type = type
+            self.entityId = entityId
+            self.updatedAt = updatedAt
+            self.payload = payload
+        }
     }
 
     public var onEvent: ((ServerEvent) -> Void)? = nil
@@ -138,12 +154,17 @@ public final class RealTimeProvider: ObservableObject {
 
     private func handle(text: String, orgId: UUID) {
         guard let data = text.data(using: .utf8) else { return }
-        guard let event = try? JSONDecoder.iso8601.decode(ServerEvent.self, from: data) else { return }
+        let event = (try? JSONDecoder.iso8601.decode(ServerEvent.self, from: data))
+            ?? (try? JSONDecoder().decode(ServerEvent.self, from: data))
+        guard let event else { return }
         guard event.orgId == orgId else { return }
         guard dedupe(eventId: event.eventId) else { return }
         onEvent?(event)
         for listener in listeners.values {
             listener(event)
+        }
+        if event.type == "audit.created" {
+            NotificationCenter.default.post(name: .realtimeAuditEventReceived, object: event)
         }
     }
 
@@ -180,4 +201,8 @@ private extension JSONDecoder {
         d.dateDecodingStrategy = .iso8601
         return d
     }
+}
+
+public extension Notification.Name {
+    static let realtimeAuditEventReceived = Notification.Name("realtimeAuditEventReceived")
 }

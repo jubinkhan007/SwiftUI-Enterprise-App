@@ -108,4 +108,51 @@ final class AdminRoleAccessTests: XCTestCase {
             XCTAssertEqual(res.status, .forbidden)
         })
     }
+
+    func testAuditLogRBACAndAutoEmailResolution() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try? await app.asyncShutdown() } }
+        try configure(app)
+
+        let seed = try await seedTestOrg(app: app)
+        let ownerId = try seed.ownerUser.requireID()
+        let memberId = try seed.memberUser.requireID()
+
+        // Log an entry with empty userEmail; AuditLogModel.log should resolve ownerUser.email automatically.
+        let created = try await AuditLogModel.log(
+            on: app.db,
+            orgId: seed.orgId,
+            userId: ownerId,
+            userEmail: "",
+            action: "session.revoked",
+            resourceType: "session",
+            details: "Revoked session on iOS App",
+            app: app
+        )
+        XCTAssertEqual(created.userEmail, seed.ownerUser.email)
+
+        let ownerCookie = try signCookieToken(app: app, userId: ownerId, role: .owner)
+        let memberCookie = try signCookieToken(app: app, userId: memberId, role: .member)
+
+        // Owner has audit_log.view -> 200 OK
+        try await app.test(.GET, "api/organizations/\(seed.orgId.uuidString)/audit-log?action=session.revoked", beforeRequest: { req in
+            req.headers.add(name: .cookie, value: "\(AdminSession.accessCookieName)=\(ownerCookie)")
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .ok)
+            let decoded = try res.content.decode(APIResponse<[AuditLogDTO]>.self)
+            let logs = try XCTUnwrap(decoded.data)
+            XCTAssertEqual(logs.count, 1)
+            XCTAssertEqual(logs.first?.action, "session.revoked")
+            XCTAssertEqual(logs.first?.userEmail, seed.ownerUser.email)
+        })
+
+        // Regular member lacks audit_log.view -> 403 Forbidden
+        try await app.test(.GET, "api/organizations/\(seed.orgId.uuidString)/audit-log", beforeRequest: { req in
+            req.headers.add(name: .cookie, value: "\(AdminSession.accessCookieName)=\(memberCookie)")
+            req.headers.add(name: "X-Org-Id", value: seed.orgId.uuidString)
+        }, afterResponse: { res async throws in
+            XCTAssertEqual(res.status, .forbidden)
+        })
+    }
 }

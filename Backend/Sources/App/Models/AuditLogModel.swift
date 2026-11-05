@@ -76,7 +76,8 @@ final class AuditLogModel: Model, Content, @unchecked Sendable {
 // MARK: - Convenience Logger
 
 extension AuditLogModel {
-    /// Create and save an audit log entry in a single call.
+    /// Create, save, and broadcast an audit log entry in a single call.
+    @discardableResult
     static func log(
         on db: Database,
         orgId: UUID,
@@ -85,17 +86,27 @@ extension AuditLogModel {
         action: String,
         resourceType: String,
         resourceId: UUID? = nil,
-        details: String? = nil
-    ) async throws {
+        details: String? = nil,
+        app: Application? = nil
+    ) async throws -> AuditLogDTO {
+        let resolvedEmail: String
+        if userEmail.isEmpty {
+            resolvedEmail = (try? await UserModel.find(userId, on: db))?.email ?? "system"
+        } else {
+            resolvedEmail = userEmail
+        }
         let entry = AuditLogModel(
             orgId: orgId,
             userId: userId,
-            userEmail: userEmail,
+            userEmail: resolvedEmail,
             action: action,
             resourceType: resourceType,
             resourceId: resourceId,
             details: details
         )
         try await entry.save(on: db)
+        let dto = entry.toDTO()
+        RealtimeBroadcaster.broadcastAuditLog(dto, app: app)
+        return dto
     }
 }

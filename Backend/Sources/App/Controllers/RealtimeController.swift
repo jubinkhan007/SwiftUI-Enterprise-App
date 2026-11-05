@@ -12,12 +12,7 @@ enum RealtimeController {
     static func register(on app: Application) {
         app.webSocket("ws") { req, ws in
             do {
-                let token = try extractToken(from: req)
-                let payload = try req.jwt.verify(token, as: JWTAuthPayload.self)
-                guard let userId = payload.userId else {
-                    try await ws.close(code: .policyViolation)
-                    return
-                }
+                let (userId, isSuperAdmin) = try extractUserIdentity(from: req)
 
                 guard let orgIdStr = try? req.query.get(String.self, at: "org_id"),
                       let orgId = UUID(uuidString: orgIdStr)
@@ -26,14 +21,16 @@ enum RealtimeController {
                     return
                 }
 
-                // Verify membership before subscribing.
-                let isMember = try await OrganizationMemberModel.query(on: req.db)
-                    .filter(\.$organization.$id == orgId)
-                    .filter(\.$user.$id == userId)
-                    .count() > 0
-                guard isMember else {
-                    try await ws.close(code: .policyViolation)
-                    return
+                // Verify membership (or super-admin status) before subscribing.
+                if !isSuperAdmin {
+                    let isMember = try await OrganizationMemberModel.query(on: req.db)
+                        .filter(\.$organization.$id == orgId)
+                        .filter(\.$user.$id == userId)
+                        .count() > 0
+                    guard isMember else {
+                        try await ws.close(code: .policyViolation)
+                        return
+                    }
                 }
 
                 let connId = app.realtimeHub.addConnection(
@@ -90,14 +87,27 @@ enum RealtimeController {
         }
     }
 
-    private static func extractToken(from req: Request) throws -> String {
-        if let token = req.headers.bearerAuthorization?.token {
-            return token
+    private static func extractUserIdentity(from req: Request) throws -> (userId: UUID, isSuperAdmin: Bool) {
+        if let token = req.headers.bearerAuthorization?.token ?? (try? req.query.get(String.self, at: "token")),
+           !token.isEmpty {
+            if let payload = try? req.jwt.verify(token, as: JWTAuthPayload.self),
+               let userId = payload.userId {
+                return (userId, payload.role == UserRole.admin.rawValue)
+            }
+            if let adminPayload = try? req.jwt.verify(token, as: AdminTokenPayload.self),
+               adminPayload.kind == "access",
+               let userId = UUID(uuidString: adminPayload.subject.value) {
+                return (userId, adminPayload.role == UserRole.admin.rawValue)
+            }
         }
-        if let token: String = try? req.query.get(String.self, at: "token") {
-            return token
+        if let cookieToken = req.cookies[AdminSession.accessCookieName]?.string,
+           !cookieToken.isEmpty,
+           let adminPayload = try? req.jwt.verify(cookieToken, as: AdminTokenPayload.self),
+           adminPayload.kind == "access",
+           let userId = UUID(uuidString: adminPayload.subject.value) {
+            return (userId, adminPayload.role == UserRole.admin.rawValue)
         }
-        throw Abort(.unauthorized, reason: "Missing authorization token.")
+        throw Abort(.unauthorized, reason: "Missing or invalid authorization token.")
     }
 
     private static func isValidChannel(_ channel: String) -> Bool {

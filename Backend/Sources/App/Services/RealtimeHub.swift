@@ -4,7 +4,9 @@ import Vapor
 
 /// In-memory WebSocket hub keyed by logical channels (org/project/list).
 /// This is intentionally simple and process-local.
-final class RealtimeHub {
+final class RealtimeHub: @unchecked Sendable {
+    nonisolated(unsafe) static weak var current: RealtimeHub?
+
     struct Connection {
         let id: UUID
         let userId: UUID
@@ -107,6 +109,7 @@ extension Application {
             return existing
         }
         let hub = RealtimeHub()
+        RealtimeHub.current = hub
         storage[RealtimeHubKey.self] = hub
         return hub
     }

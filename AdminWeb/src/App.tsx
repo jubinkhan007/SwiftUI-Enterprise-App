@@ -15,6 +15,7 @@ import { AnalyticsPage } from "./pages/platform/AnalyticsPage";
 import { MembersPage } from "./pages/org/MembersPage";
 import { PermissionsPage } from "./pages/org/PermissionsPage";
 import { MySessionsPage } from "./pages/org/MySessionsPage";
+import { OrgAuditPage } from "./pages/org/OrgAuditPage";
 import { RetentionPage } from "./pages/org/RetentionPage";
 import { CompliancePage } from "./pages/org/CompliancePage";
 import { ModerationPage } from "./pages/org/ModerationPage";
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="org/permissions" element={<WorkspaceMemberOnly><PermissionsPage /></WorkspaceMemberOnly>} />
 
           {/* Administrative Settings (Admin & Owner only) */}
+          <Route path="org/audit" element={<AdminOrOwnerOnly><OrgAuditPage /></AdminOrOwnerOnly>} />
           <Route path="org/retention" element={<AdminOrOwnerOnly><RetentionPage /></AdminOrOwnerOnly>} />
           <Route path="org/compliance" element={<AdminOrOwnerOnly><CompliancePage /></AdminOrOwnerOnly>} />
           <Route path="org/moderation" element={<AdminOrOwnerOnly><ModerationPage /></AdminOrOwnerOnly>} />

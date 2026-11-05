@@ -486,3 +486,213 @@ private fun RolePill(role: String, selected: Boolean) {
         )
     }
 }
+
+private val auditCategories = listOf(
+    "all" to "All",
+    "members" to "Members & Roles",
+    "security" to "Security & Sessions",
+    "channels" to "Channels",
+    "settings" to "Settings & Compliance",
+    "tasks" to "Tasks & Projects"
+)
+
+fun auditCategoryFor(entry: JsonObject): String {
+    val action = entry.text("action").lowercase()
+    val resource = entry.text("resource_type", entry.text("resourceType")).lowercase()
+    return when {
+        "member" in action || "invite" in action || "join_request" in action || resource == "member" || resource == "invite" -> "members"
+        "session" in action || "sso" in action || "auth" in action || resource == "session" -> "security"
+        "channel" in action || "message" in action || resource == "channel" -> "channels"
+        "retention" in action || "compliance" in action || "branding" in action || "org." in action || resource == "org" -> "settings"
+        else -> "tasks"
+    }
+}
+
+fun auditActionColor(action: String): Color {
+    val a = action.lowercase()
+    return when {
+        "delete" in a || "remove" in a || "revoke" in a || "suspend" in a -> Color(0xFFFF3B30)
+        "lock" in a || "archive" in a || "purge" in a -> Color(0xFFFF9500)
+        "create" in a || "invite" in a || "accept" in a -> Color(0xFF34C759)
+        "session" in a -> Color(0xFF6E56CF)
+        else -> Color(0xFF007AFF)
+    }
+}
+
+@Composable
+fun AuditLogScreen(vm: AppViewModel, api: ApiClient) {
+    Column(Modifier.fillMaxSize().background(AppColors.backgroundPrimary)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(AppColors.surfacePrimary)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Text("Workspace Audit Log", style = AppTypography.largeTitle, color = AppColors.textPrimary)
+        }
+        HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+        AuditLogContent(vm = vm, api = api, modifier = Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+fun AuditLogModal(
+    vm: AppViewModel,
+    api: ApiClient,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .padding(vertical = 12.dp)
+                .testTag("modal_audit_log"),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.backgroundPrimary)
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(AppColors.surfacePrimary)
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Workspace Audit Log", style = AppTypography.title2, color = AppColors.textPrimary)
+                        Text(
+                            "Real-time security and governance trail",
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("btn_close_audit_modal")) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+                AuditLogContent(vm = vm, api = api, modifier = Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+@Composable
+fun AuditLogContent(
+    vm: AppViewModel,
+    api: ApiClient,
+    modifier: Modifier = Modifier
+) {
+    val remote = rememberRemote(
+        api = api,
+        path = "/api/organizations/${api.orgId}/audit-log",
+        revision = vm.revision,
+        query = mapOf("limit" to "200")
+    )
+    var search by rememberSaveable { mutableStateOf("") }
+    var selectedCategory by rememberSaveable { mutableStateOf("all") }
+
+    val allLogs = remote.data.rows()
+    val filteredLogs = remember(allLogs, search, selectedCategory) {
+        val q = search.trim().lowercase()
+        allLogs.filter { entry ->
+            if (selectedCategory != "all" && auditCategoryFor(entry) != selectedCategory) return@filter false
+            if (q.isEmpty()) return@filter true
+            val action = entry.text("action").lowercase()
+            val email = entry.text("user_email", entry.text("userEmail")).lowercase()
+            val resource = entry.text("resource_type", entry.text("resourceType")).lowercase()
+            val details = entry.text("details").lowercase()
+            q in action || q in email || q in resource || q in details
+        }
+    }
+
+    Column(modifier) {
+        RemoteStatus(remote)
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().testTag("audit_log_list"),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    placeholder = { Text("Search action, actor email, or details…") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("audit_search_input")
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    auditCategories.forEach { (id, label) ->
+                        FilterChip(
+                            selected = selectedCategory == id,
+                            onClick = { selectedCategory = id },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+            }
+
+            if (!remote.loading && remote.error == null && filteredLogs.isEmpty()) {
+                item {
+                    IosCard(Modifier.fillMaxWidth(), contentPadding = 20.dp) {
+                        Text("No matching audit entries.", style = AppTypography.body, color = AppColors.textSecondary)
+                    }
+                }
+            }
+
+            items(filteredLogs, key = { it.id }) { entry ->
+                val action = entry.text("action")
+                val email = entry.text("user_email", entry.text("userEmail", "system")).ifBlank { "system" }
+                val resourceType = entry.text("resource_type", entry.text("resourceType"))
+                val resourceId = entry.text("resource_id", entry.text("resourceId"))
+                val details = entry.text("details")
+                val createdAt = entry.text("created_at", entry.text("createdAt"))
+                val color = auditActionColor(action)
+
+                IosCard(Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(AppRadius.pill))
+                                .background(color.copy(alpha = 0.15f))
+                                .padding(horizontal = 10.dp, vertical = 3.dp)
+                        ) {
+                            Text(action, style = AppTypography.caption1, fontWeight = FontWeight.SemiBold, color = color)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (createdAt.isNotBlank()) {
+                            Text(dateLabel(createdAt), style = AppTypography.caption2, color = AppColors.textTertiary)
+                        }
+                    }
+                    if (details.isNotBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(details, style = AppTypography.subheadline, color = AppColors.textPrimary)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        buildString {
+                            append(email)
+                            if (resourceType.isNotBlank()) {
+                                append(" · ")
+                                append(resourceType)
+                                if (resourceId.isNotBlank()) append(" #${resourceId.take(8)}")
+                            }
+                        },
+                        style = AppTypography.caption1,
+                        color = AppColors.textSecondary
+                    )
+                }
+            }
+        }
+    }
+}
