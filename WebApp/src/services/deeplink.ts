@@ -46,6 +46,9 @@ export function parseDeeplink(input: string): DeeplinkRoute | null {
         return { destination: 'productivity' };
       case 'team':
         return { destination: 'team' };
+      case 'analytics':
+      case 'burndown':
+        return { destination: 'analytics' };
       default:
         return null;
     }
@@ -99,6 +102,9 @@ export function parseDeeplink(input: string): DeeplinkRoute | null {
       return { destination: 'productivity' };
     case 'team':
       return { destination: 'team' };
+    case 'analytics':
+    case 'burndown':
+      return { destination: 'analytics' };
     default:
       return null;
   }

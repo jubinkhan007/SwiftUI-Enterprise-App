@@ -125,19 +125,32 @@ public struct AnalyticsDashboardView: View {
         }
     }
     
+    private func formatDays(_ seconds: Double?) -> String {
+        guard let seconds, seconds > 0 else { return "0d" }
+        return String(format: "%.1fd", seconds / 86400)
+    }
+
     private var kpiCardsView: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 16) {
             if let lead = viewModel.leadTime {
-                KPICard(title: "Lead Time", value: String(format: "%.1f days", lead.value / 86400), subtitle: "Avg: \(lead.sampleSize) tasks")
+                KPICard(
+                    title: "Lead Time",
+                    value: String(format: "%.1f days", lead.value / 86400),
+                    subtitle: "\(lead.sampleSize) tasks · P50 \(formatDays(lead.p50)) · P90 \(formatDays(lead.p90))"
+                )
             }
             if let cycle = viewModel.cycleTime {
-                KPICard(title: "Cycle Time", value: String(format: "%.1f days", cycle.value / 86400), subtitle: "Avg: \(cycle.sampleSize) tasks")
+                KPICard(
+                    title: "Cycle Time",
+                    value: String(format: "%.1f days", cycle.value / 86400),
+                    subtitle: "\(cycle.sampleSize) tasks · P50 \(formatDays(cycle.p50)) · P90 \(formatDays(cycle.p90))"
+                )
             }
             if let vel = viewModel.velocity {
-                KPICard(title: "Velocity", value: String(format: "%.0f pts", vel.value), subtitle: "Total Points")
+                KPICard(title: "Velocity", value: String(format: "%.0f pts", vel.value), subtitle: "\(vel.sampleSize) scored tasks")
             }
             if let thr = viewModel.throughput {
-                KPICard(title: "Throughput", value: "\(thr.value) tasks", subtitle: "Total Tasks")
+                KPICard(title: "Throughput", value: "\(thr.value) tasks", subtitle: "Completed Tasks")
             }
         }
     }

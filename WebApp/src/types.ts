@@ -482,6 +482,7 @@ export type NavDestination =
   | 'my_tasks' 
   | 'backlog'
   | 'releases'
+  | 'analytics'
   | 'settings'
   | 'integrations'
   | 'inbox' 
@@ -492,6 +493,58 @@ export type NavDestination =
   | 'team' 
   | 'billing'
   | 'reminders';
+
+// MARK: - Project Analytics & Burndown DTOs
+export interface AnalyticsMetricDTO<T = number> {
+  metric: string;
+  value: T;
+  p50?: T | null;
+  p90?: T | null;
+  sampleSize: number;
+  from: string;
+  to: string;
+  filters?: Record<string, string>;
+}
+
+export interface ProjectDailyStatsDTO {
+  id: string;
+  projectId: string;
+  date: string;
+  remainingPoints: number;
+  completedPoints: number;
+  completedTasks: number;
+  createdTasks: number;
+}
+
+export interface WeeklyThroughputPointDTO {
+  weekStart: string;
+  completedTasks: number;
+  completedPoints: number;
+}
+
+export interface SprintVelocityPointDTO {
+  sprintId: string;
+  sprintName: string;
+  startDate: string;
+  endDate: string;
+  completedPoints: number;
+  completedTasks: number;
+}
+
+export interface AnalyticsReportPayloadDTO {
+  projectId: string;
+  projectName: string;
+  from: string;
+  to: string;
+  generatedAt: string;
+  leadTime?: AnalyticsMetricDTO<number> | null;
+  cycleTime?: AnalyticsMetricDTO<number> | null;
+  velocity?: AnalyticsMetricDTO<number> | null;
+  throughput?: AnalyticsMetricDTO<number> | null;
+  burndown: ProjectDailyStatsDTO[];
+  weeklyThroughput: WeeklyThroughputPointDTO[];
+  sprintVelocity: SprintVelocityPointDTO[];
+}
 
 // Productivity: Scheduled Messages
 export type ScheduledMessageStatus = 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled';

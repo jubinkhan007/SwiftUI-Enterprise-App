@@ -17,6 +17,7 @@ import { BacklogScreen } from './screens/BacklogScreen';
 import { ReleaseManagementScreen } from './screens/ReleaseManagementScreen';
 import { ProjectSettingsScreen } from './screens/ProjectSettingsScreen';
 import { IntegrationSettingsScreen } from './screens/IntegrationSettingsScreen';
+import { AnalyticsScreen } from './screens/AnalyticsScreen';
 import { SyncCenterModal } from './components/SyncCenterModal';
 import { OmnibarModal } from './components/OmnibarModal';
 import { getCurrentLocationDeeplink, parseDeeplink, syncUrlWithDestination, DeeplinkRoute } from './services/deeplink';
@@ -248,6 +249,7 @@ export const App: React.FC = () => {
           )}
           {currentNav === 'backlog' && <BacklogScreen onNavigate={handleNavigate} />}
           {currentNav === 'releases' && <ReleaseManagementScreen onNavigate={handleNavigate} />}
+          {currentNav === 'analytics' && <AnalyticsScreen onNavigate={handleNavigate} />}
           {currentNav === 'settings' && <ProjectSettingsScreen onNavigate={handleNavigate} />}
           {currentNav === 'integrations' && <IntegrationSettingsScreen onNavigate={handleNavigate} />}
           {currentNav === 'inbox' && <InboxScreen onNavigate={handleNavigate} />}

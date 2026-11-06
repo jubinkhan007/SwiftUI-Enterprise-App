@@ -77,7 +77,12 @@ import {
   AudioTranscriptionRequest,
   AudioTranscriptionResponse,
   NotificationUnreadCountDTO,
-  NotificationBatchReadResponse
+  NotificationBatchReadResponse,
+  AnalyticsReportPayloadDTO,
+  AnalyticsMetricDTO,
+  ProjectDailyStatsDTO,
+  WeeklyThroughputPointDTO,
+  SprintVelocityPointDTO
 } from '../types';
 
 class ApiService {
@@ -836,6 +841,121 @@ class ApiService {
         totalHours: Number(t.total_hours ?? t.totalHours ?? 0),
       })),
     };
+  }
+
+  // --- Project Analytics & Burndown ---
+  private normalizeMetric<T = number>(raw: any): AnalyticsMetricDTO<T> | null {
+    if (!raw || typeof raw !== 'object') return null;
+    return {
+      metric: raw.metric || '',
+      value: (raw.value ?? 0) as T,
+      p50: raw.p50 ?? null,
+      p90: raw.p90 ?? null,
+      sampleSize: Number(raw.sampleSize ?? raw.sample_size ?? 0),
+      from: raw.from || new Date().toISOString(),
+      to: raw.to || new Date().toISOString(),
+      filters: raw.filters || {},
+    };
+  }
+
+  async getProjectAnalyticsReport(
+    projectId: string,
+    startDate?: string,
+    endDate?: string,
+    recompute: boolean = false
+  ): Promise<AnalyticsReportPayloadDTO> {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    if (recompute) params.set('recompute', 'true');
+    const qs = params.toString();
+    const raw = await this.request<any>(
+      `/api/projects/${projectId}/analytics/report${qs ? `?${qs}` : ''}`
+    );
+    const data = raw?.data || raw || {};
+
+    const burndown: ProjectDailyStatsDTO[] = (data.burndown || []).map((b: any) => ({
+      id: b.id || `${projectId}-${b.date}`,
+      projectId: b.projectId || b.project_id || projectId,
+      date: b.date || new Date().toISOString(),
+      remainingPoints: Number(b.remainingPoints ?? b.remaining_points ?? 0),
+      completedPoints: Number(b.completedPoints ?? b.completed_points ?? 0),
+      completedTasks: Number(b.completedTasks ?? b.completed_tasks ?? 0),
+      createdTasks: Number(b.createdTasks ?? b.created_tasks ?? 0),
+    }));
+
+    const weeklyThroughput: WeeklyThroughputPointDTO[] = (
+      data.weeklyThroughput ||
+      data.weekly_throughput ||
+      []
+    ).map((w: any) => ({
+      weekStart: w.weekStart || w.week_start || new Date().toISOString(),
+      completedTasks: Number(w.completedTasks ?? w.completed_tasks ?? 0),
+      completedPoints: Number(w.completedPoints ?? w.completed_points ?? 0),
+    }));
+
+    const sprintVelocity: SprintVelocityPointDTO[] = (
+      data.sprintVelocity ||
+      data.sprint_velocity ||
+      []
+    ).map((s: any) => ({
+      sprintId: s.sprintId || s.sprint_id || '',
+      sprintName: s.sprintName || s.sprint_name || 'Sprint',
+      startDate: s.startDate || s.start_date || new Date().toISOString(),
+      endDate: s.endDate || s.end_date || new Date().toISOString(),
+      completedPoints: Number(s.completedPoints ?? s.completed_points ?? 0),
+      completedTasks: Number(s.completedTasks ?? s.completed_tasks ?? 0),
+    }));
+
+    return {
+      projectId: data.projectId || data.project_id || projectId,
+      projectName: data.projectName || data.project_name || 'Project',
+      from: data.from || startDate || new Date().toISOString(),
+      to: data.to || endDate || new Date().toISOString(),
+      generatedAt: data.generatedAt || data.generated_at || new Date().toISOString(),
+      leadTime: this.normalizeMetric<number>(data.leadTime || data.lead_time),
+      cycleTime: this.normalizeMetric<number>(data.cycleTime || data.cycle_time),
+      velocity: this.normalizeMetric<number>(data.velocity),
+      throughput: this.normalizeMetric<number>(data.throughput),
+      burndown,
+      weeklyThroughput,
+      sprintVelocity,
+    };
+  }
+
+  async exportProjectBurndownCSV(
+    projectId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<string> {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    const qs = params.toString();
+    const path = `/api/projects/${projectId}/analytics/export/burndown${qs ? `?${qs}` : ''}`;
+    const endpoint = this.baseUrl ? `${this.baseUrl}${path}` : path;
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    if (this.selectedOrgId) {
+      headers['X-Org-Id'] = this.selectedOrgId;
+    }
+
+    const response = await fetch(endpoint, { headers });
+    const text = await response.text();
+    if (!response.ok) {
+      let msg = `CSV export failed with HTTP ${response.status}`;
+      try {
+        const parsed = JSON.parse(text);
+        msg = parsed.reason || parsed.message || msg;
+      } catch {
+        // ignore
+      }
+      throw new Error(msg);
+    }
+    return text;
   }
 
   // --- Calls ---

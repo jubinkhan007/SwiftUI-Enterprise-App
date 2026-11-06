@@ -22,6 +22,7 @@ class RolePermissionsTest {
         assertEquals(37, RolePermissions.total)
         assertEquals(RolePermissions.total, owner.size)
         assertTrue(viewer.containsAll(guest) && viewer.size > guest.size)
+        assertTrue(member.containsAll(viewer) && member.size > viewer.size)
         assertTrue(manager.containsAll(member) && manager.size > member.size)
         assertTrue(admin.containsAll(manager) && admin.size > manager.size)
         assertTrue(owner.containsAll(admin) && owner.size > admin.size)

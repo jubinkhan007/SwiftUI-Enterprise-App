@@ -165,7 +165,7 @@ const PERMISSIONS_MATRIX: PermissionRow[] = [
     category: "Analytics & Reports",
     name: "View Workspace Analytics",
     description: "View team velocity, task throughput, and time logs",
-    roles: { owner: true, admin: true, manager: true, member: false, viewer: true, guest: false },
+    roles: { owner: true, admin: true, manager: true, member: true, viewer: true, guest: false },
   },
   {
     category: "Analytics & Reports",

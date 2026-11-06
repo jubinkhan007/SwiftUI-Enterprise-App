@@ -252,7 +252,7 @@ public struct PermissionSet: Codable, Sendable, Equatable {
                 .tasksCreateSubtask, .tasksChangeType, .tasksRelate, .tasksManageChecklist,
                 .viewsCreate, .viewsUpdate, .viewsDelete,
                 .membersView,
-                .projectsRead,
+                .projectsRead, .analyticsView,
                 .commentsCreate, .attachmentsUpload, .attachmentsDownload, .notificationsRead
             ])
         case .manager:

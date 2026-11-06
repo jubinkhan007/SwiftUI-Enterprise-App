@@ -209,9 +209,9 @@ struct AnalyticsController: RouteCollection {
     @Sendable
     func getReportPayload(req: Request) async throws -> APIResponse<AnalyticsReportPayloadDTO> {
         let ctx = try req.orgContext
-        let canExport = ctx.permissions.has(.reportsExport) || ctx.permissions.has(.analyticsExport)
-        guard canExport else {
-            throw Abort(.forbidden, reason: "You do not have permission to export reports (reports.export).")
+        let canView = ctx.permissions.has(.analyticsView) || ctx.permissions.has(.reportsExport) || ctx.permissions.has(.analyticsExport)
+        guard canView else {
+            throw Abort(.forbidden, reason: "You do not have permission to view analytics reports (analytics.view).")
         }
         guard let projectId = req.parameters.get("projectID", as: UUID.self) else {
             throw Abort(.badRequest, reason: "Invalid Project ID.")

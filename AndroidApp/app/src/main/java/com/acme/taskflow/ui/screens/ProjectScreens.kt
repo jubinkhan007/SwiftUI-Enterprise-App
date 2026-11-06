@@ -288,16 +288,28 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
     }
 }
 
+private fun formatAnalyticsDuration(seconds: Double): String {
+    if (seconds <= 0.0 || seconds.isNaN()) return "0h"
+    val days = seconds / 86400.0
+    if (days >= 1.0) return String.format(java.util.Locale.US, "%.1fd", days)
+    val hours = seconds / 3600.0
+    if (hours >= 1.0) return String.format(java.util.Locale.US, "%.1fh", hours)
+    val mins = (seconds / 60.0).roundToInt().coerceAtLeast(1)
+    return "${mins}m"
+}
+
 @Composable
 private fun AnalyticsScreen(vm: AppViewModel, api: ApiClient, projectId: String) {
     var days by rememberSaveable { mutableStateOf("30") }
-    val range = remember(days) {
-        mapOf(
-            "start_date" to Instant.now().minusSeconds(days.toLong() * 86400).epochSecond.toString(),
-            "end_date" to Instant.now().epochSecond.toString()
-        )
+    var recomputeNonce by rememberSaveable { mutableStateOf(0) }
+    val range = remember(days, recomputeNonce) {
+        buildMap {
+            put("start_date", Instant.now().minusSeconds(days.toLong() * 86400).epochSecond.toString())
+            put("end_date", Instant.now().epochSecond.toString())
+            if (recomputeNonce > 0) put("recompute", "true")
+        }
     }
-    val report = rememberRemote(api, "/api/projects/$projectId/analytics/report", vm.revision, query = range)
+    val report = rememberRemote(api, "/api/projects/$projectId/analytics/report", vm.revision + recomputeNonce, query = range)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -305,7 +317,18 @@ private fun AnalyticsScreen(vm: AppViewModel, api: ApiClient, projectId: String)
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("Analytics", style = AppTypography.largeTitle)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Analytics", style = AppTypography.largeTitle)
+                IosFilterChip(
+                    title = "Recompute",
+                    isSelected = false,
+                    onClick = { recomputeNonce += 1 }
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("7" to "7 Days", "30" to "30 Days", "90" to "90 Days").forEach { (v, label) ->
@@ -321,16 +344,43 @@ private fun AnalyticsScreen(vm: AppViewModel, api: ApiClient, projectId: String)
         }
 
         if (!report.data.isJsonNull) {
-            items(listOf("lead_time", "cycle_time", "velocity", "throughput")) { metric ->
-                val value = report.data.obj().child(metric)
+            val reportObj = report.data.obj()
+            val kpiSpecs = listOf(
+                Triple("leadTime", "lead_time", "Lead Time"),
+                Triple("cycleTime", "cycle_time", "Cycle Time"),
+                Triple("velocity", "velocity", "Velocity"),
+                Triple("throughput", "throughput", "Throughput")
+            )
+            items(kpiSpecs) { (camelKey, snakeKey, title) ->
+                val metricObj = reportObj.child(camelKey).let {
+                    if (it.entrySet().isEmpty()) reportObj.child(snakeKey) else it
+                }
+                val sampleSize = metricObj.number("sampleSize", metricObj.number("sample_size", 0))
+                val rawVal = metricObj.double("value", 0.0)
+                val isDuration = camelKey == "leadTime" || camelKey == "cycleTime"
+                val displayValue = when (camelKey) {
+                    "leadTime", "cycleTime" -> formatAnalyticsDuration(rawVal)
+                    "velocity" -> String.format(java.util.Locale.US, "%.1f pts", rawVal)
+                    else -> "${metricObj.number("value", 0)} tasks"
+                }
+
                 IosCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(label(metric), style = AppTypography.headline)
-                            Text("${value.number("sample_size")} samples", style = AppTypography.caption1, color = AppColors.textSecondary)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(title, style = AppTypography.headline)
+                            Text("$sampleSize completed tasks", style = AppTypography.caption1, color = AppColors.textSecondary)
+                            if (isDuration) {
+                                val p50 = formatAnalyticsDuration(metricObj.double("p50", 0.0))
+                                val p90 = formatAnalyticsDuration(metricObj.double("p90", 0.0))
+                                Text(
+                                    "P50: $p50  ·  P90: $p90",
+                                    style = AppTypography.caption2.copy(fontWeight = FontWeight.SemiBold),
+                                    color = AppColors.textSecondary
+                                )
+                            }
                         }
                         Text(
-                            value.text("value", "-"),
+                            displayValue,
                             style = AppTypography.title1,
                             color = AppColors.brandPrimary
                         )
@@ -340,29 +390,132 @@ private fun AnalyticsScreen(vm: AppViewModel, api: ApiClient, projectId: String)
 
             item {
                 IosCard(Modifier.fillMaxWidth()) {
-                    Text("Burndown Chart", style = AppTypography.headline)
+                    Text("Burndown & Cumulative Flow", style = AppTypography.headline)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Remaining story points vs. completed points across ${days}d window",
+                        style = AppTypography.caption2,
+                        color = AppColors.textSecondary
+                    )
                     Spacer(Modifier.height(12.dp))
-                    val points = report.data.obj().list("burndown")
+                    val points = reportObj.list("burndown")
                     if (points.isEmpty()) {
                         Text("No data for this period.", style = AppTypography.caption1, color = AppColors.textSecondary)
                     } else {
                         val color = AppColors.brandPrimary
-                        val values = points.map { it.text("remaining_points", "0").toFloatOrNull() ?: 0f }
+                        val doneColor = AppColors.statusSuccess
+                        val values = points.map {
+                            it.double("remainingPoints", it.double("remaining_points", 0.0)).toFloat()
+                        }
+                        val doneValues = points.map {
+                            it.double("completedPoints", it.double("completed_points", 0.0)).toFloat()
+                        }
                         Canvas(
                             Modifier
                                 .fillMaxWidth()
                                 .height(160.dp)
                                 .padding(8.dp)
                         ) {
-                            val max = values.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+                            val max = (values + doneValues).maxOrNull()?.coerceAtLeast(1f) ?: 1f
                             val path = Path()
+                            val donePath = Path()
                             values.forEachIndexed { index, value ->
                                 val x = index.toFloat() / (values.size - 1).coerceAtLeast(1) * size.width
                                 val y = size.height - value / max * size.height
                                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                                drawCircle(color, 4.dp.toPx(), Offset(x, y))
+                                drawCircle(color, 3.5.dp.toPx(), Offset(x, y))
+                            }
+                            doneValues.forEachIndexed { index, value ->
+                                val x = index.toFloat() / (doneValues.size - 1).coerceAtLeast(1) * size.width
+                                val y = size.height - value / max * size.height
+                                if (index == 0) donePath.moveTo(x, y) else donePath.lineTo(x, y)
                             }
                             drawPath(path, color, style = Stroke(2.5.dp.toPx()))
+                            drawPath(donePath, doneColor, style = Stroke(2.dp.toPx()))
+                        }
+                    }
+                }
+            }
+
+            item {
+                val weekly = reportObj.list("weeklyThroughput").ifEmpty { reportObj.list("weekly_throughput") }
+                IosCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Weekly Throughput", style = AppTypography.headline)
+                        if (weekly.isEmpty()) {
+                            Text("No weekly throughput recorded for this period.", style = AppTypography.caption1, color = AppColors.textSecondary)
+                        } else {
+                            val maxTasks = weekly.maxOfOrNull { it.number("completedTasks", it.number("completed_tasks", 0)) }?.coerceAtLeast(1) ?: 1
+                            weekly.forEach { w ->
+                                val weekStart = w.text("weekStart", w.text("week_start", "")).take(10)
+                                val tasksCount = w.number("completedTasks", w.number("completed_tasks", 0))
+                                val ptsCount = w.double("completedPoints", w.double("completed_points", 0.0))
+                                val ratio = (tasksCount.toFloat() / maxTasks.toFloat()).coerceIn(0f, 1f)
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Week of $weekStart", style = AppTypography.caption1)
+                                        Text(
+                                            String.format(java.util.Locale.US, "%d tasks · %.1f pts", tasksCount, ptsCount),
+                                            style = AppTypography.caption2.copy(fontWeight = FontWeight.SemiBold),
+                                            color = AppColors.brandPrimary
+                                        )
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { ratio },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(5.dp)
+                                            .clip(RoundedCornerShape(3.dp)),
+                                        color = AppColors.brandPrimary,
+                                        trackColor = AppColors.borderSubtle
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                val sprints = reportObj.list("sprintVelocity").ifEmpty { reportObj.list("sprint_velocity") }
+                IosCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Sprint Velocity", style = AppTypography.headline)
+                        if (sprints.isEmpty()) {
+                            Text("No sprints overlap this date range.", style = AppTypography.caption1, color = AppColors.textSecondary)
+                        } else {
+                            val maxPts = sprints.maxOfOrNull { it.double("completedPoints", it.double("completed_points", 0.0)) }?.coerceAtLeast(1.0) ?: 1.0
+                            sprints.forEach { s ->
+                                val sName = s.text("sprintName", s.text("sprint_name", "Sprint"))
+                                val pts = s.double("completedPoints", s.double("completed_points", 0.0))
+                                val tasks = s.number("completedTasks", s.number("completed_tasks", 0))
+                                val ratio = (pts / maxPts).toFloat().coerceIn(0f, 1f)
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(sName, style = AppTypography.caption1.copy(fontWeight = FontWeight.SemiBold))
+                                        Text(
+                                            String.format(java.util.Locale.US, "%.1f pts (%d tasks)", pts, tasks),
+                                            style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                                            color = AppColors.statusSuccess
+                                        )
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { ratio },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(5.dp)
+                                            .clip(RoundedCornerShape(3.dp)),
+                                        color = AppColors.statusSuccess,
+                                        trackColor = AppColors.borderSubtle
+                                    )
+                                }
+                            }
                         }
                     }
                 }

@@ -64,7 +64,7 @@ object RolePermissions {
         "attachments.download", "notifications.read"
     )
     private val member = taskCore + collab + setOf(
-        "views.create", "views.update", "views.delete", "members.view", "projects.read"
+        "views.create", "views.update", "views.delete", "members.view", "projects.read", "analytics.view"
     )
     private val manager = taskCore + collab + setOf(
         "tasks.delete",

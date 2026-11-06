@@ -70,6 +70,7 @@ final class GovernanceTests: XCTestCase {
         let owner = PermissionSet.defaultPermissions(for: .owner).permissions
 
         XCTAssertTrue(guest.isStrictSubset(of: viewer))
+        XCTAssertTrue(viewer.isStrictSubset(of: member))
         XCTAssertTrue(member.isStrictSubset(of: manager))
         XCTAssertTrue(manager.isStrictSubset(of: admin))
         XCTAssertTrue(admin.isStrictSubset(of: owner))

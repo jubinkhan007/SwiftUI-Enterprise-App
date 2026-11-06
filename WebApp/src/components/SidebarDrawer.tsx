@@ -21,7 +21,8 @@ import {
   Layers,
   Package,
   Sliders,
-  KeyRound
+  KeyRound,
+  BarChart3
 } from 'lucide-react';
 import { HierarchyTreeDTO, NavDestination, UserDTO } from '../types';
 import { api } from '../services/api';
@@ -142,6 +143,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
     { id: 'my_tasks', label: 'My Tasks', icon: User },
     { id: 'backlog', label: 'Backlog & Sprints', icon: Layers },
     { id: 'releases', label: 'Releases & Versions', icon: Package },
+    { id: 'analytics', label: 'Analytics & Burndown', icon: BarChart3 },
     { id: 'settings', label: 'Project Settings', icon: Sliders },
     { id: 'integrations', label: 'API Keys & Webhooks', icon: KeyRound },
     { id: 'inbox', label: 'Inbox', icon: Mail },
