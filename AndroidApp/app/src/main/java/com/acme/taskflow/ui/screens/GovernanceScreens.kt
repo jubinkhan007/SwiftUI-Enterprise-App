@@ -19,7 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -691,6 +693,546 @@ fun AuditLogContent(
                         style = AppTypography.caption1,
                         color = AppColors.textSecondary
                     )
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Workspace Branding, Enterprise SSO & Compliance Controls
+// ============================================================================
+
+@Composable
+fun WorkspaceGovernanceScreen(vm: AppViewModel, api: ApiClient) {
+    Column(Modifier.fillMaxSize().background(AppColors.backgroundPrimary)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(AppColors.surfacePrimary)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Text("Branding, SSO & Compliance", style = AppTypography.largeTitle, color = AppColors.textPrimary)
+        }
+        HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+        WorkspaceGovernanceContent(vm = vm, api = api, modifier = Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+fun WorkspaceGovernanceModal(
+    vm: AppViewModel,
+    api: ApiClient,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .padding(vertical = 12.dp)
+                .testTag("modal_workspace_governance"),
+            shape = RoundedCornerShape(AppRadius.large),
+            colors = CardDefaults.cardColors(containerColor = AppColors.surfacePrimary)
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Branding, SSO & Compliance", style = AppTypography.title2, color = AppColors.textPrimary)
+                        Text(
+                            "Brand identity, verified domain auto-join, SAML 2.0 SSO, and message retention.",
+                            style = AppTypography.caption1,
+                            color = AppColors.textSecondary
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("btn_close_workspace_governance")) {
+                        Icon(Icons.Default.Close, "Close", tint = AppColors.textSecondary)
+                    }
+                }
+                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+
+                WorkspaceGovernanceContent(vm = vm, api = api, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+fun WorkspaceGovernanceContent(
+    vm: AppViewModel,
+    api: ApiClient,
+    modifier: Modifier = Modifier
+) {
+    val orgRemote = rememberRemote(api, "/api/organizations/${api.orgId}", vm.revision)
+    val retentionRemote = rememberRemote(api, "/api/admin/org/retention", vm.revision)
+    val action = rememberAction()
+    val clipboard = LocalClipboardManager.current
+
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Branding & Domains, 1 = Enterprise SSO, 2 = Retention & Compliance
+    var hydratedRevision by rememberSaveable { mutableIntStateOf(-1) }
+
+    // Branding & Domain state
+    var logoUrl by rememberSaveable { mutableStateOf("") }
+    var brandColorHex by rememberSaveable { mutableStateOf("#3B82F6") }
+    var customDomain by rememberSaveable { mutableStateOf("") }
+    var allowedEmailDomains by rememberSaveable { mutableStateOf("") }
+
+    // Enterprise SSO state
+    var ssoEnabled by rememberSaveable { mutableStateOf(false) }
+    var ssoEntityId by rememberSaveable { mutableStateOf("") }
+    var ssoIdpUrl by rememberSaveable { mutableStateOf("") }
+    var ssoCertificate by rememberSaveable { mutableStateOf("") }
+
+    // Retention & Compliance state
+    var retentionDaysText by rememberSaveable { mutableStateOf("0") }
+    var lastPurgeSummary by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastExportSummary by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastExportUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var statusNotice by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val orgObj = orgRemote.data.obj()
+    val retentionObj = retentionRemote.data.obj()
+
+    LaunchedEffect(orgObj, retentionObj, vm.revision) {
+        if (orgObj.size() > 0 && hydratedRevision != vm.revision) {
+            hydratedRevision = vm.revision
+            logoUrl = orgObj.text("logo_url", orgObj.text("logoUrl"))
+            brandColorHex = orgObj.text("brand_color_hex", orgObj.text("brandColorHex", "#3B82F6")).ifBlank { "#3B82F6" }
+            customDomain = orgObj.text("custom_domain", orgObj.text("customDomain"))
+            allowedEmailDomains = orgObj.text("allowed_email_domains", orgObj.text("allowedEmailDomains"))
+            ssoEnabled = orgObj.bool("sso_enabled", orgObj.bool("ssoEnabled", false))
+            ssoEntityId = orgObj.text("sso_entity_id", orgObj.text("ssoEntityId"))
+            ssoIdpUrl = orgObj.text("sso_idp_url", orgObj.text("ssoIdpUrl"))
+            ssoCertificate = orgObj.text("sso_certificate", orgObj.text("ssoCertificate"))
+            val retDays = retentionObj.int(
+                "retention_days",
+                retentionObj.int(
+                    "retentionDays",
+                    orgObj.int("retention_days", orgObj.int("retentionDays", 0))
+                )
+            )
+            retentionDaysText = retDays.toString()
+        }
+    }
+
+    val tabs = listOf(
+        0 to "Branding & Domains",
+        1 to "Enterprise SSO",
+        2 to "Retention & Compliance"
+    )
+
+    Column(modifier) {
+        RemoteStatus(orgRemote)
+        ActionStatus(action)
+
+        statusNotice?.let { msg ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(AppColors.statusSuccess.copy(alpha = 0.14f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(msg, style = AppTypography.caption1, color = AppColors.statusSuccess, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().testTag("workspace_governance_list"),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    tabs.forEach { (id, title) ->
+                        FilterChip(
+                            selected = selectedTab == id,
+                            onClick = { selectedTab = id },
+                            label = { Text(title) },
+                            modifier = Modifier.testTag("gov_tab_$id")
+                        )
+                    }
+                }
+            }
+
+            when (selectedTab) {
+                0 -> {
+                    item {
+                        IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+                            Text("Brand Identity", style = AppTypography.headline, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Customize logo, primary and accent colors, and optional CSS variables.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = logoUrl,
+                                onValueChange = { logoUrl = it },
+                                label = { Text("Logo URL") },
+                                placeholder = { Text("https://cdn.acme.com/logo.png") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_brand_logo_url")
+                            )
+                            Spacer(Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = brandColorHex,
+                                onValueChange = { brandColorHex = it },
+                                label = { Text("Brand Color Hex") },
+                                placeholder = { Text("#3B82F6") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_brand_primary_hex")
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            Button(
+                                onClick = {
+                                    action.run {
+                                        api.request(
+                                            "/api/organizations/${api.orgId}/branding",
+                                            "PUT",
+                                            json(
+                                                "logo_url" to logoUrl.trim().ifBlank { null },
+                                                "brand_color_hex" to brandColorHex.trim().ifBlank { null }
+                                            )
+                                        )
+                                        statusNotice = "Brand identity saved."
+                                        orgRemote.refresh()
+                                        vm.changed()
+                                    }
+                                },
+                                enabled = !action.busy,
+                                modifier = Modifier.fillMaxWidth().testTag("btn_save_branding"),
+                                colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                            ) {
+                                Text("Save Branding")
+                            }
+                        }
+                    }
+
+                    item {
+                        IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+                            Text("Domain & Auto-Join Governance", style = AppTypography.headline, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Configure custom workspace domain mapping and verified corporate email domains eligible for auto-join.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = customDomain,
+                                onValueChange = { customDomain = it },
+                                label = { Text("Custom Workspace Domain") },
+                                placeholder = { Text("tasks.acme.com") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_custom_domain")
+                            )
+                            Spacer(Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = allowedEmailDomains,
+                                onValueChange = { allowedEmailDomains = it },
+                                label = { Text("Allowed Email Domains (Auto-Join)") },
+                                placeholder = { Text("acme.com, engineering.acme.com") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_allowed_domains")
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            Button(
+                                onClick = {
+                                    action.run {
+                                        api.request(
+                                            "/api/organizations/${api.orgId}/domain-settings",
+                                            "PUT",
+                                            json(
+                                                "custom_domain" to customDomain.trim().ifBlank { null },
+                                                "allowed_email_domains" to allowedEmailDomains.trim().ifBlank { null }
+                                            )
+                                        )
+                                        statusNotice = "Domain governance policy saved."
+                                        orgRemote.refresh()
+                                        vm.changed()
+                                    }
+                                },
+                                enabled = !action.busy,
+                                modifier = Modifier.fillMaxWidth().testTag("btn_save_domain_policy"),
+                                colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                            ) {
+                                Text("Save Domain Policy")
+                            }
+                        }
+                    }
+                }
+
+                1 -> {
+                    item {
+                        IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("SAML 2.0 Identity Provider", style = AppTypography.headline, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "Connect Okta, Microsoft Entra ID, Google Workspace, or Ping Identity.",
+                                        style = AppTypography.caption1,
+                                        color = AppColors.textSecondary
+                                    )
+                                }
+                                Switch(
+                                    checked = ssoEnabled,
+                                    onCheckedChange = { ssoEnabled = it },
+                                    modifier = Modifier.testTag("switch_sso_enabled")
+                                )
+                            }
+                            Spacer(Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = ssoEntityId,
+                                onValueChange = { ssoEntityId = it },
+                                label = { Text("Identity Provider Entity ID (Issuer URI)") },
+                                placeholder = { Text("http://www.okta.com/exk1234567890") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_sso_entity_id")
+                            )
+                            Spacer(Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = ssoIdpUrl,
+                                onValueChange = { ssoIdpUrl = it },
+                                label = { Text("SSO Entry Point URL (HTTP-POST / Redirect)") },
+                                placeholder = { Text("https://acme.okta.com/app/taskflow/sso/saml") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_sso_url")
+                            )
+                            Spacer(Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = ssoCertificate,
+                                onValueChange = { ssoCertificate = it },
+                                label = { Text("X.509 Public Certificate (PEM)") },
+                                placeholder = { Text("-----BEGIN CERTIFICATE-----\nMIIDpDCCAoygAwIBAgIG...\n-----END CERTIFICATE-----") },
+                                minLines = 3,
+                                maxLines = 6,
+                                modifier = Modifier.fillMaxWidth().testTag("input_sso_cert_pem")
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            Button(
+                                onClick = {
+                                    action.run {
+                                        api.request(
+                                            "/api/organizations/${api.orgId}/sso-settings",
+                                            "PUT",
+                                            json(
+                                                "sso_enabled" to ssoEnabled,
+                                                "sso_entity_id" to ssoEntityId.trim().ifBlank { null },
+                                                "sso_idp_url" to ssoIdpUrl.trim().ifBlank { null },
+                                                "sso_certificate" to ssoCertificate.trim().ifBlank { null }
+                                            )
+                                        )
+                                        statusNotice = "Enterprise SSO configuration saved."
+                                        orgRemote.refresh()
+                                        vm.changed()
+                                    }
+                                },
+                                enabled = !action.busy,
+                                modifier = Modifier.fillMaxWidth().testTag("btn_save_sso"),
+                                colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                            ) {
+                                Text("Save SSO Configuration")
+                            }
+                        }
+                    }
+                }
+
+                2 -> {
+                    item {
+                        IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+                            Text("Automated Message Retention", style = AppTypography.headline, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Set to 0 to keep channel and direct messages indefinitely, or between 1 and 3650 days.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = retentionDaysText,
+                                onValueChange = { retentionDaysText = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Retention Window (Days)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("input_retention_days")
+                            )
+                            Spacer(Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    "0" to "Indefinite (0d)",
+                                    "30" to "30 Days",
+                                    "90" to "90 Days",
+                                    "365" to "365 Days"
+                                ).forEach { (days, label) ->
+                                    FilterChip(
+                                        selected = retentionDaysText == days,
+                                        onClick = { retentionDaysText = days },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = {
+                                        val days = (retentionDaysText.toIntOrNull() ?: 0).coerceIn(0, 3650)
+                                        retentionDaysText = days.toString()
+                                        action.run {
+                                            api.request(
+                                                "/api/admin/org/retention",
+                                                "PUT",
+                                                json("retention_days" to if (days > 0) days else null)
+                                            )
+                                            statusNotice = if (days == 0) {
+                                                "Message retention set to indefinite."
+                                            } else {
+                                                "Message retention set to $days days."
+                                            }
+                                            retentionRemote.refresh()
+                                            orgRemote.refresh()
+                                            vm.changed()
+                                        }
+                                    },
+                                    enabled = !action.busy,
+                                    modifier = Modifier.weight(1f).testTag("btn_save_retention"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                                ) {
+                                    Text("Save Policy")
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        action.run {
+                                            val res = api.request("/api/admin/org/retention/purge-now", "POST").data.obj()
+                                            val purged = res.int("deleted_count", res.int("deletedCount", res.int("purged_messages", 0)))
+                                            lastPurgeSummary = "Purged $purged expired messages"
+                                            statusNotice = "Retention sweep completed ($purged messages purged)."
+                                            vm.changed()
+                                        }
+                                    },
+                                    enabled = !action.busy && (retentionDaysText.toIntOrNull() ?: 0) > 0,
+                                    modifier = Modifier.weight(1f).testTag("btn_purge_expired_now")
+                                ) {
+                                    Text("Purge Now")
+                                }
+                            }
+
+                            lastPurgeSummary?.let { summary ->
+                                Spacer(Modifier.height(8.dp))
+                                Text(summary, style = AppTypography.caption1, color = AppColors.statusWarning)
+                            }
+                        }
+                    }
+
+                    item {
+                        IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+                            Text("Signed Compliance Export", style = AppTypography.headline, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Generate a signed, time-limited compliance archive containing workspace members, channels, projects, tasks, and recent audit logs.",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
+                            Spacer(Modifier.height(12.dp))
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = {
+                                        action.run {
+                                            val res = api.request("/api/admin/org/export?format=json", "POST").data.obj()
+                                            val fmt = res.text("format", "json").uppercase()
+                                            val bytes = res.int("size_bytes", res.int("sizeBytes", res.int("byte_size", 0)))
+                                            val exp = res.text("expires_at", res.text("expiresAt"))
+                                            val dl = res.text("download_url", res.text("downloadUrl"))
+                                            lastExportSummary = "$fmt archive (${bytes / 1024} KB) · Expires $exp"
+                                            lastExportUrl = dl
+                                            statusNotice = "Signed JSON compliance export generated."
+                                        }
+                                    },
+                                    enabled = !action.busy,
+                                    modifier = Modifier.weight(1f).testTag("btn_export_compliance_json"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.brandPrimary)
+                                ) {
+                                    Text("Export JSON")
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        action.run {
+                                            val res = api.request("/api/admin/org/export?format=csv", "POST").data.obj()
+                                            val fmt = res.text("format", "csv").uppercase()
+                                            val bytes = res.int("size_bytes", res.int("sizeBytes", res.int("byte_size", 0)))
+                                            val exp = res.text("expires_at", res.text("expiresAt"))
+                                            val dl = res.text("download_url", res.text("downloadUrl"))
+                                            lastExportSummary = "$fmt archive (${bytes / 1024} KB) · Expires $exp"
+                                            lastExportUrl = dl
+                                            statusNotice = "Signed CSV compliance export generated."
+                                        }
+                                    },
+                                    enabled = !action.busy,
+                                    modifier = Modifier.weight(1f).testTag("btn_export_compliance_csv")
+                                ) {
+                                    Text("Export CSV")
+                                }
+                            }
+
+                            lastExportSummary?.let { summary ->
+                                Spacer(Modifier.height(10.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(AppRadius.medium))
+                                        .background(AppColors.surfaceElevated)
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(summary, style = AppTypography.caption1, fontWeight = FontWeight.SemiBold, color = AppColors.textPrimary)
+                                    lastExportUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                                        Text(url, style = AppTypography.caption2, color = AppColors.textSecondary)
+                                        TextButton(
+                                            onClick = {
+                                                clipboard.setText(AnnotatedString(url))
+                                                statusNotice = "Signed export download path copied to clipboard."
+                                            }
+                                        ) {
+                                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Copy Signed Download URL")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

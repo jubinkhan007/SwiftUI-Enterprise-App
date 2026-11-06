@@ -285,7 +285,35 @@ export interface OrganizationDetailsDTO {
   subscriptionStatus?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  logoUrl?: string;
+  brandColorHex?: string;
+  customDomain?: string;
+  allowedEmailDomains?: string;
+  ssoEnabled?: boolean;
+  ssoIdpUrl?: string;
+  ssoEntityId?: string;
+  ssoCertificate?: string;
+  retentionDays?: number | null;
   createdAt?: string;
+}
+
+export interface AuditLogEntryDTO {
+  id: string;
+  orgId: string;
+  userId: string;
+  userEmail: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string | null;
+  details?: string | null;
+  createdAt?: string;
+}
+
+export interface ComplianceExportDescriptorDTO {
+  downloadUrl: string;
+  format: string;
+  sizeBytes: number;
+  expiresAt: string;
 }
 
 export interface LogTimeRequest {

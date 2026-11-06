@@ -248,3 +248,87 @@ public struct BillingRedirectDTO: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Enterprise Branding, Domain, SSO & Compliance Payloads
+
+public struct UpdateBrandingRequest: Codable, Sendable, Equatable {
+    public let logoUrl: String?
+    public let brandColorHex: String?
+
+    public init(logoUrl: String?, brandColorHex: String?) {
+        self.logoUrl = logoUrl
+        self.brandColorHex = brandColorHex
+    }
+}
+
+public struct UpdateDomainSettingsRequest: Codable, Sendable, Equatable {
+    public let customDomain: String?
+    public let allowedEmailDomains: String?
+
+    public init(customDomain: String?, allowedEmailDomains: String?) {
+        self.customDomain = customDomain
+        self.allowedEmailDomains = allowedEmailDomains
+    }
+}
+
+public struct UpdateSSOSettingsRequest: Codable, Sendable, Equatable {
+    public let ssoEnabled: Bool
+    public let ssoIdpUrl: String?
+    public let ssoEntityId: String?
+    public let ssoCertificate: String?
+
+    public init(
+        ssoEnabled: Bool,
+        ssoIdpUrl: String?,
+        ssoEntityId: String?,
+        ssoCertificate: String?
+    ) {
+        self.ssoEnabled = ssoEnabled
+        self.ssoIdpUrl = ssoIdpUrl
+        self.ssoEntityId = ssoEntityId
+        self.ssoCertificate = ssoCertificate
+    }
+}
+
+public struct RetentionPolicyPayloadDTO: Codable, Sendable, Equatable {
+    public let retentionDays: Int?
+
+    public init(retentionDays: Int?) {
+        self.retentionDays = retentionDays
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let retentionDays {
+            try container.encode(retentionDays, forKey: .retentionDays)
+        } else {
+            try container.encodeNil(forKey: .retentionDays)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case retentionDays
+    }
+}
+
+public struct PurgeResultPayloadDTO: Codable, Sendable, Equatable {
+    public let deletedCount: Int
+
+    public init(deletedCount: Int) {
+        self.deletedCount = deletedCount
+    }
+}
+
+public struct ComplianceExportDescriptorDTO: Codable, Sendable, Equatable {
+    public let downloadUrl: String
+    public let format: String
+    public let sizeBytes: Int
+    public let expiresAt: Date
+
+    public init(downloadUrl: String, format: String, sizeBytes: Int, expiresAt: Date) {
+        self.downloadUrl = downloadUrl
+        self.format = format
+        self.sizeBytes = sizeBytes
+        self.expiresAt = expiresAt
+    }
+}
+

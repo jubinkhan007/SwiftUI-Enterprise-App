@@ -73,6 +73,10 @@ public final class TeamManagementViewModel: ObservableObject {
         currentPermissions?.has(.auditLogView) ?? (currentRole == .owner || currentRole == .admin)
     }
 
+    public var canManageOrgSettings: Bool {
+        currentPermissions?.has(.orgSettings) ?? (currentRole == .owner || currentRole == .admin)
+    }
+
     // MARK: - Fetch Current User Permissions
 
     public func fetchMyPermissions() async {

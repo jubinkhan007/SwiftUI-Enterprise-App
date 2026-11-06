@@ -793,6 +793,15 @@ struct OrganizationController: RouteCollection {
         org.logoUrl = payload.logoUrl
         org.brandColorHex = payload.brandColorHex
         try await org.save(on: req.db)
+        try await AuditLogModel.log(
+            on: req.db,
+            orgId: ctx.orgId,
+            userId: ctx.userId,
+            action: "org.branding_updated",
+            resourceType: "org",
+            resourceId: ctx.orgId,
+            details: "Updated branding (color=\(payload.brandColorHex ?? "default"))"
+        )
         
         return .success(org.toDTO())
     }
@@ -826,6 +835,15 @@ struct OrganizationController: RouteCollection {
         
         org.allowedEmailDomains = payload.allowedEmailDomains?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         try await org.save(on: req.db)
+        try await AuditLogModel.log(
+            on: req.db,
+            orgId: ctx.orgId,
+            userId: ctx.userId,
+            action: "org.domain_updated",
+            resourceType: "org",
+            resourceId: ctx.orgId,
+            details: "Updated domain settings (custom=\(org.customDomain ?? "none"), allowed=\(org.allowedEmailDomains ?? "none"))"
+        )
         
         return .success(org.toDTO())
     }
@@ -859,6 +877,15 @@ struct OrganizationController: RouteCollection {
         org.ssoEntityId = payload.ssoEntityId
         org.ssoCertificate = payload.ssoCertificate
         try await org.save(on: req.db)
+        try await AuditLogModel.log(
+            on: req.db,
+            orgId: ctx.orgId,
+            userId: ctx.userId,
+            action: "org.sso_updated",
+            resourceType: "org",
+            resourceId: ctx.orgId,
+            details: "Updated SAML SSO (enabled=\(payload.ssoEnabled))"
+        )
         
         return .success(org.toDTO())
     }

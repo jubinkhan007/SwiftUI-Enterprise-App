@@ -15,6 +15,7 @@ public struct TeamManagementView: View {
     @State private var showRolesSheet = false
     @State private var showSessionsSheet = false
     @State private var showAuditLogSheet = false
+    @State private var showGovernanceSheet = false
 
     public init(orgId: UUID) {
         self._viewModel = StateObject(wrappedValue: TeamManagementViewModel(orgId: orgId))
@@ -88,6 +89,13 @@ public struct TeamManagementView: View {
                         } label: {
                             Label("Security & Sessions", systemImage: "lock.shield")
                         }
+                        if viewModel.canManageOrgSettings {
+                            Button {
+                                showGovernanceSheet = true
+                            } label: {
+                                Label("Branding, SSO & Compliance", systemImage: "building.columns")
+                            }
+                        }
                         if viewModel.canViewAuditLog {
                             Button {
                                 showAuditLogSheet = true
@@ -136,6 +144,9 @@ public struct TeamManagementView: View {
             }
             .sheet(isPresented: $showAuditLogSheet) {
                 AuditLogView(orgId: viewModel.orgId)
+            }
+            .sheet(isPresented: $showGovernanceSheet) {
+                WorkspaceGovernanceView(orgId: viewModel.orgId)
             }
             .sheet(item: $viewModel.memberBeingEdited) { member in
                 roleEditSheet(for: member)

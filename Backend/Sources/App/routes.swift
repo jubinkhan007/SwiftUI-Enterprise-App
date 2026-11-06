@@ -32,10 +32,10 @@ func routes(_ app: Application) throws {
     superAdminAPI.get("users", ":userID", "sessions", use: sessionController.listUserSessions)
     superAdminAPI.delete("sessions", ":sessionID", use: sessionController.forceRevokeSession)
 
-    // Web Admin Panel: org-admin tenant routes (cookie auth + org membership + admin role)
+    // Web Admin Panel & Native Org-Admin tenant routes (cookie or Bearer auth + org membership + admin role)
     let orgAdminAPI = api
         .grouped("admin", "org")
-        .grouped(CookieAuthMiddleware())
+        .grouped(AnyAuthMiddleware())
         .grouped(OrgTenantMiddleware())
         .grouped(RequireOrgAdminMiddleware())
     let orgAdminController = OrgAdminController()

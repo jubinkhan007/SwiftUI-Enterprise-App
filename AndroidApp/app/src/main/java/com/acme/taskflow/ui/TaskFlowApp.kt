@@ -208,7 +208,8 @@ private fun AuthenticatedShell(
                             Destination.AllTasks, Destination.MyTasks, Destination.Inbox,
                             Destination.Messages, Destination.Meetings, Destination.Calls,
                             Destination.Productivity, Destination.Team,
-                            Destination.Roles, Destination.Sessions, Destination.AuditLog
+                            Destination.Roles, Destination.Sessions, Destination.AuditLog,
+                            Destination.Governance
                         )
                         navItems.forEachIndexed { index, item ->
                             val isSelected = destination == item && listId.isBlank() && projectId.isBlank()
@@ -451,6 +452,7 @@ private fun AuthenticatedShell(
                     Destination.Roles -> RolesPermissionsScreen(vm, api)
                     Destination.Sessions -> SessionsScreen(vm, api)
                     Destination.AuditLog -> AuditLogScreen(vm, api)
+                    Destination.Governance -> WorkspaceGovernanceScreen(vm, api)
                 }
             }
         }
@@ -844,7 +846,8 @@ private fun CompactWorkspaceNavigation(
     val governanceNavItems = listOf(
         Destination.Roles,
         Destination.Sessions,
-        Destination.AuditLog
+        Destination.AuditLog,
+        Destination.Governance
     )
     val spaces = hierarchy.data.obj().list("spaces")
 

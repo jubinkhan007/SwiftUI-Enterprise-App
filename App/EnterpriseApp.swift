@@ -118,6 +118,7 @@ struct AuthenticatedRootView: View {
     @State private var showRolesSheet = false
     @State private var showSessionsSheet = false
     @State private var showAuditLogSheet = false
+    @State private var showGovernanceSheet = false
     @State private var showingCreateTask = false
     @State private var showingOmnibar = false
     @State private var viewType: DashboardViewType = .list
@@ -357,6 +358,9 @@ struct AuthenticatedRootView: View {
                 .sheet(isPresented: $showAuditLogSheet) {
                     AuditLogView(orgId: selectedOrg.id)
                 }
+                .sheet(isPresented: $showGovernanceSheet) {
+                    WorkspaceGovernanceView(orgId: selectedOrg.id)
+                }
                 .sheet(item: $selectedMeetingSheet) { item in
                     NavigationStack {
                         MeetingDetailView(
@@ -478,6 +482,11 @@ struct AuthenticatedRootView: View {
                 Label("Security & Sessions", systemImage: "lock.shield")
             }
             if session.user.role == .owner || session.user.role == .admin {
+                Button {
+                    showGovernanceSheet = true
+                } label: {
+                    Label("Branding, SSO & Compliance", systemImage: "building.columns")
+                }
                 Button {
                     showAuditLogSheet = true
                 } label: {

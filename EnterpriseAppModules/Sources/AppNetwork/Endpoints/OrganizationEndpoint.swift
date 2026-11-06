@@ -33,6 +33,13 @@ public enum OrganizationEndpoint {
     case respondToJoinRequest(requestId: UUID, payload: RespondToJoinRequestRequest, configuration: APIConfiguration)
     case billingCheckout(orgId: UUID, configuration: APIConfiguration)
     case billingPortal(orgId: UUID, configuration: APIConfiguration)
+    case updateBranding(orgId: UUID, payload: UpdateBrandingRequest, configuration: APIConfiguration)
+    case updateDomainSettings(orgId: UUID, payload: UpdateDomainSettingsRequest, configuration: APIConfiguration)
+    case updateSSOSettings(orgId: UUID, payload: UpdateSSOSettingsRequest, configuration: APIConfiguration)
+    case getRetentionPolicy(orgId: UUID, configuration: APIConfiguration)
+    case updateRetentionPolicy(orgId: UUID, payload: RetentionPolicyPayloadDTO, configuration: APIConfiguration)
+    case purgeExpiredMessages(orgId: UUID, configuration: APIConfiguration)
+    case createComplianceExport(orgId: UUID, format: String, configuration: APIConfiguration)
 }
 
 extension OrganizationEndpoint: APIEndpoint {
@@ -46,7 +53,11 @@ extension OrganizationEndpoint: APIEndpoint {
              .auditLog(_, let c), .searchOrganizations(_, let c),
              .requestToJoin(_, let c), .listJoinRequests(_, let c),
              .respondToJoinRequest(_, _, let c),
-             .billingCheckout(_, let c), .billingPortal(_, let c):
+             .billingCheckout(_, let c), .billingPortal(_, let c),
+             .updateBranding(_, _, let c), .updateDomainSettings(_, _, let c),
+             .updateSSOSettings(_, _, let c), .getRetentionPolicy(_, let c),
+             .updateRetentionPolicy(_, _, let c), .purgeExpiredMessages(_, let c),
+             .createComplianceExport(_, _, let c):
             return c.baseURL
         }
     }
@@ -94,20 +105,33 @@ extension OrganizationEndpoint: APIEndpoint {
             return "/api/org/billing/checkout"
         case .billingPortal:
             return "/api/org/billing/portal"
+        case .updateBranding(let orgId, _, _):
+            return "/api/organizations/\(orgId.uuidString)/branding"
+        case .updateDomainSettings(let orgId, _, _):
+            return "/api/organizations/\(orgId.uuidString)/domain-settings"
+        case .updateSSOSettings(let orgId, _, _):
+            return "/api/organizations/\(orgId.uuidString)/sso-settings"
+        case .getRetentionPolicy, .updateRetentionPolicy:
+            return "/api/admin/org/retention"
+        case .purgeExpiredMessages:
+            return "/api/admin/org/retention/purge-now"
+        case .createComplianceExport(_, let format, _):
+            return "/api/admin/org/export?format=\(format)"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
         case .me, .myInvites, .listOrgs, .showOrg, .listMembers, .listInvites, .auditLog,
-             .searchOrganizations, .listJoinRequests:
+             .searchOrganizations, .listJoinRequests, .getRetentionPolicy:
             return .get
         case .updateProfile:
             return .patch
         case .createOrg, .createInvite, .acceptInvite, .revokeInvite,
-             .requestToJoin, .respondToJoinRequest, .billingCheckout, .billingPortal:
+             .requestToJoin, .respondToJoinRequest, .billingCheckout, .billingPortal,
+             .purgeExpiredMessages, .createComplianceExport:
             return .post
-        case .updateMemberRole:
+        case .updateMemberRole, .updateBranding, .updateDomainSettings, .updateSSOSettings, .updateRetentionPolicy:
             return .put
         case .removeMember:
             return .delete
@@ -120,7 +144,11 @@ extension OrganizationEndpoint: APIEndpoint {
             h["Authorization"] = "Bearer \(token)"
         }
         switch self {
-        case .billingCheckout(let orgId, _), .billingPortal(let orgId, _):
+        case .billingCheckout(let orgId, _), .billingPortal(let orgId, _),
+             .updateBranding(let orgId, _, _), .updateDomainSettings(let orgId, _, _),
+             .updateSSOSettings(let orgId, _, _), .getRetentionPolicy(let orgId, _),
+             .updateRetentionPolicy(let orgId, _, _), .purgeExpiredMessages(let orgId, _),
+             .createComplianceExport(let orgId, _, _):
             h["X-Org-Id"] = orgId.uuidString
         default:
             if let orgId = OrganizationContext.shared.orgId {
@@ -141,6 +169,14 @@ extension OrganizationEndpoint: APIEndpoint {
         case .updateMemberRole(_, _, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .respondToJoinRequest(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .updateBranding(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .updateDomainSettings(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .updateSSOSettings(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .updateRetentionPolicy(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         default:
             return nil

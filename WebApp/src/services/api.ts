@@ -82,7 +82,9 @@ import {
   AnalyticsMetricDTO,
   ProjectDailyStatsDTO,
   WeeklyThroughputPointDTO,
-  SprintVelocityPointDTO
+  SprintVelocityPointDTO,
+  AuditLogEntryDTO,
+  ComplianceExportDescriptorDTO
 } from '../types';
 
 class ApiService {
@@ -1177,9 +1179,7 @@ class ApiService {
   }
 
   // --- Organization & Billing ---
-  async getOrganization(orgId: string): Promise<OrganizationDetailsDTO> {
-    const raw = await this.request<any>(`/api/organizations/${orgId}`);
-    const org = raw?.data || raw || {};
+  private mapOrganizationDetails(org: any): OrganizationDetailsDTO {
     return {
       id: org.id,
       name: org.name || 'Workspace',
@@ -1190,8 +1190,134 @@ class ApiService {
       subscriptionStatus: org.subscription_status || org.subscriptionStatus || 'active',
       stripeCustomerId: org.stripe_customer_id || org.stripeCustomerId,
       stripeSubscriptionId: org.stripe_subscription_id || org.stripeSubscriptionId,
+      logoUrl: org.logo_url || org.logoUrl || '',
+      brandColorHex: org.brand_color_hex || org.brandColorHex || '#4F46E5',
+      customDomain: org.custom_domain || org.customDomain || '',
+      allowedEmailDomains: org.allowed_email_domains || org.allowedEmailDomains || '',
+      ssoEnabled: Boolean(org.sso_enabled ?? org.ssoEnabled ?? false),
+      ssoIdpUrl: org.sso_idp_url || org.ssoIdpUrl || '',
+      ssoEntityId: org.sso_entity_id || org.ssoEntityId || '',
+      ssoCertificate: org.sso_certificate || org.ssoCertificate || '',
+      retentionDays: org.retention_days ?? org.retentionDays ?? null,
       createdAt: org.created_at || org.createdAt,
     };
+  }
+
+  async getOrganization(orgId: string): Promise<OrganizationDetailsDTO> {
+    const raw = await this.request<any>(`/api/organizations/${orgId}`);
+    const org = raw?.data || raw || {};
+    return this.mapOrganizationDetails(org);
+  }
+
+  async updateOrganizationBranding(
+    orgId: string,
+    payload: { logoUrl?: string | null; brandColorHex?: string | null }
+  ): Promise<OrganizationDetailsDTO> {
+    const raw = await this.request<any>(`/api/organizations/${orgId}/branding`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return this.mapOrganizationDetails(raw?.data || raw || {});
+  }
+
+  async updateOrganizationDomains(
+    orgId: string,
+    payload: { customDomain?: string | null; allowedEmailDomains?: string | null }
+  ): Promise<OrganizationDetailsDTO> {
+    const raw = await this.request<any>(`/api/organizations/${orgId}/domain-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return this.mapOrganizationDetails(raw?.data || raw || {});
+  }
+
+  async updateOrganizationSSO(
+    orgId: string,
+    payload: {
+      ssoEnabled: boolean;
+      ssoIdpUrl?: string | null;
+      ssoEntityId?: string | null;
+      ssoCertificate?: string | null;
+    }
+  ): Promise<OrganizationDetailsDTO> {
+    const raw = await this.request<any>(`/api/organizations/${orgId}/sso-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return this.mapOrganizationDetails(raw?.data || raw || {});
+  }
+
+  async getRetentionPolicy(): Promise<{ retentionDays: number | null }> {
+    const raw = await this.request<any>('/api/admin/org/retention');
+    const data = raw?.data || raw || {};
+    return {
+      retentionDays: data.retention_days ?? data.retentionDays ?? null,
+    };
+  }
+
+  async updateRetentionPolicy(retentionDays: number | null): Promise<{ retentionDays: number | null }> {
+    const raw = await this.request<any>('/api/admin/org/retention', {
+      method: 'PUT',
+      body: JSON.stringify({ retention_days: retentionDays, retentionDays }),
+    });
+    const data = raw?.data || raw || {};
+    return {
+      retentionDays: data.retention_days ?? data.retentionDays ?? retentionDays,
+    };
+  }
+
+  async purgeExpiredMessagesNow(): Promise<{ deletedCount: number }> {
+    const raw = await this.request<any>('/api/admin/org/retention/purge-now', {
+      method: 'POST',
+    });
+    const data = raw?.data || raw || {};
+    return {
+      deletedCount: Number(data.deleted_count ?? data.deletedCount ?? 0),
+    };
+  }
+
+  async createComplianceExport(format: 'json' | 'csv'): Promise<ComplianceExportDescriptorDTO> {
+    const raw = await this.request<any>(`/api/admin/org/export?format=${format}`, {
+      method: 'POST',
+    });
+    const data = raw?.data || raw || {};
+    return {
+      downloadUrl: data.download_url || data.downloadUrl || '',
+      format: data.format || format,
+      sizeBytes: Number(data.size_bytes ?? data.sizeBytes ?? 0),
+      expiresAt: data.expires_at || data.expiresAt || new Date().toISOString(),
+    };
+  }
+
+  async downloadComplianceExportBlob(downloadUrl: string): Promise<Blob> {
+    const path = downloadUrl.startsWith('/api') ? downloadUrl : `/api${downloadUrl}`;
+    const endpoint = this.baseUrl ? `${this.baseUrl}${path}` : path;
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    if (this.selectedOrgId) headers['X-Org-Id'] = this.selectedOrgId;
+    const res = await fetch(endpoint, { headers });
+    if (!res.ok) {
+      throw new Error(`Compliance download failed with HTTP ${res.status}`);
+    }
+    return await res.blob();
+  }
+
+  async getOrgAuditLogs(orgId?: string, limit: number = 100): Promise<AuditLogEntryDTO[]> {
+    const targetOrgId = orgId || this.selectedOrgId;
+    if (!targetOrgId) return [];
+    const raw = await this.request<any>(`/api/organizations/${targetOrgId}/audit-log?limit=${limit}`);
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.map((item: any) => ({
+      id: item.id,
+      orgId: item.org_id || item.orgId || targetOrgId,
+      userId: item.user_id || item.userId || '',
+      userEmail: item.user_email || item.userEmail || 'system',
+      action: item.action || '',
+      resourceType: item.resource_type || item.resourceType || 'org',
+      resourceId: item.resource_id ?? item.resourceId ?? null,
+      details: item.details ?? null,
+      createdAt: item.created_at || item.createdAt,
+    }));
   }
 
   async getBillingCheckoutUrl(): Promise<string> {
