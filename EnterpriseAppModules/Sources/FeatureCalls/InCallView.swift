@@ -11,6 +11,8 @@ public struct InCallView: View {
 
     @State private var showHostControls = false
     @State private var showSystemBroadcastPicker = false
+    @State private var isHandRaised = false
+    @State private var activeReactionEmoji: String? = nil
 
     public let currentUserId: UUID
 
@@ -22,12 +24,45 @@ public struct InCallView: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
+            ZStack(alignment: .bottom) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black)
+
+                if let emoji = activeReactionEmoji {
+                    HStack(spacing: 8) {
+                        Text(emoji)
+                            .font(.system(size: 32))
+                        Text("You reacted")
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.18))
+                    .clipShape(Capsule())
+                    .padding(.bottom, 16)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
             CallControlsBar(
                 store: store,
                 isHost: isHost,
+                isHandRaised: isHandRaised,
+                onToggleHandRaise: {
+                    withAnimation { isHandRaised.toggle() }
+                },
+                onSendReaction: { emoji in
+                    withAnimation { activeReactionEmoji = emoji }
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_500_000_000)
+                        await MainActor.run {
+                            if activeReactionEmoji == emoji {
+                                withAnimation { activeReactionEmoji = nil }
+                            }
+                        }
+                    }
+                },
                 onShowHostControls: { showHostControls = true },
                 onHangUp: {
                     Task {
@@ -82,6 +117,18 @@ public struct InCallView: View {
     private var header: some View {
         HStack(spacing: AppSpacing.sm) {
             connectionPill
+            if isHandRaised {
+                HStack(spacing: 4) {
+                    Image(systemName: "hand.raised.fill")
+                    Text("Hand Raised")
+                }
+                .appFont(AppTypography.caption2)
+                .foregroundColor(.black)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.orange)
+                .cornerRadius(10)
+            }
             Spacer()
             Text(headerTitle)
                 .appFont(AppTypography.subheadline)

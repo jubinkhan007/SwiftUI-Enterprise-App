@@ -838,6 +838,9 @@ fun CallControlsBar(
     isVideoMuted: Boolean,
     isScreenSharing: Boolean,
     isHost: Boolean,
+    isHandRaised: Boolean = false,
+    onToggleHandRaise: (() -> Unit)? = null,
+    onSendReaction: ((String) -> Unit)? = null,
     onToggleAudio: () -> Unit,
     onToggleVideo: () -> Unit,
     onToggleScreenShare: () -> Unit,
@@ -845,15 +848,58 @@ fun CallControlsBar(
     onHangUp: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    var showReactionBar by remember { mutableStateOf(false) }
+    var activeEmojiToast by remember { mutableStateOf<String?>(null) }
+
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .background(Color.Black.copy(alpha = 0.85f))
-            .padding(vertical = 16.dp),
-        contentAlignment = Alignment.Center
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        activeEmojiToast?.let { emoji ->
+            Surface(
+                color = Color.White.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text(
+                    "$emoji Sent to call",
+                    style = AppTypography.caption1,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+        }
+
+        if (showReactionBar) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                listOf("👍", "👏", "🎉", "❤️", "🔥", "🚀").forEach { emoji ->
+                    TextButton(
+                        onClick = {
+                            activeEmojiToast = emoji
+                            showReactionBar = false
+                            onSendReaction?.invoke(emoji)
+                        },
+                        contentPadding = PaddingValues(4.dp),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text(emoji, style = AppTypography.title3)
+                    }
+                }
+            }
+        }
+
         Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Audio toggle (red when muted, translucent gray when unmuted)
@@ -882,6 +928,25 @@ fun CallControlsBar(
                 testTag = "btn_call_share",
                 onClick = onToggleScreenShare
             )
+
+            // Live reactions toggle
+            CallControlButton(
+                icon = Icons.Default.EmojiEmotions,
+                contentDescription = "Reactions",
+                backgroundColor = if (showReactionBar) AppColors.brandPrimary else Color.Gray.copy(alpha = 0.6f),
+                testTag = "btn_call_reactions",
+                onClick = { showReactionBar = !showReactionBar }
+            )
+
+            if (onToggleHandRaise != null) {
+                CallControlButton(
+                    icon = Icons.Default.PanTool,
+                    contentDescription = "Raise hand",
+                    backgroundColor = if (isHandRaised) Color(0xFFF59E0B) else Color.Gray.copy(alpha = 0.6f),
+                    testTag = "btn_call_hand",
+                    onClick = onToggleHandRaise
+                )
+            }
 
             // Host controls button (if host)
             if (isHost) {

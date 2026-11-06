@@ -251,6 +251,17 @@ public final class MeetingSessionStore: ObservableObject {
         } catch { lastError = error }
     }
 
+    public func convertActionItem(itemId: UUID, listId: UUID? = nil) async {
+        do {
+            let response = try await repository.convertActionItem(
+                meetingId: meetingId,
+                itemId: itemId,
+                request: ConvertMeetingActionItemRequest(listId: listId)
+            )
+            summary = response.data
+        } catch { lastError = error }
+    }
+
     // MARK: - Heartbeat
 
     private func startHeartbeat() {

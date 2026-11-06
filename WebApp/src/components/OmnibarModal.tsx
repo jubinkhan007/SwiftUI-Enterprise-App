@@ -41,7 +41,7 @@ interface OmnibarModalProps {
 }
 
 type TabType = 'all' | SearchEntityType | 'copilot';
-type CopilotMode = 'rag' | 'breakdown' | 'standup';
+type CopilotMode = 'rag' | 'breakdown' | 'standup' | 'next_actions' | 'thread_summary';
 
 export const OmnibarModal: React.FC<OmnibarModalProps> = ({
   isOpen,
@@ -335,6 +335,79 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
     );
   };
 
+  const handleRunNextActions = () => {
+    abortStreamRef.current?.();
+    setIsCopilotLoading(true);
+    setIsStreaming(true);
+    setStreamingText('');
+    setStreamingCitations([]);
+    setStreamingFollowUps([]);
+    setCopilotResponse(null);
+    setTasksAddedSuccess(false);
+    setErrorMessage(null);
+
+    abortStreamRef.current = api.streamCopilot(
+      {
+        action: 'suggest_next_actions',
+      },
+      {
+        onToken: (tok) => {
+          setStreamingText((prev) => prev + tok);
+        },
+        onFollowUps: (fus) => {
+          setStreamingFollowUps(fus);
+        },
+        onDone: (resp) => {
+          setCopilotResponse(resp);
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+        onError: (err) => {
+          setErrorMessage(err.message || 'Failed to suggest next actions.');
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+      }
+    );
+  };
+
+  const handleRunThreadSummary = () => {
+    abortStreamRef.current?.();
+    setIsCopilotLoading(true);
+    setIsStreaming(true);
+    setStreamingText('');
+    setStreamingCitations([]);
+    setStreamingFollowUps([]);
+    setCopilotResponse(null);
+    setTasksAddedSuccess(false);
+    setErrorMessage(null);
+
+    abortStreamRef.current = api.streamCopilot(
+      {
+        action: 'summarize_thread',
+        prompt: copilotPrompt.trim() || undefined,
+      },
+      {
+        onToken: (tok) => {
+          setStreamingText((prev) => prev + tok);
+        },
+        onFollowUps: (fus) => {
+          setStreamingFollowUps(fus);
+        },
+        onDone: (resp) => {
+          setCopilotResponse(resp);
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+        onError: (err) => {
+          setErrorMessage(err.message || 'Failed to summarize thread.');
+          setIsStreaming(false);
+          setIsCopilotLoading(false);
+        },
+      }
+    );
+  };
+
 
   const handleAddAllTasks = async () => {
     if (!copilotResponse?.suggestedTasks || copilotResponse.suggestedTasks.length === 0) return;
@@ -561,13 +634,13 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
           {activeTab === 'copilot' ? (
             <div className="p-3 space-y-4">
               {/* Copilot submode tabs */}
-              <div className="flex gap-2 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
+              <div className="flex flex-wrap gap-1.5 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
                 <button
                   onClick={() => {
                     setCopilotMode('rag');
                     setCopilotResponse(null);
                   }}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
                     copilotMode === 'rag'
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
@@ -581,28 +654,56 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                     setCopilotMode('breakdown');
                     setCopilotResponse(null);
                   }}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
                     copilotMode === 'breakdown'
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   <CheckSquare className="w-3.5 h-3.5" />
-                  Decompose Task
+                  Decompose
                 </button>
                 <button
                   onClick={() => {
                     setCopilotMode('standup');
                     setCopilotResponse(null);
                   }}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
                     copilotMode === 'standup'
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   <Calendar className="w-3.5 h-3.5" />
-                  Daily Standup
+                  Standup
+                </button>
+                <button
+                  onClick={() => {
+                    setCopilotMode('next_actions');
+                    setCopilotResponse(null);
+                  }}
+                  className={`flex-1 min-w-[110px] py-1.5 px-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    copilotMode === 'next_actions'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  Next Actions
+                </button>
+                <button
+                  onClick={() => {
+                    setCopilotMode('thread_summary');
+                    setCopilotResponse(null);
+                  }}
+                  className={`flex-1 min-w-[110px] py-1.5 px-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    copilotMode === 'thread_summary'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Thread Summary
                 </button>
               </div>
 
@@ -790,6 +891,93 @@ export const OmnibarModal: React.FC<OmnibarModalProps> = ({
                       Generate Today's Standup Summary
                     </button>
                   )}
+                </div>
+              )}
+
+              {copilotMode === 'next_actions' && (
+                <div className="space-y-3 bg-slate-950/40 p-4 rounded-xl border border-slate-800/80">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold text-slate-200">
+                      Smart Next Actions
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      Analyzes critical, high-priority, and in-progress workspace tasks to recommend immediate next steps and unblockers.
+                    </span>
+                  </div>
+
+                  {isStreaming ? (
+                    <button
+                      onClick={handleStopStream}
+                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition shadow-md"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      Stop Generating
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleRunNextActions}
+                      disabled={isCopilotLoading}
+                      className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-2 transition shadow-md"
+                    >
+                      {isCopilotLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
+                      Suggest Priority Next Actions
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {copilotMode === 'thread_summary' && (
+                <div className="space-y-3 bg-slate-950/40 p-4 rounded-xl border border-slate-800/80">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold text-slate-200">
+                      Thread & Channel Summarizer
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      Synthesizes recent workspace channel discussions, technical decisions, and follow-up action items.
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={copilotPrompt}
+                      onChange={(e) => setCopilotPrompt(e.target.value)}
+                      placeholder="Optional focus topic (e.g. release checklist, SSO, sprint)"
+                      className="flex-1 px-3 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder:text-slate-500 outline-none focus:border-indigo-500"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleRunThreadSummary();
+                        }
+                      }}
+                    />
+                    {isStreaming ? (
+                      <button
+                        onClick={handleStopStream}
+                        className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm shrink-0"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        Stop
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleRunThreadSummary}
+                        disabled={isCopilotLoading}
+                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 transition shadow-sm shrink-0"
+                      >
+                        {isCopilotLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <MessageSquare className="w-4 h-4" />
+                        )}
+                        Summarize
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 

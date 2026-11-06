@@ -31,6 +31,7 @@ public enum MeetingEndpoint {
     case getSummary(id: UUID, configuration: APIConfiguration)
     case generateSummary(id: UUID, payload: GenerateMeetingSummaryRequest, configuration: APIConfiguration)
     case addActionItem(id: UUID, payload: CreateMeetingActionItemRequest, configuration: APIConfiguration)
+    case convertActionItem(id: UUID, itemId: UUID, payload: ConvertMeetingActionItemRequest, configuration: APIConfiguration)
 
     // ICS + share link
     case ics(id: UUID, configuration: APIConfiguration)
@@ -51,7 +52,7 @@ extension MeetingEndpoint: APIEndpoint {
              .admit(_, _, let c), .deny(_, _, let c),
              .getNotes(_, let c), .updateNotes(_, _, let c),
              .getSummary(_, let c), .generateSummary(_, _, let c),
-             .addActionItem(_, _, let c),
+             .addActionItem(_, _, let c), .convertActionItem(_, _, _, let c),
              .ics(_, let c), .byJoinCode(_, _, let c):
             return c
         }
@@ -91,6 +92,8 @@ extension MeetingEndpoint: APIEndpoint {
             return "/api/meetings/\(id.uuidString)/summary"
         case .addActionItem(let id, _, _):
             return "/api/meetings/\(id.uuidString)/summary/action-items"
+        case .convertActionItem(let id, let itemId, _, _):
+            return "/api/meetings/\(id.uuidString)/summary/action-items/\(itemId.uuidString)/convert"
         case .ics(let id, _):
             return "/api/meetings/\(id.uuidString)/ics"
         case .byJoinCode(let code, _, _):
@@ -104,7 +107,7 @@ extension MeetingEndpoint: APIEndpoint {
             return .get
         case .createMeeting, .startMeeting, .endMeeting, .joinMeeting, .leaveMeeting,
              .heartbeat, .addParticipants, .admit, .deny,
-             .generateSummary, .addActionItem:
+             .generateSummary, .addActionItem, .convertActionItem:
             return .post
         case .updateMeeting, .changeRole, .rsvp, .updateNotes:
             return .put
@@ -164,6 +167,8 @@ extension MeetingEndpoint: APIEndpoint {
         case .generateSummary(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .addActionItem(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .convertActionItem(_, _, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         default:
             return nil

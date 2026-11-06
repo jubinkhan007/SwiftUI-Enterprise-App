@@ -126,6 +126,11 @@ public final class LiveMeetingService: MeetingRepositoryProtocol {
         return try await apiClient.request(ep, responseType: APIResponse<MeetingSummaryDTO>.self)
     }
 
+    public func convertActionItem(meetingId: UUID, itemId: UUID, request: ConvertMeetingActionItemRequest) async throws -> APIResponse<MeetingSummaryDTO> {
+        let ep = MeetingEndpoint.convertActionItem(id: meetingId, itemId: itemId, payload: request, configuration: apiConfiguration)
+        return try await apiClient.request(ep, responseType: APIResponse<MeetingSummaryDTO>.self)
+    }
+
     public func resolveJoinCode(_ joinCode: String, token: String) async throws -> APIResponse<MeetingShareLinkDTO> {
         let ep = MeetingEndpoint.byJoinCode(joinCode: joinCode, token: token, configuration: apiConfiguration)
         return try await apiClient.request(ep, responseType: APIResponse<MeetingShareLinkDTO>.self)

@@ -19,6 +19,7 @@ import {
   OrgInviteDTO,
   OrgJoinRequestDTO,
   WorkspaceDTO,
+  MeetingNotesDTO,
   MeetingSummaryDTO,
   SubtaskDTO,
   SprintDTO,
@@ -1106,21 +1107,84 @@ class ApiService {
   }
 
   // --- Meetings & AI Summary ---
-  async getMeetingSummary(meetingId: string): Promise<MeetingSummaryDTO> {
-    const raw = await this.request<any>(`/api/meetings/${meetingId}/summary`);
-    const s = raw?.data || raw || {};
+  private mapMeetingSummary(s: any, fallbackMeetingId: string): MeetingSummaryDTO {
     return {
-      meetingId: s.meeting_id || s.meetingId || meetingId,
-      source: s.source || 'ai',
+      meetingId: s.meeting_id || s.meetingId || fallbackMeetingId,
+      source: s.source || 'ai_copilot',
       summaryText: s.summary_text || s.summaryText || 'The team aligned on sprint priorities and key architecture changes.',
+      highlights: Array.isArray(s.highlights) ? s.highlights : [],
       recordingUrl: s.recording_url || s.recordingUrl,
       actionItems: (s.action_items || s.actionItems || []).map((a: any) => ({
         id: a.id,
         text: a.text,
         dueAt: a.due_at || a.dueAt,
         linkedTaskId: a.linked_task_id || a.linkedTaskId,
-        isCompleted: a.is_completed ?? a.isCompleted ?? false,
+        isCompleted: a.is_completed ?? a.isCompleted ?? Boolean(a.linked_task_id || a.linkedTaskId),
       })),
+    };
+  }
+
+  async getMeetingSummary(meetingId: string): Promise<MeetingSummaryDTO> {
+    try {
+      const raw = await this.request<any>(`/api/meetings/${meetingId}/summary`);
+      const s = raw?.data || raw || {};
+      return this.mapMeetingSummary(s, meetingId);
+    } catch {
+      return await this.generateMeetingSummary(meetingId, false);
+    }
+  }
+
+  async generateMeetingSummary(meetingId: string, regenerate: boolean = true): Promise<MeetingSummaryDTO> {
+    const raw = await this.request<any>(`/api/meetings/${meetingId}/summary`, {
+      method: 'POST',
+      body: JSON.stringify({ regenerate }),
+    });
+    const s = raw?.data || raw || {};
+    return this.mapMeetingSummary(s, meetingId);
+  }
+
+  async addMeetingActionItem(meetingId: string, text: string, createTaskInListId?: string): Promise<MeetingSummaryDTO> {
+    const raw = await this.request<any>(`/api/meetings/${meetingId}/summary/action-items`, {
+      method: 'POST',
+      body: JSON.stringify({ text, createTaskInListId }),
+    });
+    const s = raw?.data || raw || {};
+    return this.mapMeetingSummary(s, meetingId);
+  }
+
+  async convertMeetingActionItemToTask(meetingId: string, itemId: string, listId?: string): Promise<MeetingSummaryDTO> {
+    const raw = await this.request<any>(`/api/meetings/${meetingId}/summary/action-items/${itemId}/convert`, {
+      method: 'POST',
+      body: JSON.stringify(listId ? { listId } : {}),
+    });
+    const s = raw?.data || raw || {};
+    return this.mapMeetingSummary(s, meetingId);
+  }
+
+  async getMeetingNotes(meetingId: string): Promise<MeetingNotesDTO> {
+    const raw = await this.request<any>(`/api/meetings/${meetingId}/notes`);
+    const n = raw?.data || raw || {};
+    return {
+      meetingId: n.meeting_id || n.meetingId || meetingId,
+      body: n.body || '',
+      version: Number(n.version ?? 1),
+      updatedBy: n.updated_by || n.updatedBy,
+      updatedAt: n.updated_at || n.updatedAt,
+    };
+  }
+
+  async updateMeetingNotes(meetingId: string, body: string, expectedVersion: number): Promise<MeetingNotesDTO> {
+    const raw = await this.request<any>(`/api/meetings/${meetingId}/notes`, {
+      method: 'PUT',
+      body: JSON.stringify({ body, expectedVersion }),
+    });
+    const n = raw?.data || raw || {};
+    return {
+      meetingId: n.meeting_id || n.meetingId || meetingId,
+      body: n.body ?? body,
+      version: Number(n.version ?? expectedVersion + 1),
+      updatedBy: n.updated_by || n.updatedBy,
+      updatedAt: n.updated_at || n.updatedAt,
     };
   }
 

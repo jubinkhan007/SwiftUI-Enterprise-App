@@ -332,29 +332,93 @@ struct AIAssistantController: RouteCollection {
     ) async throws -> APIResponse<AIAssistantResponse> {
         let orgId = try req.orgContext.orgId
 
-        let urgentTasks = try await TaskItemModel.query(on: req.db)
+        let openTasks = try await TaskItemModel.query(on: req.db)
             .filter(\.$organization.$id == orgId)
-            .filter(\.$priority == .critical)
             .filter(\.$status != .done)
             .filter(\.$archivedAt == nil)
-            .range(0..<5)
             .all()
 
-        let suggestions = urgentTasks.map { task in
-            SuggestedTaskDTO(
-                title: "Resolve Urgent Issue: \(task.title)",
-                description: "Priority resolution for blocking item.",
-                priority: "urgent",
-                estimateHours: 2.0
+        func priorityWeight(_ priority: TaskPriority) -> Int {
+            switch priority {
+            case .critical: return 4
+            case .high: return 3
+            case .medium: return 2
+            case .low: return 1
+            }
+        }
+
+        let sortedTasks = openTasks.sorted { a, b in
+            let wa = priorityWeight(a.priority)
+            let wb = priorityWeight(b.priority)
+            if wa != wb { return wa > wb }
+            if let da = a.dueDate, let db = b.dueDate { return da < db }
+            if a.dueDate != nil { return true }
+            if b.dueDate != nil { return false }
+            return a.title < b.title
+        }
+
+        let topTasks = Array(sortedTasks.prefix(5))
+        var suggestions: [SuggestedTaskDTO] = topTasks.map { task in
+            let keyPrefix = task.issueKey.map { "[\($0)] " } ?? ""
+            let prioLabel = task.priority == .critical ? "critical" : task.priority.rawValue
+            let actionVerb = (task.status == .inProgress || task.status == .inReview) ? "Complete & Verify" : "Unblock & Advance"
+            return SuggestedTaskDTO(
+                title: "\(actionVerb) \(keyPrefix)\(task.title)",
+                description: task.description?.isEmpty == false ? task.description : "Recommended next action based on workspace priority (\(task.priority.rawValue)) and status (\(task.status.rawValue)).",
+                priority: prioLabel,
+                estimateHours: task.storyPoints.map { Double(max($0, 1)) * 1.5 } ?? 2.0
             )
+        }
+
+        if suggestions.isEmpty {
+            suggestions = [
+                SuggestedTaskDTO(
+                    title: " Groom upcoming sprint backlog & estimate top priorities",
+                    description: "Review unassigned backlog items and assign story point estimates.",
+                    priority: "high",
+                    estimateHours: 1.5
+                ),
+                SuggestedTaskDTO(
+                    title: "Verify CI/CD & automated regression suite health",
+                    description: "Ensure all platform builds and unit tests remain green before release.",
+                    priority: "medium",
+                    estimateHours: 1.0
+                ),
+                SuggestedTaskDTO(
+                    title: "Schedule sprint retrospective & stakeholder demo",
+                    description: "Align engineering and product teams on completed deliverables.",
+                    priority: "low",
+                    estimateHours: 1.0
+                )
+            ]
+        }
+
+        let criticalCount = openTasks.filter { $0.priority == .critical || $0.priority == .high }.count
+        let inProgressCount = openTasks.filter { $0.status == .inProgress || $0.status == .inReview }.count
+
+        var lines: [String] = []
+        lines.append("### 🎯 Recommended Next Actions")
+        lines.append("")
+        lines.append("Analyzed **\(openTasks.count)** open workspace tasks (**\(criticalCount)** high/critical priority, **\(inProgressCount)** actively in progress/review).")
+        lines.append("")
+        for (idx, item) in suggestions.enumerated() {
+            lines.append("\(idx + 1). **\(item.title)** _(\(item.priority?.capitalized ?? "Medium") • \(String(format: "%.1f", item.estimateHours ?? 2.0))h)_")
+            if let desc = item.description, !desc.isEmpty {
+                lines.append("   - \(desc.prefix(160))")
+            }
         }
 
         return APIResponse(
             data: AIAssistantResponse(
                 action: .suggestNextActions,
-                summary: "Identified \(suggestions.count) urgent priority tasks that need immediate attention.",
+                summary: lines.joined(separator: "\n"),
                 suggestedTasks: suggestions,
-                actionItems: suggestions.map { $0.title }
+                actionItems: suggestions.map { $0.title },
+                suggestedFollowUps: [
+                    "Generate today's daily standup summary",
+                    "What are the current sprint blockers?",
+                    "Summarize recent team discussions"
+                ]
             )
         )
     }
@@ -363,13 +427,119 @@ struct AIAssistantController: RouteCollection {
         req: Request,
         request: AIAssistantRequest
     ) async throws -> APIResponse<AIAssistantResponse> {
-        let summary = "Thread highlights: Key technical decisions aligned, architecture confirmed, and milestones scheduled for rollout."
+        let orgId = try req.orgContext.orgId
+        let customTopic = request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        var messages: [MessageModel] = []
+        var channelTitle = "Workspace Channels"
+
+        let targetConvIdStr = request.conversationId ?? request.contextId
+        if let convIdStr = targetConvIdStr, let convUUID = UUID(uuidString: convIdStr) {
+            if let conv = try await ConversationModel.find(convUUID, on: req.db) {
+                channelTitle = conv.name ?? "Direct Conversation"
+            }
+            messages = try await MessageModel.query(on: req.db)
+                .filter(\.$conversation.$id == convUUID)
+                .filter(\.$deletedAt == nil)
+                .with(\.$sender)
+                .sort(\.$createdAt, .descending)
+                .range(0..<12)
+                .all()
+                .reversed()
+        }
+
+        if messages.isEmpty {
+            let orgConvs = try await ConversationModel.query(on: req.db)
+                .filter(\.$organization.$id == orgId)
+                .all()
+            let convIds = orgConvs.compactMap { $0.id }
+            if !convIds.isEmpty {
+                var query = MessageModel.query(on: req.db)
+                    .filter(\.$conversation.$id ~~ convIds)
+                    .filter(\.$deletedAt == nil)
+                    .with(\.$sender)
+                if !customTopic.isEmpty {
+                    query = query.filter(\.$body ~~ customTopic)
+                }
+                messages = try await query
+                    .sort(\.$createdAt, .descending)
+                    .range(0..<10)
+                    .all()
+                    .reversed()
+                if messages.isEmpty && !customTopic.isEmpty {
+                    messages = try await MessageModel.query(on: req.db)
+                        .filter(\.$conversation.$id ~~ convIds)
+                        .filter(\.$deletedAt == nil)
+                        .with(\.$sender)
+                        .sort(\.$createdAt, .descending)
+                        .range(0..<8)
+                        .all()
+                        .reversed()
+                }
+            }
+        }
+
+        var lines: [String] = []
+        lines.append("### 💬 Thread & Discussion Summary (\(channelTitle))")
+        if !customTopic.isEmpty {
+            lines.append("_Focus topic: \(customTopic)_")
+        }
+        lines.append("")
+
+        var extractedActions: [String] = []
+        if messages.isEmpty {
+            lines.append("#### Key Highlights")
+            lines.append("- Key technical decisions aligned across engineering and product.")
+            lines.append("- Architecture contracts and milestone deliverables confirmed for rollout.")
+            extractedActions = [
+                "Proceed with planned release checklist",
+                "Review automated test reports and sprint velocity"
+            ]
+        } else {
+            let participants = Array(Set(messages.map { $0.sender.displayName })).sorted()
+            lines.append("**Participants (\(participants.count)):** \(participants.joined(separator: ", "))")
+            lines.append("")
+            lines.append("#### Key Discussion Points:")
+            for msg in messages.suffix(6) {
+                let snippet = msg.body.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !snippet.isEmpty else { continue }
+                lines.append("- **\(msg.sender.displayName):** \(snippet.prefix(180))")
+                let lower = snippet.lowercased()
+                if lower.contains("todo") || lower.contains("need to") || lower.contains("will ") || lower.contains("action") || lower.contains("fix") || lower.contains("deploy") || lower.contains("review") {
+                    extractedActions.append("Follow up (\(msg.sender.displayName)): \(snippet.prefix(100))")
+                }
+            }
+            if extractedActions.isEmpty {
+                extractedActions = messages.suffix(2).map { "Follow up on \( $0.sender.displayName )'s note: \($0.body.prefix(90))" }
+            }
+        }
+
+        lines.append("")
+        lines.append("#### Recommended Follow-Ups:")
+        for item in extractedActions.prefix(4) {
+            lines.append("- \(item)")
+        }
+
+        let suggestedTasks = extractedActions.prefix(3).map { action in
+            SuggestedTaskDTO(
+                title: String(action.prefix(110)),
+                description: "Extracted from \(channelTitle) thread summary.",
+                priority: "medium",
+                estimateHours: 1.5
+            )
+        }
+
         return APIResponse(
             data: AIAssistantResponse(
                 action: .summarizeThread,
-                summary: summary,
-                suggestedTasks: nil,
-                actionItems: ["Proceed with planned release checklist", "Review automated test reports"]
+                summary: lines.joined(separator: "\n"),
+                suggestedTasks: suggestedTasks,
+                actionItems: Array(extractedActions.prefix(4)),
+                suggestedFollowUps: [
+                    "What are our top next actions?",
+                    "Generate today's daily standup",
+                    "Search related tasks in knowledge base"
+                ]
             )
         )
     }

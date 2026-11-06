@@ -7,6 +7,7 @@ public enum AIAssistantEndpoint {
     case standup(configuration: APIConfiguration)
     case ask(payload: AIAssistantRequest, configuration: APIConfiguration)
     case stream(payload: AIAssistantRequest, configuration: APIConfiguration)
+    case transcribe(payload: AudioTranscriptionRequest, configuration: APIConfiguration)
 }
 
 extension AIAssistantEndpoint: APIEndpoint {
@@ -14,7 +15,7 @@ extension AIAssistantEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .copilot(_, let c), .breakdown(_, let c), .standup(let c), .ask(_, let c), .stream(_, let c):
+        case .copilot(_, let c), .breakdown(_, let c), .standup(let c), .ask(_, let c), .stream(_, let c), .transcribe(_, let c):
             return c
         }
     }
@@ -31,12 +32,14 @@ extension AIAssistantEndpoint: APIEndpoint {
             return "/api/ai/ask"
         case .stream:
             return "/api/ai/stream"
+        case .transcribe:
+            return "/api/ai/transcribe"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .copilot, .breakdown, .ask, .stream:
+        case .copilot, .breakdown, .ask, .stream, .transcribe:
             return .post
         case .standup:
             return .get
@@ -52,7 +55,7 @@ extension AIAssistantEndpoint: APIEndpoint {
         case .stream:
             h["Accept"] = "text/event-stream"
             h["Content-Type"] = "application/json; charset=utf-8"
-        case .copilot, .breakdown, .ask:
+        case .copilot, .breakdown, .ask, .transcribe:
             h["Accept"] = "application/json"
             h["Content-Type"] = "application/json; charset=utf-8"
         default:
@@ -66,6 +69,8 @@ extension AIAssistantEndpoint: APIEndpoint {
     public var body: Data? {
         switch self {
         case .copilot(let payload, _), .breakdown(let payload, _), .ask(let payload, _), .stream(let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .transcribe(let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .standup:
             return nil

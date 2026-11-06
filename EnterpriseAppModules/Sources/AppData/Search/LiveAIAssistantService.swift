@@ -63,6 +63,15 @@ public final class LiveAIAssistantService: AIAssistantRepositoryProtocol {
         return data
     }
 
+    public func transcribeAudio(_ request: AudioTranscriptionRequest) async throws -> AudioTranscriptionResponse {
+        let ep = AIAssistantEndpoint.transcribe(payload: request, configuration: apiConfiguration)
+        let response = try await apiClient.request(ep, responseType: APIResponse<AudioTranscriptionResponse>.self)
+        guard let data = response.data else {
+            throw NetworkError.decodingFailed("Missing response data for audio transcription.")
+        }
+        return data
+    }
+
     public func streamAction(_ request: AIAssistantRequest) -> AsyncThrowingStream<AIAssistantStreamEvent, Error> {
         let ep = AIAssistantEndpoint.stream(payload: request, configuration: apiConfiguration)
         return AsyncThrowingStream { continuation in

@@ -212,6 +212,14 @@ public struct CreateMeetingActionItemRequest: Codable, Sendable, Hashable {
     }
 }
 
+public struct ConvertMeetingActionItemRequest: Codable, Sendable, Hashable {
+    public let listId: UUID?
+
+    public init(listId: UUID? = nil) {
+        self.listId = listId
+    }
+}
+
 public struct MeetingHeartbeatRequest: Codable, Sendable, Hashable {
     public init() {}
 }

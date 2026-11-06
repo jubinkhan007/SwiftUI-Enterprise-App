@@ -225,10 +225,19 @@ export interface MeetingActionItemDTO {
   isCompleted?: boolean;
 }
 
+export interface MeetingNotesDTO {
+  meetingId: string;
+  body: string;
+  version: number;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
 export interface MeetingSummaryDTO {
   meetingId: string;
   source: string;
   summaryText: string;
+  highlights?: string[];
   recordingUrl?: string;
   actionItems: MeetingActionItemDTO[];
 }

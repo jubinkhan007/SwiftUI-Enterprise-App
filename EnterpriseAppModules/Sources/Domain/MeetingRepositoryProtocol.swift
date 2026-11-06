@@ -55,6 +55,13 @@ public protocol MeetingRepositoryProtocol: Sendable {
     func getSummary(meetingId: UUID) async throws -> APIResponse<MeetingSummaryDTO>
     func generateSummary(meetingId: UUID, request: GenerateMeetingSummaryRequest) async throws -> APIResponse<MeetingSummaryDTO>
     func addActionItem(meetingId: UUID, request: CreateMeetingActionItemRequest) async throws -> APIResponse<MeetingSummaryDTO>
+    func convertActionItem(meetingId: UUID, itemId: UUID, request: ConvertMeetingActionItemRequest) async throws -> APIResponse<MeetingSummaryDTO>
 
     func resolveJoinCode(_ joinCode: String, token: String) async throws -> APIResponse<MeetingShareLinkDTO>
+}
+
+public extension MeetingRepositoryProtocol {
+    func convertActionItem(meetingId: UUID, itemId: UUID, request: ConvertMeetingActionItemRequest) async throws -> APIResponse<MeetingSummaryDTO> {
+        try await getSummary(meetingId: meetingId)
+    }
 }

@@ -58,7 +58,9 @@ public struct MeetingSummaryView: View {
     private func summaryCard(_ summary: MeetingSummaryDTO) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack {
-                Text("Summary").appFont(AppTypography.headline)
+                Label("AI Meeting Summary", systemImage: "sparkles")
+                    .appFont(AppTypography.headline)
+                    .foregroundColor(AppColors.brandPrimary)
                 Spacer()
                 Text(summary.source.uppercased())
                     .appFont(AppTypography.overline)
@@ -72,6 +74,25 @@ public struct MeetingSummaryView: View {
             Text(summary.summaryText)
                 .appFont(AppTypography.body)
                 .foregroundColor(AppColors.textPrimary)
+
+            if !summary.highlights.isEmpty {
+                Divider().padding(.vertical, 4)
+                Text("Key Highlights")
+                    .appFont(AppTypography.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(AppColors.textSecondary)
+                ForEach(summary.highlights, id: \.self) { highlight in
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                            .padding(.top, 3)
+                        Text(highlight)
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.textPrimary)
+                    }
+                }
+            }
         }
         .padding()
         .background(AppColors.surfaceElevated)
@@ -86,8 +107,8 @@ public struct MeetingSummaryView: View {
             } else {
                 ForEach(summary.actionItems) { item in
                     HStack(alignment: .top, spacing: AppSpacing.sm) {
-                        Image(systemName: "checkmark.circle")
-                            .foregroundColor(AppColors.brandPrimary)
+                        Image(systemName: item.linkedTaskId != nil ? "checkmark.circle.fill" : "checkmark.circle")
+                            .foregroundColor(item.linkedTaskId != nil ? .green : AppColors.brandPrimary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.text).appFont(AppTypography.body)
                             if let due = item.dueAt {
@@ -103,8 +124,7 @@ public struct MeetingSummaryView: View {
                         if item.linkedTaskId == nil {
                             Button {
                                 Task {
-                                    await session.addActionItem(item.text)
-                                    await session.loadSummary()
+                                    await session.convertActionItem(itemId: item.id)
                                 }
                             } label: {
                                 Label("Convert to Task", systemImage: "plus.circle")

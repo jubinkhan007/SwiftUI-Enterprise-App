@@ -315,6 +315,42 @@ fun OmnibarSearchDialog(
         }
     }
 
+    fun runCopilotAction(actionName: String, customPrompt: String? = null) {
+        streamingJob?.cancel()
+        isStreaming = false
+        isCopilotLoading = true
+        errorMessage = null
+        copilotSummary = null
+        copilotTasks = emptyList()
+        tasksAddedSuccess = false
+
+        coroutineScope.launch {
+            try {
+                val payload = json("action" to actionName).apply {
+                    if (!customPrompt.isNullOrBlank()) {
+                        addProperty("prompt", customPrompt.trim())
+                    }
+                }
+                val res = api.request("/api/ai/copilot", "POST", payload)
+                val obj = res.data.obj()
+                copilotSummary = obj.text("summary")
+                val rawTasks = obj.list("suggested_tasks").ifEmpty { obj.list("suggestedTasks") }
+                copilotTasks = rawTasks.map { item ->
+                    OmnibarSuggestedTask(
+                        title = item.text("title").ifBlank { "Action Item" },
+                        description = item.text("description").takeIf { it.isNotBlank() },
+                        priority = item.text("priority").ifBlank { "medium" },
+                        estimateHours = item.double("estimate_hours", item.double("estimateHours", 2.0))
+                    )
+                }
+            } catch (e: Exception) {
+                errorMessage = e.message ?: "Copilot request failed."
+            } finally {
+                isCopilotLoading = false
+            }
+        }
+    }
+
     // Search query debounced runner
     LaunchedEffect(searchQuery, activeTab, searchMode) {
         if (activeTab == "copilot") return@LaunchedEffect
@@ -551,79 +587,43 @@ fun OmnibarSearchDialog(
                                 .heightIn(max = 480.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
-                            // Submode Selector (Ask AI vs Task Breakdown vs Daily Standup)
+                            // Submode Selector (Ask AI, Breakdown, Standup, Next Actions, Thread Summary)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
                                     .clip(RoundedCornerShape(AppRadius.medium))
                                     .background(AppColors.backgroundSecondary)
                                     .padding(4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Button(
-                                    onClick = {
-                                        copilotMode = "rag"
-                                        copilotSummary = null
-                                        copilotTasks = emptyList()
-                                        copilotCitations = emptyList()
-                                        copilotFollowUps = emptyList()
-                                        tasksAddedSuccess = false
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (copilotMode == "rag") AppColors.brandPrimary else Color.Transparent,
-                                        contentColor = if (copilotMode == "rag") Color.White else AppColors.textSecondary
-                                    ),
-                                    shape = RoundedCornerShape(AppRadius.small),
-                                    contentPadding = PaddingValues(vertical = 8.dp)
-                                ) {
-                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Ask AI", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        copilotMode = "breakdown"
-                                        copilotSummary = null
-                                        copilotTasks = emptyList()
-                                        copilotCitations = emptyList()
-                                        copilotFollowUps = emptyList()
-                                        tasksAddedSuccess = false
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (copilotMode == "breakdown") AppColors.brandPrimary else Color.Transparent,
-                                        contentColor = if (copilotMode == "breakdown") Color.White else AppColors.textSecondary
-                                    ),
-                                    shape = RoundedCornerShape(AppRadius.small),
-                                    contentPadding = PaddingValues(vertical = 8.dp)
-                                ) {
-                                    Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Breakdown", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        copilotMode = "standup"
-                                        copilotSummary = null
-                                        copilotTasks = emptyList()
-                                        copilotCitations = emptyList()
-                                        copilotFollowUps = emptyList()
-                                        tasksAddedSuccess = false
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (copilotMode == "standup") AppColors.brandPrimary else Color.Transparent,
-                                        contentColor = if (copilotMode == "standup") Color.White else AppColors.textSecondary
-                                    ),
-                                    shape = RoundedCornerShape(AppRadius.small),
-                                    contentPadding = PaddingValues(vertical = 8.dp)
-                                ) {
-                                    Icon(Icons.Default.Today, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Standup", style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
+                                listOf(
+                                    Triple("rag", "Ask AI", Icons.Default.AutoAwesome),
+                                    Triple("breakdown", "Breakdown", Icons.Default.AccountTree),
+                                    Triple("standup", "Standup", Icons.Default.Today),
+                                    Triple("next_actions", "Next Actions", Icons.Default.Bolt),
+                                    Triple("thread_summary", "Thread Summary", Icons.Default.Forum)
+                                ).forEach { (modeKey, modeLabel, modeIcon) ->
+                                    Button(
+                                        onClick = {
+                                            copilotMode = modeKey
+                                            copilotSummary = null
+                                            copilotTasks = emptyList()
+                                            copilotCitations = emptyList()
+                                            copilotFollowUps = emptyList()
+                                            tasksAddedSuccess = false
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (copilotMode == modeKey) AppColors.brandPrimary else Color.Transparent,
+                                            contentColor = if (copilotMode == modeKey) Color.White else AppColors.textSecondary
+                                        ),
+                                        shape = RoundedCornerShape(AppRadius.small),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    ) {
+                                        Icon(modeIcon, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(modeLabel, style = AppTypography.footnote, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
 
@@ -1128,7 +1128,7 @@ fun OmnibarSearchDialog(
                                         }
                                     }
                                 }
-                            } else {
+                            } else if (copilotMode == "standup") {
                                 // Daily Standup Mode
                                 Text(
                                     "Aggregates your assigned tasks, scheduled meetings, and updates into a structured Yesterday / Today / Blockers daily report.",
@@ -1225,6 +1225,70 @@ fun OmnibarSearchDialog(
                                                 style = AppTypography.callout,
                                                 color = AppColors.textPrimary,
                                                 lineHeight = 22.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            } else if (copilotMode == "next_actions" || copilotMode == "thread_summary") {
+                                val isNextActions = copilotMode == "next_actions"
+                                Text(
+                                    if (isNextActions)
+                                        "Analyzes open critical, high-priority, and in-progress workspace tasks to recommend immediate next steps."
+                                    else
+                                        "Summarizes recent channel discussions, technical decisions, and follow-up action items across your workspace.",
+                                    style = AppTypography.caption1,
+                                    color = AppColors.textSecondary
+                                )
+                                Spacer(Modifier.height(8.dp))
+
+                                if (!isNextActions) {
+                                    OutlinedTextField(
+                                        value = copilotPrompt,
+                                        onValueChange = { copilotPrompt = it },
+                                        modifier = Modifier.fillMaxWidth().testTag("copilot_thread_topic_input"),
+                                        placeholder = { Text("Optional focus topic (e.g. release checklist, SSO, sprint)") },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                }
+
+                                Button(
+                                    onClick = {
+                                        if (isNextActions) {
+                                            runCopilotAction("suggest_next_actions")
+                                        } else {
+                                            runCopilotAction("summarize_thread", copilotPrompt)
+                                        }
+                                    },
+                                    enabled = !isCopilotLoading,
+                                    modifier = Modifier.fillMaxWidth().testTag(if (isNextActions) "btn_suggest_next_actions" else "btn_summarize_thread"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                                    shape = RoundedCornerShape(AppRadius.medium)
+                                ) {
+                                    if (isCopilotLoading) {
+                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Analyzing workspace...")
+                                    } else {
+                                        Icon(if (isNextActions) Icons.Default.Bolt else Icons.Default.Forum, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (isNextActions) "Suggest Priority Next Actions" else "Summarize Recent Discussions", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                if (copilotSummary != null) {
+                                    Spacer(Modifier.height(AppSpacing.md))
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(containerColor = AppColors.backgroundSecondary),
+                                        shape = RoundedCornerShape(AppRadius.medium)
+                                    ) {
+                                        Column(Modifier.padding(14.dp)) {
+                                            Text(
+                                                text = copilotSummary ?: "",
+                                                style = AppTypography.callout,
+                                                color = AppColors.textPrimary
                                             )
                                         }
                                     }

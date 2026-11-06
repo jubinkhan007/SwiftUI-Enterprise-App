@@ -1106,7 +1106,7 @@ fun MeetingSummaryModal(
                                                 scope.launch {
                                                     isGenerating = true
                                                     try {
-                                                        api.request("/api/meetings/$meetingId/summary", "POST")
+                                                        api.request("/api/meetings/$meetingId/summary", "POST", json("regenerate" to true))
                                                         summaryRemote.refresh()
                                                     } finally {
                                                         isGenerating = false
@@ -1123,6 +1123,21 @@ fun MeetingSummaryModal(
                                 val text = summary.text("summary_text").ifBlank { summary.text("content") }
                                 if (text.isNotBlank()) {
                                     Text(text, style = AppTypography.body, color = AppColors.textPrimary)
+                                    val rawHighlights = if (summary.has("highlights") && summary.get("highlights").isJsonArray) {
+                                        summary.getAsJsonArray("highlights").mapNotNull { el ->
+                                            runCatching { el.asString }.getOrNull()?.takeIf { it.isNotBlank() }
+                                        }
+                                    } else emptyList()
+                                    if (rawHighlights.isNotEmpty()) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle, modifier = Modifier.padding(vertical = 4.dp))
+                                        Text("Key Highlights", style = AppTypography.subheadline, fontWeight = FontWeight.SemiBold, color = AppColors.textSecondary)
+                                        rawHighlights.forEach { hl ->
+                                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Icon(Icons.Default.Star, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(14.dp).padding(top = 2.dp))
+                                                Text(hl, style = AppTypography.caption1, color = AppColors.textPrimary)
+                                            }
+                                        }
+                                    }
                                 } else {
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1195,10 +1210,15 @@ fun MeetingSummaryModal(
                                                             scope.launch {
                                                                 isConverting = true
                                                                 try {
-                                                                    api.request("/api/tasks", "POST", json(
-                                                                        "title" to item.text("text"),
-                                                                        "description" to "Converted from meeting action item"
-                                                                    ))
+                                                                    val itemId = item.text("id")
+                                                                    runCatching {
+                                                                        api.request("/api/meetings/$meetingId/summary/action-items/$itemId/convert", "POST", json())
+                                                                    }.onFailure {
+                                                                        api.request("/api/tasks", "POST", json(
+                                                                            "title" to item.text("text"),
+                                                                            "description" to "Converted from meeting action item"
+                                                                        ))
+                                                                    }
                                                                     summaryRemote.refresh()
                                                                 } finally {
                                                                     isConverting = false

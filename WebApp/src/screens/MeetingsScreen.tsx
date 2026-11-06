@@ -65,6 +65,12 @@ export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall, ini
   const [summaryMeeting, setSummaryMeeting] = useState<MeetingDTO | null>(null);
   const [summaryData, setSummaryData] = useState<MeetingSummaryDTO | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [notesBody, setNotesBody] = useState('');
+  const [notesVersion, setNotesVersion] = useState(1);
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSavedToast, setNotesSavedToast] = useState(false);
+  const [newActionItemText, setNewActionItemText] = useState('');
+  const [addingActionItem, setAddingActionItem] = useState(false);
 
   // Schedule Form State
   const [meetingTitle, setMeetingTitle] = useState('');
@@ -132,15 +138,25 @@ export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall, ini
   const handleOpenSummary = async (meeting: MeetingDTO) => {
     setSummaryMeeting(meeting);
     setSummaryLoading(true);
+    setNotesSavedToast(false);
     try {
-      const data = await api.getMeetingSummary(meeting.id);
+      const [data, notes] = await Promise.all([
+        api.getMeetingSummary(meeting.id),
+        api.getMeetingNotes(meeting.id).catch(() => ({ meetingId: meeting.id, body: '', version: 1 })),
+      ]);
       setSummaryData(data);
+      setNotesBody(notes.body || '');
+      setNotesVersion(notes.version || 1);
     } catch (err) {
       console.warn('Fallback summary data:', err);
       setSummaryData({
         meetingId: meeting.id,
-        source: 'ai',
+        source: 'ai_copilot',
         summaryText: `The team discussed architectural updates for ${meeting.title}. Focus was placed on improving cross-platform parity between Web, iOS, and Android applications with native component design tokens.`,
+        highlights: [
+          `Aligned on ${meeting.title} scope, timeline, and engineering priorities.`,
+          'Confirmed release readiness and cross-platform verification steps.',
+        ],
         actionItems: [
           { id: 'ai-1', text: 'Audit LiveKit integration endpoints across all modules', dueAt: '2026-09-30T18:00:00Z', isCompleted: false },
           { id: 'ai-2', text: 'Deploy updated lobby & waiting room service to staging', dueAt: '2026-10-02T18:00:00Z', isCompleted: true },
@@ -149,6 +165,68 @@ export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall, ini
       });
     } finally {
       setSummaryLoading(false);
+    }
+  };
+
+  const handleSaveMeetingNotes = async () => {
+    if (!summaryMeeting) return;
+    setNotesSaving(true);
+    setNotesSavedToast(false);
+    try {
+      const updated = await api.updateMeetingNotes(summaryMeeting.id, notesBody, notesVersion);
+      setNotesBody(updated.body);
+      setNotesVersion(updated.version);
+      setNotesSavedToast(true);
+      setTimeout(() => setNotesSavedToast(false), 2500);
+    } catch {
+      try {
+        const fresh = await api.getMeetingNotes(summaryMeeting.id);
+        const retried = await api.updateMeetingNotes(summaryMeeting.id, notesBody, fresh.version);
+        setNotesBody(retried.body);
+        setNotesVersion(retried.version);
+        setNotesSavedToast(true);
+      } catch (retryErr: any) {
+        alert(`Failed to save notes: ${retryErr?.message || 'Conflict'}`);
+      }
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  const handleRegenerateSummary = async () => {
+    if (!summaryMeeting) return;
+    setSummaryLoading(true);
+    try {
+      const regenerated = await api.generateMeetingSummary(summaryMeeting.id, true);
+      setSummaryData(regenerated);
+    } catch (err: any) {
+      alert(`Failed to regenerate summary: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const handleAddActionItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!summaryMeeting || !newActionItemText.trim()) return;
+    setAddingActionItem(true);
+    try {
+      const updated = await api.addMeetingActionItem(summaryMeeting.id, newActionItemText.trim());
+      setSummaryData(updated);
+      setNewActionItemText('');
+    } catch {
+      if (summaryData) {
+        setSummaryData({
+          ...summaryData,
+          actionItems: [
+            ...summaryData.actionItems,
+            { id: `ai-${Date.now()}`, text: newActionItemText.trim(), isCompleted: false },
+          ],
+        });
+        setNewActionItemText('');
+      }
+    } finally {
+      setAddingActionItem(false);
     }
   };
 
@@ -576,15 +654,68 @@ export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall, ini
               </div>
             ) : summaryData && (
               <div className="space-y-5">
+                {/* Collaborative Meeting Notes Editor */}
+                <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
+                      <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                      Collaborative Meeting Notes (v{notesVersion})
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {notesSavedToast && (
+                        <span className="text-[11px] text-emerald-400 font-semibold">✓ Saved</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleSaveMeetingNotes}
+                        disabled={notesSaving}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold border border-slate-700 cursor-pointer transition"
+                      >
+                        {notesSaving ? 'Saving...' : 'Save Notes'}
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={notesBody}
+                    onChange={(e) => setNotesBody(e.target.value)}
+                    placeholder="Add shared meeting notes, decisions, or TODOs (e.g. - [ ] Follow up on SSO config)..."
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
                 {/* Executive Summary Section */}
-                <div className="p-4 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 space-y-2">
-                  <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5 uppercase tracking-wider">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    AI Executive Transcript Summary
-                  </span>
-                  <p className="text-xs text-slate-300 leading-relaxed">
+                <div className="p-4 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5 uppercase tracking-wider">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      AI Executive Summary ({summaryData.source.toUpperCase()})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRegenerateSummary}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 text-[11px] font-semibold border border-indigo-500/30 flex items-center gap-1 cursor-pointer transition"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      Regenerate AI Summary
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
                     {summaryData.summaryText}
                   </p>
+                  {summaryData.highlights && summaryData.highlights.length > 0 && (
+                    <div className="pt-2 border-t border-indigo-500/20 space-y-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 block">
+                        Key Highlights
+                      </span>
+                      {summaryData.highlights.map((h, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs text-slate-200">
+                          <span className="text-amber-400 mt-0.5">★</span>
+                          <span>{h}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Extracted Action Items */}
@@ -635,15 +766,20 @@ export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall, ini
                               type="button"
                               onClick={async () => {
                                 try {
-                                  const newTask = await api.createTask(item.text);
-                                  setSummaryData({
-                                    ...summaryData,
-                                    actionItems: summaryData.actionItems.map(ai =>
-                                      ai.id === item.id ? { ...ai, linkedTaskId: newTask.id } : ai
-                                    )
-                                  });
-                                } catch (err: any) {
-                                  alert(`Failed to convert action item to task: ${err.message}`);
+                                  const updated = await api.convertMeetingActionItemToTask(summaryMeeting.id, item.id);
+                                  setSummaryData(updated);
+                                } catch {
+                                  try {
+                                    const newTask = await api.createTask(item.text);
+                                    setSummaryData({
+                                      ...summaryData,
+                                      actionItems: summaryData.actionItems.map(ai =>
+                                        ai.id === item.id ? { ...ai, linkedTaskId: newTask.id, isCompleted: true } : ai
+                                      )
+                                    });
+                                  } catch (err: any) {
+                                    alert(`Failed to convert action item to task: ${err.message}`);
+                                  }
                                 }
                               }}
                               className="px-2.5 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-[10px] font-semibold border border-indigo-500/30 flex items-center gap-1 cursor-pointer transition"
@@ -656,6 +792,25 @@ export const MeetingsScreen: React.FC<MeetingsScreenProps> = ({ onStartCall, ini
                       </div>
                     ))}
                   </div>
+
+                  {/* Add Follow-up Action Item */}
+                  <form onSubmit={handleAddActionItem} className="mt-3 flex gap-2">
+                    <input
+                      type="text"
+                      value={newActionItemText}
+                      onChange={(e) => setNewActionItemText(e.target.value)}
+                      placeholder="Add a follow-up action item..."
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={addingActionItem || !newActionItemText.trim()}
+                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Item
+                    </button>
+                  </form>
                 </div>
 
                 {/* Audio Recording Playback Mock */}

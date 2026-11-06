@@ -24,6 +24,8 @@ public final class OmnibarViewModel: ObservableObject {
     @Published public var streamingFollowUps: [String] = []
     @Published public var isCreatingTasks: Bool = false
     @Published public var tasksCreatedSuccess: Bool = false
+    @Published public var conversationHistory: [AIAssistantMessageDTO] = []
+    @Published public var isRecordingVoice: Bool = false
     private var streamTask: Task<Void, Never>? = nil
 
     private let searchRepository: SearchRepositoryProtocol
@@ -165,11 +167,13 @@ public final class OmnibarViewModel: ObservableObject {
         tasksCreatedSuccess = false
         errorMessage = nil
 
+        let currentHistory = conversationHistory.isEmpty ? nil : conversationHistory
         let request = AIAssistantRequest(
             action: .askKnowledgeBase,
             prompt: trimmed,
             entityTypes: nil,
-            maxSources: 5
+            maxSources: 5,
+            history: currentHistory
         )
 
         streamTask = Task { @MainActor in
@@ -192,16 +196,20 @@ public final class OmnibarViewModel: ObservableObject {
                             self.streamingFollowUps = fus
                         }
                     case .done:
+                        let finalResp: AIAssistantResponse
                         if let resp = event.response {
-                            self.copilotResponse = resp
+                            finalResp = resp
                         } else {
-                            self.copilotResponse = AIAssistantResponse(
+                            finalResp = AIAssistantResponse(
                                 action: .askKnowledgeBase,
                                 summary: self.streamingText,
                                 citations: self.streamingCitations.isEmpty ? nil : self.streamingCitations,
                                 suggestedFollowUps: self.streamingFollowUps.isEmpty ? nil : self.streamingFollowUps
                             )
                         }
+                        self.copilotResponse = finalResp
+                        self.conversationHistory.append(AIAssistantMessageDTO(role: "user", content: trimmed))
+                        self.conversationHistory.append(AIAssistantMessageDTO(role: "assistant", content: finalResp.summary))
                         self.isStreaming = false
                         self.isCopilotLoading = false
                     case .error:
@@ -215,6 +223,140 @@ public final class OmnibarViewModel: ObservableObject {
             } catch {
                 if !Task.isCancelled {
                     self.errorMessage = "Knowledge base search failed: \(error.localizedDescription)"
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            }
+        }
+        await streamTask?.value
+    }
+
+    public func clearConversationHistory() {
+        conversationHistory.removeAll()
+    }
+
+    public func toggleVoiceDictation() async {
+        if isRecordingVoice {
+            isRecordingVoice = false
+            return
+        }
+        isRecordingVoice = true
+        defer { isRecordingVoice = false }
+        do {
+            let simulated = copilotPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Summarize current sprint blockers and recommended next actions"
+                : copilotPrompt
+            let result = try await aiRepository.transcribeAudio(AudioTranscriptionRequest(simulatedText: simulated))
+            copilotPrompt = result.text
+        } catch {
+            errorMessage = "Voice transcription failed: \(error.localizedDescription)"
+        }
+    }
+
+    public func runNextActions() async {
+        stopStreaming()
+        isCopilotLoading = true
+        isStreaming = true
+        streamingText = ""
+        streamingCitations = []
+        streamingFollowUps = []
+        copilotResponse = nil
+        tasksCreatedSuccess = false
+        errorMessage = nil
+
+        let request = AIAssistantRequest(
+            action: .suggestNextActions
+        )
+
+        streamTask = Task { @MainActor in
+            do {
+                for try await event in aiRepository.streamAction(request) {
+                    if Task.isCancelled { break }
+                    switch event.event {
+                    case .token:
+                        if let token = event.token {
+                            self.streamingText += token
+                        }
+                    case .followUps:
+                        if let fus = event.suggestedFollowUps {
+                            self.streamingFollowUps = fus
+                        }
+                    case .done:
+                        if let resp = event.response {
+                            self.copilotResponse = resp
+                        }
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    case .error:
+                        self.errorMessage = event.error ?? "Next actions streaming failed"
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    default:
+                        break
+                    }
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            } catch {
+                if !Task.isCancelled {
+                    self.errorMessage = "Next actions generation failed: \(error.localizedDescription)"
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            }
+        }
+        await streamTask?.value
+    }
+
+    public func runThreadSummary() async {
+        stopStreaming()
+        isCopilotLoading = true
+        isStreaming = true
+        streamingText = ""
+        streamingCitations = []
+        streamingFollowUps = []
+        copilotResponse = nil
+        tasksCreatedSuccess = false
+        errorMessage = nil
+
+        let trimmed = copilotPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = AIAssistantRequest(
+            action: .summarizeThread,
+            prompt: trimmed.isEmpty ? nil : trimmed
+        )
+
+        streamTask = Task { @MainActor in
+            do {
+                for try await event in aiRepository.streamAction(request) {
+                    if Task.isCancelled { break }
+                    switch event.event {
+                    case .token:
+                        if let token = event.token {
+                            self.streamingText += token
+                        }
+                    case .followUps:
+                        if let fus = event.suggestedFollowUps {
+                            self.streamingFollowUps = fus
+                        }
+                    case .done:
+                        if let resp = event.response {
+                            self.copilotResponse = resp
+                        }
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    case .error:
+                        self.errorMessage = event.error ?? "Thread summary streaming failed"
+                        self.isStreaming = false
+                        self.isCopilotLoading = false
+                    default:
+                        break
+                    }
+                }
+                self.isStreaming = false
+                self.isCopilotLoading = false
+            } catch {
+                if !Task.isCancelled {
+                    self.errorMessage = "Thread summary generation failed: \(error.localizedDescription)"
                 }
                 self.isStreaming = false
                 self.isCopilotLoading = false
@@ -310,9 +452,11 @@ public struct OmnibarSearchView: View {
     @State private var copilotMode: CopilotMode = .rag
 
     private enum CopilotMode: String, CaseIterable {
-        case rag = "Ask Knowledge Base"
+        case rag = "Ask AI (RAG)"
         case breakdown = "Task Breakdown"
         case standup = "Daily Standup"
+        case nextActions = "Next Actions"
+        case threadSummary = "Thread Summary"
     }
 
     public init(
@@ -621,19 +765,54 @@ public struct OmnibarSearchView: View {
     private var copilotView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.md) {
-                Picker("Copilot Mode", selection: $copilotMode) {
-                    ForEach(CopilotMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: AppSpacing.xs) {
+                        ForEach(CopilotMode.allCases, id: \.self) { mode in
+                            Button {
+                                copilotMode = mode
+                            } label: {
+                                Text(mode.rawValue)
+                                    .font(AppTypography.caption1)
+                                    .fontWeight(copilotMode == mode ? .semibold : .regular)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(copilotMode == mode ? AppColors.brandPrimary : AppColors.surfacePrimary)
+                                    .foregroundColor(copilotMode == mode ? .white : AppColors.textPrimary)
+                                    .clipShape(Capsule())
+                            }
+                        }
                     }
                 }
-                .pickerStyle(.segmented)
 
-                if copilotMode == .rag {
+                if !viewModel.conversationHistory.isEmpty {
+                    HStack {
+                        Label("Context: \(viewModel.conversationHistory.count / 2) turns remembered", systemImage: "brain.head.profile")
+                            .font(AppTypography.caption2)
+                            .foregroundColor(.indigo)
+                        Spacer()
+                        Button("Clear History") {
+                            viewModel.clearConversationHistory()
+                        }
+                        .font(AppTypography.caption2)
+                        .foregroundColor(AppColors.statusError)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.indigo.opacity(0.1))
+                    .cornerRadius(8)
+                }
+
+                switch copilotMode {
+                case .rag:
                     knowledgeBaseSection
-                } else if copilotMode == .breakdown {
+                case .breakdown:
                     taskBreakdownSection
-                } else {
+                case .standup:
                     dailyStandupSection
+                case .nextActions:
+                    nextActionsSection
+                case .threadSummary:
+                    threadSummarySection
                 }
 
                 if let error = viewModel.errorMessage {
@@ -746,9 +925,23 @@ public struct OmnibarSearchView: View {
                 .font(AppTypography.caption1)
                 .foregroundColor(AppColors.textSecondary)
 
-            TextField("e.g. What was discussed about the login screen bug?", text: $viewModel.copilotPrompt)
-                .textFieldStyle(.roundedBorder)
-                .font(AppTypography.body)
+            HStack(spacing: AppSpacing.xs) {
+                TextField("e.g. What was discussed about the login screen bug?", text: $viewModel.copilotPrompt)
+                    .textFieldStyle(.roundedBorder)
+                    .font(AppTypography.body)
+
+                Button {
+                    Task { await viewModel.toggleVoiceDictation() }
+                } label: {
+                    Image(systemName: viewModel.isRecordingVoice ? "stop.circle.fill" : "mic.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(viewModel.isRecordingVoice ? .white : AppColors.brandPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(viewModel.isRecordingVoice ? AppColors.statusError : AppColors.brandPrimary.opacity(0.12))
+                        .cornerRadius(8)
+                }
+                .accessibilityLabel("Voice Dictation")
+            }
 
             Button {
                 if viewModel.isStreaming {
@@ -863,6 +1056,80 @@ public struct OmnibarSearchView: View {
                         Image(systemName: "calendar.badge.clock")
                     }
                     Text("Generate Today's Standup")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(AppColors.brandPrimary)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .disabled(viewModel.isCopilotLoading)
+        }
+        .padding(AppSpacing.md)
+        .background(AppColors.surfacePrimary)
+        .cornerRadius(10)
+    }
+
+    private var nextActionsSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("Smart Next Actions")
+                .font(AppTypography.headline)
+                .foregroundColor(AppColors.textPrimary)
+
+            Text("Analyzes open critical, high-priority, and in-progress workspace tasks to recommend immediate next steps.")
+                .font(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+
+            Button {
+                Task { await viewModel.runNextActions() }
+            } label: {
+                HStack {
+                    if viewModel.isCopilotLoading {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "bolt.fill")
+                    }
+                    Text("Suggest Priority Next Actions")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(AppColors.brandPrimary)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .disabled(viewModel.isCopilotLoading)
+        }
+        .padding(AppSpacing.md)
+        .background(AppColors.surfacePrimary)
+        .cornerRadius(10)
+    }
+
+    private var threadSummarySection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("Thread & Channel Summarizer")
+                .font(AppTypography.headline)
+                .foregroundColor(AppColors.textPrimary)
+
+            Text("Summarizes recent channel discussions, decisions, and follow-up action items across your workspace.")
+                .font(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+
+            TextField("Optional focus topic (e.g. release checklist, SSO, sprint)", text: $viewModel.copilotPrompt)
+                .textFieldStyle(.roundedBorder)
+                .font(AppTypography.body)
+
+            Button {
+                Task { await viewModel.runThreadSummary() }
+            } label: {
+                HStack {
+                    if viewModel.isCopilotLoading {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "text.bubble.fill")
+                    }
+                    Text("Summarize Recent Discussions")
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)

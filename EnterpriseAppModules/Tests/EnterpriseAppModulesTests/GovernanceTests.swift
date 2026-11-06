@@ -171,5 +171,29 @@ final class GovernanceTests: XCTestCase {
         XCTAssertEqual(exportCsv.path, "/api/admin/org/export?format=csv")
         XCTAssertEqual(exportCsv.method, HTTPMethod.post)
     }
+
+    func testAICopilotAndMeetingActionItemEndpoints() {
+        let meetingId = UUID()
+        let itemId = UUID()
+        let listId = UUID()
+
+        let convertEp = MeetingEndpoint.convertActionItem(
+            id: meetingId,
+            itemId: itemId,
+            payload: ConvertMeetingActionItemRequest(listId: listId),
+            configuration: .current
+        )
+        XCTAssertEqual(convertEp.path, "/api/meetings/\(meetingId.uuidString)/summary/action-items/\(itemId.uuidString)/convert")
+        XCTAssertEqual(convertEp.method, HTTPMethod.post)
+        XCTAssertNotNil(convertEp.body)
+
+        let transcribeEp = AIAssistantEndpoint.transcribe(
+            payload: AudioTranscriptionRequest(simulatedText: "Summarize sprint blockers"),
+            configuration: .current
+        )
+        XCTAssertEqual(transcribeEp.path, "/api/ai/transcribe")
+        XCTAssertEqual(transcribeEp.method, HTTPMethod.post)
+        XCTAssertNotNil(transcribeEp.body)
+    }
 }
 
