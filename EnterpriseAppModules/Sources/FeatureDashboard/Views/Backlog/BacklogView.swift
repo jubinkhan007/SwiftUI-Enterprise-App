@@ -5,6 +5,7 @@ import SharedModels
 
 public struct BacklogView: View {
     @StateObject private var viewModel: BacklogViewModel
+    @State private var showingCreateSprint = false
 #if os(iOS)
     @State private var editMode: EditMode = .inactive
 #endif
@@ -38,11 +39,39 @@ public struct BacklogView: View {
 #if os(iOS)
         .environment(\.editMode, $editMode)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    showingCreateSprint = true
+                } label: {
+                    Label("New Sprint", systemImage: "plus.circle.fill")
+                }
+                .accessibilityIdentifier("backlog.newSprintButton")
                 EditButton()
             }
         }
+#else
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingCreateSprint = true
+                } label: {
+                    Label("New Sprint", systemImage: "plus.circle.fill")
+                }
+            }
+        }
 #endif
+        .sheet(isPresented: $showingCreateSprint) {
+            BacklogCreateSprintSheet { name, startDate, endDate, capacity in
+                Task {
+                    await viewModel.createSprint(
+                        name: name,
+                        startDate: startDate,
+                        endDate: endDate,
+                        capacity: capacity
+                    )
+                }
+            }
+        }
         .task {
             await viewModel.refresh()
         }
@@ -108,24 +137,87 @@ public struct BacklogView: View {
     }
 
     private func sprintHeader(_ sprint: SprintDTO) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let stats = viewModel.sprintStats(sprint.id)
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("\(sprint.statusLabel) • \(sprint.name)")
                     .appFont(AppTypography.headline)
                 Spacer()
-                if sprint.status.isClosedLike {
+                if sprint.status == .planned {
+                    Button {
+                        Task { await viewModel.updateSprintStatus(sprintId: sprint.id, status: .active) }
+                    } label: {
+                        Label("Start Sprint", systemImage: "play.fill")
+                            .appFont(AppTypography.caption1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(AppColors.brandPrimary.opacity(0.15))
+                            .foregroundColor(AppColors.brandPrimary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                } else if sprint.status == .active {
+                    Menu {
+                        Button {
+                            Task {
+                                await viewModel.updateSprintStatus(
+                                    sprintId: sprint.id,
+                                    status: .completed,
+                                    rolloverUncompletedTo: "next_sprint"
+                                )
+                            }
+                        } label: {
+                            Label("Complete & Rollover to Next Sprint", systemImage: "arrow.right.circle")
+                        }
+                        Button {
+                            Task {
+                                await viewModel.updateSprintStatus(
+                                    sprintId: sprint.id,
+                                    status: .completed,
+                                    rolloverUncompletedTo: "backlog"
+                                )
+                            }
+                        } label: {
+                            Label("Complete & Return Open to Backlog", systemImage: "tray.and.arrow.down")
+                        }
+                        Button {
+                            Task {
+                                await viewModel.updateSprintStatus(sprintId: sprint.id, status: .completed)
+                            }
+                        } label: {
+                            Label("Complete Sprint As-Is", systemImage: "checkmark.circle")
+                        }
+                    } label: {
+                        Label("Complete", systemImage: "checkmark.circle.fill")
+                            .appFont(AppTypography.caption1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(AppColors.statusSuccess.opacity(0.15))
+                            .foregroundColor(AppColors.statusSuccess)
+                            .clipShape(Capsule())
+                    }
+                } else if sprint.status.isClosedLike {
                     Text("Closed")
                         .appFont(AppTypography.caption1)
                         .foregroundColor(AppColors.textTertiary)
                 }
             }
 
-            let points = viewModel.pointsForSprint(sprint.id)
-            if let cap = points.capacity, cap > 0 {
-                let over = points.assigned > cap
-                ProgressView(value: min(points.assigned / cap, 1.0)) {
+            HStack(spacing: 8) {
+                Text("\(sprint.startDate.formatted(date: .abbreviated, time: .omitted)) – \(sprint.endDate.formatted(date: .abbreviated, time: .omitted))")
+                    .appFont(AppTypography.caption2)
+                    .foregroundColor(AppColors.textTertiary)
+                Spacer()
+                Text("\(stats.completedCount)/\(stats.totalCount) done")
+                    .appFont(AppTypography.caption2)
+                    .foregroundColor(AppColors.textSecondary)
+            }
+
+            if let cap = stats.capacity, cap > 0 {
+                let over = stats.assignedPoints > cap
+                ProgressView(value: min(stats.assignedPoints / cap, 1.0)) {
                     HStack {
-                        Text(String(format: "%.0f/%.0f pts", points.assigned, cap))
+                        Text(String(format: "%.0f done • %.0f/%.0f pts capacity", stats.completedPoints, stats.assignedPoints, cap))
                             .appFont(AppTypography.caption1)
                             .foregroundColor(over ? AppColors.statusError : AppColors.textSecondary)
                         Spacer()
@@ -133,7 +225,7 @@ public struct BacklogView: View {
                 }
                 .tint(over ? AppColors.statusError : AppColors.brandPrimary)
             } else {
-                Text(String(format: "%.0f pts assigned", points.assigned))
+                Text(String(format: "%.0f done / %.0f pts assigned", stats.completedPoints, stats.assignedPoints))
                     .appFont(AppTypography.caption1)
                     .foregroundColor(AppColors.textSecondary)
             }
@@ -160,10 +252,15 @@ public struct BacklogView: View {
                         .lineLimit(1)
                 }
 
-                if let sp = task.storyPoints {
-                    Text("\(sp) pts")
-                        .appFont(AppTypography.caption1)
-                        .foregroundColor(AppColors.textSecondary)
+                HStack(spacing: 8) {
+                    Text(task.status.displayName)
+                        .appFont(AppTypography.caption2)
+                        .foregroundColor(AppColors.textTertiary)
+                    if let sp = task.storyPoints {
+                        Text("\(sp) pts")
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.textSecondary)
+                    }
                 }
             }
             Spacer()
@@ -172,6 +269,27 @@ public struct BacklogView: View {
         }
         .contentShape(Rectangle())
         .draggable(task.id.uuidString)
+        .contextMenu {
+            let openSprints = viewModel.sprints.filter { !$0.status.isClosedLike }
+            if !openSprints.isEmpty {
+                Menu("Assign to Sprint") {
+                    ForEach(openSprints) { targetSprint in
+                        Button {
+                            Task { await viewModel.assignTask(task, toSprintId: targetSprint.id) }
+                        } label: {
+                            Label("\(targetSprint.name) (\(targetSprint.statusLabel))", systemImage: "flag")
+                        }
+                    }
+                }
+            }
+            if task.sprintId != nil {
+                Button {
+                    Task { await viewModel.assignTask(task, toSprintId: nil) }
+                } label: {
+                    Label("Move to Product Backlog", systemImage: "tray.and.arrow.down")
+                }
+            }
+        }
     }
 
     private var skeletonList: some View {
@@ -192,6 +310,48 @@ public struct BacklogView: View {
 #else
         .listStyle(.inset)
 #endif
+    }
+}
+
+private struct BacklogCreateSprintSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String = ""
+    @State private var startDate: Date = Date()
+    @State private var endDate: Date = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
+    @State private var capacityText: String = "20"
+
+    let onCreate: (String, Date, Date, Double?) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Iteration Details") {
+                    TextField("Sprint Name (e.g. Sprint 15)", text: $name)
+                    DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
+                    DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: .date)
+                }
+                Section("Capacity Planning") {
+                    TextField("Story Points Capacity", text: $capacityText)
+                    #if os(iOS)
+                        .keyboardType(.decimalPad)
+                    #endif
+                }
+            }
+            .navigationTitle("Create Sprint")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        let cap = Double(capacityText.trimmingCharacters(in: .whitespacesAndNewlines))
+                        onCreate(name, startDate, endDate, cap)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || endDate < startDate)
+                }
+            }
+        }
     }
 }
 

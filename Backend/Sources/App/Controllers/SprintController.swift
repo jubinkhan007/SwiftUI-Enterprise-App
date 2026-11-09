@@ -64,9 +64,13 @@ struct SprintController: RouteCollection {
 
     // MARK: - PATCH /api/sprints/:sprintID
 
-    struct UpdateSprintRequest: Content {
+    struct PatchSprintPayload: Content {
+        let name: String?
+        let startDate: Date?
+        let endDate: Date?
         let status: SprintStatus?
         let capacity: Double?
+        let rolloverUncompletedTo: String?
     }
 
     @Sendable
@@ -90,8 +94,20 @@ struct SprintController: RouteCollection {
             throw Abort(.notFound, reason: "Sprint not found.")
         }
 
-        let payload = try req.content.decode(UpdateSprintRequest.self)
+        let payload = try req.content.decode(PatchSprintPayload.self)
         let oldStatus = sprint.status
+        if let rawName = payload.name?.trimmingCharacters(in: .whitespacesAndNewlines), !rawName.isEmpty {
+            sprint.name = rawName
+        }
+        if let startDate = payload.startDate {
+            sprint.startDate = startDate
+        }
+        if let endDate = payload.endDate {
+            sprint.endDate = endDate
+        }
+        guard sprint.startDate <= sprint.endDate else {
+            throw Abort(.badRequest, reason: "startDate must be <= endDate.")
+        }
         if let status = payload.status {
             sprint.status = status
         }
@@ -101,8 +117,19 @@ struct SprintController: RouteCollection {
 
         try await sprint.save(on: req.db)
 
-        if oldStatus != .completed && sprint.status == .completed {
+        let didTransitionToClosed = !oldStatus.isClosedLike && sprint.status.isClosedLike
+        if didTransitionToClosed {
             let sprintID = try sprint.requireID()
+            if let rollover = payload.rolloverUncompletedTo?.lowercased(), !rollover.isEmpty {
+                await rolloverIncompleteTasks(
+                    fromSprintId: sprintID,
+                    projectId: sprint.$project.id,
+                    destination: rollover,
+                    actorId: ctx.userId,
+                    db: req.db,
+                    logger: req.logger
+                )
+            }
             await AutomationService.triggerSprintCompleted(
                 sprintId: sprintID,
                 projectId: sprint.$project.id,
@@ -112,6 +139,83 @@ struct SprintController: RouteCollection {
         }
 
         return .success(sprint.toDTO())
+    }
+
+    private func rolloverIncompleteTasks(
+        fromSprintId: UUID,
+        projectId: UUID,
+        destination: String,
+        actorId: UUID,
+        db: Database,
+        logger: Logger
+    ) async {
+        do {
+            let allSprintTasks = try await TaskItemModel.query(on: db)
+                .filter(\.$sprint.$id == fromSprintId)
+                .with(\.$customStatus)
+                .all()
+
+            let incompleteTasks = allSprintTasks.filter { task in
+                if let cs = task.customStatus {
+                    return !cs.isFinal
+                }
+                return task.status != .done && task.status != .cancelled
+            }
+            guard !incompleteTasks.isEmpty else { return }
+
+            if destination == "backlog" {
+                for (index, task) in incompleteTasks.enumerated() {
+                    task.$sprint.id = nil
+                    task.sprintPosition = nil
+                    task.backlogPosition = Double((index + 1) * 1000)
+                    task.version += 1
+                    try await task.save(on: db)
+                    let activity = TaskActivityModel(
+                        taskId: try task.requireID(),
+                        userId: actorId,
+                        type: .moved,
+                        content: "Returned to product backlog on sprint completion",
+                        metadata: ["from_sprint": fromSprintId.uuidString, "rollover": "backlog"]
+                    )
+                    try await activity.save(on: db)
+                }
+            } else if destination == "next_sprint" {
+                let nextSprint = try await SprintModel.query(on: db)
+                    .filter(\.$project.$id == projectId)
+                    .filter(\.$status ~~ [.active, .planned])
+                    .filter(\.$id != fromSprintId)
+                    .sort(\.$startDate, .ascending)
+                    .first()
+
+                let targetSprintId = nextSprint?.id
+                for (index, task) in incompleteTasks.enumerated() {
+                    task.$sprint.id = targetSprintId
+                    if targetSprintId != nil {
+                        task.sprintPosition = Double((index + 1) * 1000)
+                    } else {
+                        task.sprintPosition = nil
+                        task.backlogPosition = Double((index + 1) * 1000)
+                    }
+                    task.version += 1
+                    try await task.save(on: db)
+                    let activity = TaskActivityModel(
+                        taskId: try task.requireID(),
+                        userId: actorId,
+                        type: .moved,
+                        content: nextSprint != nil
+                            ? "Rolled over to \(nextSprint!.name) on sprint completion"
+                            : "Returned to product backlog on sprint completion (no next sprint)",
+                        metadata: [
+                            "from_sprint": fromSprintId.uuidString,
+                            "to_sprint": targetSprintId?.uuidString ?? "backlog"
+                        ]
+                    )
+                    try await activity.save(on: db)
+                }
+            }
+        } catch {
+            logger.warning("SprintController: failed to rollover incomplete tasks for sprint \(fromSprintId): \(error)")
+        }
     }
 
     // MARK: - Helpers

@@ -48,6 +48,11 @@ export const BacklogScreen: React.FC<BacklogScreenProps> = () => {
   const [sprintCapacity, setSprintCapacity] = useState<string>('20');
   const [isSubmittingSprint, setIsSubmittingSprint] = useState<boolean>(false);
 
+  // Complete sprint rollover modal
+  const [completingSprint, setCompletingSprint] = useState<SprintDTO | null>(null);
+  const [rolloverOption, setRolloverOption] = useState<'next_sprint' | 'backlog' | 'none'>('next_sprint');
+  const [isCompletingSprint, setIsCompletingSprint] = useState<boolean>(false);
+
   // Initial load: hierarchy
   useEffect(() => {
     const loadHierarchy = async () => {
@@ -131,12 +136,33 @@ export const BacklogScreen: React.FC<BacklogScreenProps> = () => {
     }
   };
 
-  const handleUpdateSprintStatus = async (sprintId: string, status: SprintStatus) => {
+  const handleUpdateSprintStatus = async (
+    sprintId: string,
+    status: SprintStatus,
+    rolloverUncompletedTo?: 'next_sprint' | 'backlog'
+  ) => {
     try {
-      await api.updateSprint(sprintId, { status });
+      await api.updateSprint(sprintId, { status, rolloverUncompletedTo });
       await loadAgileData(selectedProjectId);
     } catch (err: any) {
       alert(`Failed to update sprint: ${err.message || err}`);
+    }
+  };
+
+  const handleConfirmCompleteSprint = async () => {
+    if (!completingSprint) return;
+    setIsCompletingSprint(true);
+    try {
+      await api.updateSprint(completingSprint.id, {
+        status: 'completed',
+        rolloverUncompletedTo: rolloverOption === 'none' ? undefined : rolloverOption,
+      });
+      setCompletingSprint(null);
+      await loadAgileData(selectedProjectId);
+    } catch (err: any) {
+      alert(`Failed to complete sprint: ${err.message || err}`);
+    } finally {
+      setIsCompletingSprint(false);
     }
   };
 
@@ -162,10 +188,21 @@ export const BacklogScreen: React.FC<BacklogScreenProps> = () => {
   const calculatePoints = (sprintId: string, capacity?: number) => {
     const issues = sprintIssues[sprintId] || [];
     const assigned = issues.reduce((acc, t) => acc + (t.storyPoints || 0), 0);
+    const completedIssues = issues.filter((t) => t.status === 'done');
+    const completedPoints = completedIssues.reduce((acc, t) => acc + (t.storyPoints || 0), 0);
     const cap = capacity || 0;
     const isOver = cap > 0 && assigned > cap;
     const progressPercent = cap > 0 ? Math.min(Math.round((assigned / cap) * 100), 100) : 0;
-    return { assigned, cap, isOver, progressPercent, count: issues.length };
+    return {
+      assigned,
+      completedPoints,
+      completedCount: completedIssues.length,
+      openCount: issues.length - completedIssues.length,
+      cap,
+      isOver,
+      progressPercent,
+      count: issues.length,
+    };
   };
 
   const totalBacklogPoints = backlogTasks.reduce((acc, t) => acc + (t.storyPoints || 0), 0);
@@ -330,9 +367,11 @@ export const BacklogScreen: React.FC<BacklogScreenProps> = () => {
                           {/* Capacity Gauge & Lifecycle Buttons */}
                           <div className="flex items-center gap-4">
                             {/* Points Gauge */}
-                            <div className="w-40 space-y-1">
+                            <div className="w-48 space-y-1">
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-slate-400">Points</span>
+                                <span className="text-slate-400">
+                                  {stats.completedPoints} done ({stats.completedCount}/{stats.count})
+                                </span>
                                 <span
                                   className={`font-semibold ${
                                     stats.isOver ? 'text-red-400' : 'text-slate-200'
@@ -371,7 +410,10 @@ export const BacklogScreen: React.FC<BacklogScreenProps> = () => {
                               )}
                               {sprint.status === 'active' && (
                                 <button
-                                  onClick={() => handleUpdateSprintStatus(sprint.id, 'completed')}
+                                  onClick={() => {
+                                    setRolloverOption('next_sprint');
+                                    setCompletingSprint(sprint);
+                                  }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 text-xs font-semibold transition shadow-sm active:scale-95"
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5" />
@@ -606,6 +648,106 @@ export const BacklogScreen: React.FC<BacklogScreenProps> = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLETE SPRINT ROLLOVER MODAL */}
+      {completingSprint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-100">Complete {completingSprint.name}</h3>
+                  <p className="text-[11px] text-slate-400">Finalize iteration and handle open work items</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCompletingSprint(null)}
+                className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {(() => {
+              const st = calculatePoints(completingSprint.id, completingSprint.capacity);
+              return (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/40">
+                    <span className="text-[10px] font-bold uppercase text-emerald-400">Completed</span>
+                    <div className="text-sm font-bold text-slate-100 mt-0.5">
+                      {st.completedCount} tasks ({st.completedPoints} pts)
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-800/40">
+                    <span className="text-[10px] font-bold uppercase text-amber-400">Incomplete</span>
+                    <div className="text-sm font-bold text-slate-100 mt-0.5">
+                      {st.openCount} tasks ({Math.max(st.assigned - st.completedPoints, 0)} pts)
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-300">
+                What should happen to incomplete tasks?
+              </label>
+              {[
+                {
+                  id: 'next_sprint' as const,
+                  title: 'Rollover to Next Planned Sprint',
+                  desc: 'Move open tasks into the next upcoming sprint (or backlog if none)',
+                },
+                {
+                  id: 'backlog' as const,
+                  title: 'Return to Product Backlog',
+                  desc: 'Unassign open tasks so they can be re-prioritized in backlog grooming',
+                },
+                {
+                  id: 'none' as const,
+                  title: 'Keep in Completed Sprint',
+                  desc: 'Leave open tasks attached to this sprint (automation rules still run)',
+                },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setRolloverOption(opt.id)}
+                  className={`w-full p-3 rounded-xl border text-left transition ${
+                    rolloverOption === opt.id
+                      ? 'bg-indigo-950/50 border-indigo-500 text-slate-100'
+                      : 'bg-slate-800/50 border-slate-700/70 text-slate-300 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="text-xs font-bold">{opt.title}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCompletingSprint(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isCompletingSprint}
+                onClick={handleConfirmCompleteSprint}
+                className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-600/30 transition disabled:opacity-50"
+              >
+                {isCompletingSprint ? 'Completing...' : 'Complete Sprint'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -83,4 +83,11 @@ public final class AnalyticsRepository: AnalyticsRepositoryProtocol {
         guard let data = response.data else { throw NetworkError.underlying("No data") }
         return data
     }
+
+    public func updateSprint(sprintId: UUID, payload: UpdateSprintRequest) async throws -> SprintDTO {
+        let endpoint = SprintEndpoint.update(sprintId: sprintId, payload: payload, configuration: configuration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<SprintDTO>.self)
+        guard let data = response.data else { throw NetworkError.underlying("No data") }
+        return data
+    }
 }

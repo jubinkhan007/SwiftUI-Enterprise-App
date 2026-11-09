@@ -103,9 +103,66 @@ private struct TemplateEditorSheet: View {
     @State private var isSubmitting = false
     @State private var error: String?
 
+    private static let presets: [(title: String, shortcut: String, body: String)] = [
+        (
+            "Bug Triage Report",
+            "bug",
+            "🐞 **Bug Report** ({{date}} — reported by {{user.name}})\n- **Environment:** Production\n- **Steps to Reproduce:**\n  1. \n- **Expected vs Actual:**\n- **Severity:** High"
+        ),
+        (
+            "Daily Standup Update",
+            "standup",
+            "📅 **Standup — {{user.name}} ({{date}})**\n- **Yesterday:** Completed sprint deliverables\n- **Today:** Focusing on active sprint backlog\n- **Blockers:** None"
+        ),
+        (
+            "Sprint Retro Summary",
+            "retro",
+            "🔄 **Sprint Retrospective ({{org.name}} — {{date}})**\n- **What went well:**\n- **What can be improved:**\n- **Action Items for Next Sprint:**"
+        ),
+        (
+            "Release Sign-Off",
+            "release",
+            "🚀 **Release Readiness Sign-Off ({{date}} {{time}})**\n- **Lead:** {{user.name}} ({{user.email}})\n- **QA Status:** Passed\n- **Rollback Plan:** Verified"
+        )
+    ]
+
+    private static let variableTokens: [String] = [
+        "{{user.name}}",
+        "{{user.email}}",
+        "{{org.name}}",
+        "{{conversation.name}}",
+        "{{date}}",
+        "{{time}}"
+    ]
+
     var body: some View {
         NavigationStack {
             Form {
+                if editing == nil {
+                    Section("Quick-Start Agile Presets") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Self.presets, id: \.shortcut) { preset in
+                                    Button {
+                                        name = preset.title
+                                        shortcut = preset.shortcut
+                                        bodyText = preset.body
+                                    } label: {
+                                        Text(preset.title)
+                                            .appFont(AppTypography.caption1)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(AppColors.brandPrimary.opacity(0.14))
+                                            .foregroundColor(AppColors.brandPrimary)
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
                 Section("Template") {
                     TextField("Name", text: $name)
                     TextField("Shortcut (optional)", text: $shortcut)
@@ -114,6 +171,50 @@ private struct TemplateEditorSheet: View {
                         #endif
                     TextField("Body", text: $bodyText, axis: .vertical).lineLimit(4...10)
                 }
+                Section("Insert Dynamic Variable") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(Self.variableTokens, id: \.self) { token in
+                                Button {
+                                    if bodyText.isEmpty || bodyText.hasSuffix(" ") || bodyText.hasSuffix("\n") {
+                                        bodyText += token
+                                    } else {
+                                        bodyText += " " + token
+                                    }
+                                } label: {
+                                    Text(token)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(AppColors.surfaceElevated)
+                                        .foregroundColor(AppColors.textPrimary)
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                if !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Section("Live Variable Preview") {
+                        let preview = TemplateStore.shared.renderLocal(
+                            MessageTemplateDTO(
+                                id: editing?.id ?? UUID(),
+                                orgId: UUID(),
+                                ownerUserId: UUID(),
+                                scope: scope,
+                                name: name.isEmpty ? "Preview" : name,
+                                shortcut: shortcut.nilIfEmpty,
+                                body: bodyText,
+                                createdAt: Date(),
+                                updatedAt: Date()
+                            )
+                        )
+                        Text(preview)
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+                }
                 Section("Scope") {
                     Picker("Scope", selection: $scope) {
                         Text("Just me").tag(TemplateScope.user)
@@ -121,11 +222,6 @@ private struct TemplateEditorSheet: View {
                             .disabled(!canManageOrgTemplates && editing?.scope != .org)
                     }
                     .pickerStyle(.segmented)
-                }
-                Section {
-                    Text("Variables: {{user.name}}, {{user.email}}, {{org.name}}, {{conversation.name}}, {{date}}, {{time}}")
-                        .appFont(AppTypography.caption2)
-                        .foregroundColor(AppColors.textSecondary)
                 }
                 if let error {
                     Section { Text(error).foregroundColor(.red).appFont(AppTypography.caption1) }

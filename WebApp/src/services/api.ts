@@ -1488,7 +1488,14 @@ class ApiService {
 
   async updateSprint(
     sprintId: string,
-    payload: { status?: SprintStatus; capacity?: number }
+    payload: {
+      name?: string;
+      startDate?: string;
+      endDate?: string;
+      status?: SprintStatus;
+      capacity?: number;
+      rolloverUncompletedTo?: 'next_sprint' | 'backlog';
+    }
   ): Promise<SprintDTO> {
     const raw = await this.request<any>(`/api/sprints/${sprintId}`, {
       method: 'PATCH',

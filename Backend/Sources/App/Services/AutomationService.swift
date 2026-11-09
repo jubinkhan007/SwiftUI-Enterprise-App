@@ -400,11 +400,16 @@ struct AutomationService {
 
         let uncompletedTasks: [TaskItemModel]
         do {
-            uncompletedTasks = try await TaskItemModel.query(on: db)
+            let sprintTasks = try await TaskItemModel.query(on: db)
                 .filter(\.$sprint.$id == sprintId)
-                .join(CustomStatusModel.self, on: \TaskItemModel.$customStatus.$id == \CustomStatusModel.$id)
-                .filter(CustomStatusModel.self, \CustomStatusModel.$isFinal == false)
+                .with(\.$customStatus)
                 .all()
+            uncompletedTasks = sprintTasks.filter { task in
+                if let cs = task.customStatus {
+                    return !cs.isFinal
+                }
+                return task.status != .done && task.status != .cancelled
+            }
         } catch {
             logger.warning("AutomationService: failed to load sprint tasks: \(error)")
             return

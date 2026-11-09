@@ -508,13 +508,33 @@ export const ProductivityScreen: React.FC<ProductivityScreenProps> = ({ onNaviga
                     </div>
 
                     <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs">
-                      <button
-                        onClick={() => handleTestRender(tpl)}
-                        className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-semibold transition"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        {renderedPreview?.id === tpl.id ? 'Hide Preview' : 'Test Render'}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleTestRender(tpl)}
+                          className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-semibold transition"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          {renderedPreview?.id === tpl.id ? 'Refresh Preview' : 'Test Render'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const rendered = await api.renderTemplate(tpl.id, conversations[0]?.id || null);
+                              await navigator.clipboard.writeText(rendered.body);
+                              setRenderedPreview({ id: tpl.id, text: rendered.body });
+                              showNotification('Rendered template copied to clipboard!');
+                            } catch {
+                              await navigator.clipboard.writeText(tpl.body);
+                              showNotification('Template body copied to clipboard!');
+                            }
+                          }}
+                          className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold transition"
+                          title="Render variables and copy to clipboard"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Copy
+                        </button>
+                      </div>
 
                       <div className="flex items-center gap-2">
                         <button
@@ -894,6 +914,51 @@ export const ProductivityScreen: React.FC<ProductivityScreenProps> = ({ onNaviga
             </div>
 
             <form onSubmit={handleSaveTemplate} className="space-y-4">
+              {!editingTemplate && (
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                    Quick-Start Agile &amp; Engineering Presets
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      {
+                        name: 'Bug Triage Report',
+                        shortcut: 'bug',
+                        body: '🐞 **Bug Report** ({{date}} — reported by {{user.name}})\n- **Environment:** Production\n- **Steps to Reproduce:**\n  1. \n- **Expected vs Actual:**\n- **Severity:** High',
+                      },
+                      {
+                        name: 'Daily Standup Update',
+                        shortcut: 'standup',
+                        body: '📅 **Standup — {{user.name}} ({{date}})**\n- **Yesterday:** Completed sprint deliverables\n- **Today:** Focusing on active sprint backlog\n- **Blockers:** None',
+                      },
+                      {
+                        name: 'Sprint Retro Summary',
+                        shortcut: 'retro',
+                        body: '🔄 **Sprint Retrospective ({{org.name}} — {{date}})**\n- **What went well:**\n- **What can be improved:**\n- **Action Items for Next Sprint:**',
+                      },
+                      {
+                        name: 'Release Sign-Off',
+                        shortcut: 'release',
+                        body: '🚀 **Release Readiness Sign-Off ({{date}} {{time}})**\n- **Lead:** {{user.name}} ({{user.email}})\n- **QA Status:** Passed\n- **Rollback Plan:** Verified',
+                      },
+                    ].map((preset) => (
+                      <button
+                        key={preset.shortcut}
+                        type="button"
+                        onClick={() => {
+                          setTemplateName(preset.name);
+                          setTemplateShortcut(preset.shortcut);
+                          setTemplateBody(preset.body);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-semibold transition"
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Template Name *</label>
                 <input
@@ -935,16 +1000,16 @@ export const ProductivityScreen: React.FC<ProductivityScreenProps> = ({ onNaviga
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-wrap items-center justify-between gap-1 mb-1.5">
                   <label className="text-xs font-semibold text-slate-400">Template Content *</label>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                  <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
                     <span>Variables:</span>
-                    {['{{user.name}}', '{{org.name}}', '{{date}}'].map(v => (
+                    {['{{user.name}}', '{{user.email}}', '{{org.name}}', '{{conversation.name}}', '{{date}}', '{{time}}'].map(v => (
                       <button
                         key={v}
                         type="button"
-                        onClick={() => setTemplateBody(prev => prev + ' ' + v)}
-                        className="px-1.5 py-0.5 rounded bg-slate-800 text-indigo-400 hover:bg-slate-700"
+                        onClick={() => setTemplateBody(prev => (prev ? prev + ' ' + v : v))}
+                        className="px-1.5 py-0.5 rounded bg-slate-800 text-indigo-400 hover:bg-slate-700 font-mono"
                       >
                         {v}
                       </button>

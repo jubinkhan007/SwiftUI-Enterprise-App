@@ -1167,6 +1167,7 @@ fun ProductivityScreen(vm: AppViewModel, api: ApiClient) {
                 FocusTimerContent(initialTitle = "Deep Work Session")
             }
         } else {
+            var renderedPreviews by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
             RemoteStatus(remote)
             ActionStatus(action)
 
@@ -1183,19 +1184,58 @@ fun ProductivityScreen(vm: AppViewModel, api: ApiClient) {
                     }
                 }
                 items(remote.data.rows(), key = { it.id }) { item ->
+                    val shortcut = item.text("shortcut")
+                    val scope = item.text("scope", "user")
+                    val previewText = renderedPreviews[item.id]
                     IosCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(item.text("title", item.text("name", item.text("body"))), style = AppTypography.headline)
-                                Text(dateLabel(item.text("remind_at", item.text("scheduled_for", item.text("created_at")))), style = AppTypography.caption1, color = AppColors.textSecondary)
-                            }
-                            IconButton(onClick = {
-                                action.run {
-                                    api.request("$path/${item.id}", "DELETE")
-                                    vm.changed()
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(item.text("title", item.text("name", item.text("body"))), style = AppTypography.headline)
+                                        if (tab == "Templates") {
+                                            IosPill(scope.uppercase())
+                                            if (shortcut.isNotBlank()) {
+                                                IosPill("/$shortcut")
+                                            }
+                                        }
+                                    }
+                                    if (tab == "Templates") {
+                                        Text(item.text("body"), style = AppTypography.caption1, color = AppColors.textSecondary)
+                                    } else {
+                                        Text(dateLabel(item.text("remind_at", item.text("scheduled_for", item.text("created_at")))), style = AppTypography.caption1, color = AppColors.textSecondary)
+                                    }
                                 }
-                            }) {
-                                Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
+                                if (tab == "Templates") {
+                                    IconButton(onClick = {
+                                        action.run {
+                                            val res = api.request("/api/templates/${item.id}/render", "POST", json())
+                                            val rendered = res.data.obj().text("body", item.text("body"))
+                                            renderedPreviews = renderedPreviews + (item.id to rendered)
+                                        }
+                                    }) {
+                                        Icon(Icons.Default.Visibility, "Render Preview", tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                                IconButton(onClick = {
+                                    action.run {
+                                        api.request("$path/${item.id}", "DELETE")
+                                        vm.changed()
+                                    }
+                                }) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = AppColors.statusError, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            if (previewText != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(AppRadius.small))
+                                        .background(AppColors.brandPrimary.copy(alpha = 0.1f))
+                                        .padding(8.dp)
+                                ) {
+                                    Text("Rendered: $previewText", style = AppTypography.caption2, color = AppColors.brandPrimary)
+                                }
                             }
                         }
                     }
@@ -1216,7 +1256,9 @@ fun ProductivityScreen(vm: AppViewModel, api: ApiClient) {
             )
             else -> listOf(
                 FormField("name", "Name", required = true),
-                FormField("body", "Template Body", required = true, multiline = true)
+                FormField("shortcut", "Shortcut (e.g. standup, bug)"),
+                FormField("scope", "Scope", "user", options = choices("user", "org")),
+                FormField("body", "Template Body ({{user.name}}, {{org.name}}, {{date}})", required = true, multiline = true)
             )
         }
         EditorDialog("Create $title", fields, { editor = null }) { payload ->

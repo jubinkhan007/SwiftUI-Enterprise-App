@@ -4,6 +4,7 @@ import SharedModels
 public enum SprintEndpoint {
     case list(projectId: UUID, configuration: APIConfiguration)
     case create(projectId: UUID, payload: CreateSprintRequest, configuration: APIConfiguration)
+    case update(sprintId: UUID, payload: UpdateSprintRequest, configuration: APIConfiguration)
 }
 
 extension SprintEndpoint: APIEndpoint {
@@ -11,7 +12,7 @@ extension SprintEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .list(_, let c), .create(_, _, let c): return c
+        case .list(_, let c), .create(_, _, let c), .update(_, _, let c): return c
         }
     }
 
@@ -21,6 +22,8 @@ extension SprintEndpoint: APIEndpoint {
             return "/api/projects/\(projectId.uuidString)/sprints"
         case .create(let projectId, _, _):
             return "/api/projects/\(projectId.uuidString)/sprints"
+        case .update(let sprintId, _, _):
+            return "/api/sprints/\(sprintId.uuidString)"
         }
     }
 
@@ -28,6 +31,7 @@ extension SprintEndpoint: APIEndpoint {
         switch self {
         case .list: return .get
         case .create: return .post
+        case .update: return .patch
         }
     }
 
@@ -38,7 +42,7 @@ extension SprintEndpoint: APIEndpoint {
         h["Accept"] = "application/json"
 
         switch self {
-        case .create:
+        case .create, .update:
             h["Content-Type"] = "application/json; charset=utf-8"
         default:
             break
@@ -50,6 +54,8 @@ extension SprintEndpoint: APIEndpoint {
     public var body: Data? {
         switch self {
         case .create(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .update(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         default:
             return nil

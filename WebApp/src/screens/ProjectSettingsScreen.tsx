@@ -91,6 +91,7 @@ export const ProjectSettingsScreen: React.FC<ProjectSettingsScreenProps> = () =>
   const [newRuleEnabled, setNewRuleEnabled] = useState<boolean>(true);
   const [newRuleTrigger, setNewRuleTrigger] = useState<string>('task.status_changed');
   const [triggerToStatusId, setTriggerToStatusId] = useState<string>('');
+  const [ruleConditionPreset, setRuleConditionPreset] = useState<'any' | 'only_bugs' | 'only_critical' | 'only_stories'>('any');
   const [newRuleActionType, setNewRuleActionType] = useState<string>('setPriority');
   const [actionPriority, setActionPriority] = useState<TaskPriority>('medium');
   const [actionStatusId, setActionStatusId] = useState<string>('');
@@ -250,6 +251,20 @@ export const ProjectSettingsScreen: React.FC<ProjectSettingsScreenProps> = () =>
     return null;
   }, [newRuleTrigger, triggerToStatusId]);
 
+  const generatedConditionsJson = useMemo(() => {
+    if (newRuleTrigger === 'sprint.completed') return null;
+    switch (ruleConditionPreset) {
+      case 'only_bugs':
+        return JSON.stringify([{ field: 'taskType', op: 'equals', value: 'bug' }]);
+      case 'only_critical':
+        return JSON.stringify([{ field: 'priority', op: 'equals', value: 'critical' }]);
+      case 'only_stories':
+        return JSON.stringify([{ field: 'taskType', op: 'equals', value: 'story' }]);
+      default:
+        return null;
+    }
+  }, [newRuleTrigger, ruleConditionPreset]);
+
   const hasSelfTriggerWarning = useMemo(() => {
     return (
       newRuleTrigger === 'task.status_changed' &&
@@ -278,6 +293,7 @@ export const ProjectSettingsScreen: React.FC<ProjectSettingsScreenProps> = () =>
         isEnabled: newRuleEnabled,
         triggerType: newRuleTrigger,
         triggerConfigJson: generatedTriggerConfigJson,
+        conditionsJson: generatedConditionsJson,
         actionsJson: generatedActionsJson,
       };
       await api.createAutomationRule(selectedProjectId, payload);
@@ -287,6 +303,7 @@ export const ProjectSettingsScreen: React.FC<ProjectSettingsScreenProps> = () =>
       setNewRuleEnabled(true);
       setNewRuleTrigger('task.status_changed');
       setTriggerToStatusId('');
+      setRuleConditionPreset('any');
       setNewRuleActionType('setPriority');
       setActionLabel('');
       setActionUserId('');
@@ -805,6 +822,53 @@ export const ProjectSettingsScreen: React.FC<ProjectSettingsScreenProps> = () =>
             </div>
 
             <form onSubmit={handleCreateRule} className="space-y-4">
+              {/* Quick Presets */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Quick Rule Presets
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewRuleName('Rollover Unfinished Sprint Tasks');
+                      setNewRuleTrigger('sprint.completed');
+                      setRuleConditionPreset('any');
+                      setNewRuleActionType('moveUncompletedToNextSprint');
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-semibold transition"
+                  >
+                    Sprint Rollover Automation
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewRuleName('Auto-Escalate New Bugs');
+                      setNewRuleTrigger('task.created');
+                      setRuleConditionPreset('only_bugs');
+                      setNewRuleActionType('setPriority');
+                      setActionPriority('high');
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold transition"
+                  >
+                    Escalate New Bugs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewRuleName('Tag Critical Priority Urgent');
+                      setNewRuleTrigger('task.priority_changed');
+                      setRuleConditionPreset('only_critical');
+                      setNewRuleActionType('addLabel');
+                      setActionLabel('urgent');
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold transition"
+                  >
+                    Tag Critical Urgent
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Rule Name *</label>
                 <input
@@ -821,7 +885,7 @@ export const ProjectSettingsScreen: React.FC<ProjectSettingsScreenProps> = () =>
               <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
                 <div className="flex items-center space-x-2">
                   <Sparkles className="w-4 h-4 text-indigo-400" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300">When (Trigger)</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300">When (Trigger &amp; Condition)</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -856,6 +920,22 @@ export const ProjectSettingsScreen: React.FC<ProjectSettingsScreenProps> = () =>
                           {s.name} ({s.category})
                         </option>
                       ))}
+                    </select>
+                  </div>
+                )}
+
+                {newRuleTrigger !== 'sprint.completed' && (
+                  <div className="pt-2 border-t border-slate-700/60">
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">If Condition (Optional filter)</label>
+                    <select
+                      value={ruleConditionPreset}
+                      onChange={(e) => setRuleConditionPreset(e.target.value as any)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 text-xs focus:outline-none"
+                    >
+                      <option value="any">Any Matching Task</option>
+                      <option value="only_bugs">Only Bug Issues (taskType == bug)</option>
+                      <option value="only_critical">Only Critical Priority (priority == critical)</option>
+                      <option value="only_stories">Only User Stories (taskType == story)</option>
                     </select>
                   </div>
                 )}

@@ -148,6 +148,50 @@ public final class BacklogViewModel: ObservableObject {
         return (assigned, cap)
     }
 
+    public func sprintStats(_ sprintId: UUID) -> (completedPoints: Double, assignedPoints: Double, capacity: Double?, completedCount: Int, totalCount: Int) {
+        let issues = sprintIssues[sprintId] ?? []
+        let assignedPoints = issues.reduce(0.0) { $0 + Double($1.storyPoints ?? 0) }
+        let completedIssues = issues.filter { $0.status == .done }
+        let completedPoints = completedIssues.reduce(0.0) { $0 + Double($1.storyPoints ?? 0) }
+        let cap = sprints.first(where: { $0.id == sprintId })?.capacity
+        return (completedPoints, assignedPoints, cap, completedIssues.count, issues.count)
+    }
+
+    public func createSprint(name: String, startDate: Date, endDate: Date, capacity: Double?) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            let payload = CreateSprintRequest(
+                name: trimmed,
+                startDate: startDate,
+                endDate: endDate,
+                status: .planned,
+                capacity: capacity
+            )
+            _ = try await analyticsRepository.createSprint(projectId: projectId, payload: payload)
+            await refresh()
+        } catch {
+            self.error = error
+        }
+    }
+
+    public func updateSprintStatus(sprintId: UUID, status: SprintStatus, rolloverUncompletedTo: String? = nil) async {
+        do {
+            let payload = UpdateSprintRequest(
+                status: status,
+                rolloverUncompletedTo: rolloverUncompletedTo
+            )
+            _ = try await analyticsRepository.updateSprint(sprintId: sprintId, payload: payload)
+            await refresh()
+        } catch {
+            self.error = error
+        }
+    }
+
+    public func assignTask(_ task: TaskItemDTO, toSprintId: UUID?) async {
+        _ = await handleDrop(itemIds: [task.id.uuidString], toSprintId: toSprintId)
+    }
+
     // MARK: - Local state updates
 
     private func replaceTask(_ updated: TaskItemDTO) async {

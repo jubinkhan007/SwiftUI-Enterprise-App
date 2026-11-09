@@ -195,5 +195,24 @@ final class GovernanceTests: XCTestCase {
         XCTAssertEqual(transcribeEp.method, HTTPMethod.post)
         XCTAssertNotNil(transcribeEp.body)
     }
+
+    func testSprintUpdateEndpointAndPayload() throws {
+        let sprintId = UUID()
+        let payload = UpdateSprintRequest(
+            name: "Sprint 24 — Release Readiness",
+            status: .completed,
+            capacity: 34,
+            rolloverUncompletedTo: "next_sprint"
+        )
+        let endpoint = SprintEndpoint.update(sprintId: sprintId, payload: payload, configuration: .current)
+        XCTAssertEqual(endpoint.path, "/api/sprints/\(sprintId.uuidString)")
+        XCTAssertEqual(endpoint.method, HTTPMethod.patch)
+        let body = try XCTUnwrap(endpoint.body)
+        let decoded = try JSONCoding.decoder.decode(UpdateSprintRequest.self, from: body)
+        XCTAssertEqual(decoded.name, "Sprint 24 — Release Readiness")
+        XCTAssertEqual(decoded.status, .completed)
+        XCTAssertEqual(decoded.capacity, 34)
+        XCTAssertEqual(decoded.rolloverUncompletedTo, "next_sprint")
+    }
 }
 

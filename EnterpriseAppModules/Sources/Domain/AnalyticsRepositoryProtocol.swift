@@ -17,7 +17,22 @@ public protocol AnalyticsRepositoryProtocol: Sendable {
     /// Raw CSV bytes for sharing/export.
     func exportBurndownCSV(projectId: UUID, startDate: Date?, endDate: Date?) async throws -> Data
 
-    // Sprints (for Sprint Velocity)
+    // Sprints (for Sprint Velocity & Backlog Management)
     func listSprints(projectId: UUID) async throws -> [SprintDTO]
     func createSprint(projectId: UUID, payload: CreateSprintRequest) async throws -> SprintDTO
+    func updateSprint(sprintId: UUID, payload: UpdateSprintRequest) async throws -> SprintDTO
+}
+
+public extension AnalyticsRepositoryProtocol {
+    func updateSprint(sprintId: UUID, payload: UpdateSprintRequest) async throws -> SprintDTO {
+        SprintDTO(
+            id: sprintId,
+            projectId: UUID(),
+            name: payload.name ?? "Sprint",
+            startDate: payload.startDate ?? Date(),
+            endDate: payload.endDate ?? Date(),
+            status: payload.status ?? .planned,
+            capacity: payload.capacity
+        )
+    }
 }

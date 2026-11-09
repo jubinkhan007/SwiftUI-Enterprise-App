@@ -111,8 +111,11 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
             sprints.data.rows().find { it.id == sprint }?.let { item ->
                 val currentRows = issues.data.rows()
                 val totalPoints = currentRows.sumOf { it.number("story_points")?.toDouble() ?: 0.0 }
+                val completedRows = currentRows.filter { it.text("status") == "done" }
+                val completedPoints = completedRows.sumOf { it.number("story_points")?.toDouble() ?: 0.0 }
                 val capacity = item.number("capacity")?.toDouble() ?: 0.0
                 val isOver = capacity > 0 && totalPoints > capacity
+                var rolloverTarget by rememberSaveable(sprint) { mutableStateOf("next_sprint") }
 
                 Spacer(Modifier.height(8.dp))
                 IosCard(Modifier.fillMaxWidth()) {
@@ -135,7 +138,11 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Story Points Capacity", style = AppTypography.caption1, color = AppColors.textSecondary)
+                            Text(
+                                "${completedPoints.toInt()} pts done (${completedRows.size}/${currentRows.size})",
+                                style = AppTypography.caption1,
+                                color = AppColors.textSecondary
+                            )
                             Text(
                                 if (capacity > 0) "${totalPoints.toInt()} / ${capacity.toInt()} pts" else "${totalPoints.toInt()} pts",
                                 modifier = Modifier.testTag("txt_sprint_points"),
@@ -152,6 +159,26 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
                                 color = if (isOver) AppColors.statusError else AppColors.brandPrimary,
                                 trackColor = AppColors.surfaceElevated
                             )
+                        }
+
+                        if (item.text("status") == "active") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Open tasks:", style = AppTypography.caption2, color = AppColors.textTertiary)
+                                IosFilterChip(
+                                    title = "Rollover Next",
+                                    isSelected = rolloverTarget == "next_sprint",
+                                    onClick = { rolloverTarget = "next_sprint" }
+                                )
+                                IosFilterChip(
+                                    title = "To Backlog",
+                                    isSelected = rolloverTarget == "backlog",
+                                    onClick = { rolloverTarget = "backlog" }
+                                )
+                            }
                         }
 
                         Row(
@@ -178,7 +205,14 @@ private fun BacklogScreen(vm: AppViewModel, api: ApiClient, projectId: String, o
                                 Button(
                                     onClick = {
                                         action.run {
-                                            api.request("/api/sprints/$sprint", "PATCH", json("status" to "completed"))
+                                            api.request(
+                                                "/api/sprints/$sprint",
+                                                "PATCH",
+                                                json(
+                                                    "status" to "completed",
+                                                    "rolloverUncompletedTo" to rolloverTarget
+                                                )
+                                            )
                                             vm.changed()
                                         }
                                     },
@@ -1612,6 +1646,7 @@ private fun CreateRuleDialog(
     var name by remember { mutableStateOf("") }
     var trigger by remember { mutableStateOf("task.status_changed") }
     var triggerToStatusId by remember { mutableStateOf("") }
+    var conditionPreset by remember { mutableStateOf("any") }
     var actionType by remember { mutableStateOf("setPriority") }
     var actionPriority by remember { mutableStateOf("medium") }
     var actionStatusId by remember { mutableStateOf(statuses.firstOrNull()?.id ?: "") }
@@ -1639,6 +1674,12 @@ private fun CreateRuleDialog(
     val triggerConfigJson = if (trigger == "task.status_changed" && triggerToStatusId.isNotBlank()) {
         json("toStatusId" to triggerToStatusId).toString()
     } else null
+
+    val conditionsJson = if (trigger == "sprint.completed") null else when (conditionPreset) {
+        "only_bugs" -> "[{\"field\":\"taskType\",\"op\":\"equals\",\"value\":\"bug\"}]"
+        "only_critical" -> "[{\"field\":\"priority\",\"op\":\"equals\",\"value\":\"critical\"}]"
+        else -> null
+    }
 
     val actionsJson = when (actionType) {
         "setPriority" -> "[{\"type\":\"setPriority\",\"value\":\"$actionPriority\"}]"
@@ -1670,6 +1711,33 @@ private fun CreateRuleDialog(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 450.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Text("Quick Rule Presets", style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold), color = AppColors.textSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    IosFilterChip("Sprint Rollover", false, onClick = {
+                        name = "Rollover Unfinished Sprint Tasks"
+                        trigger = "sprint.completed"
+                        conditionPreset = "any"
+                        actionType = "moveUncompletedToNextSprint"
+                    })
+                    IosFilterChip("Escalate Bugs", false, onClick = {
+                        name = "Auto-Escalate New Bugs"
+                        trigger = "task.created"
+                        conditionPreset = "only_bugs"
+                        actionType = "setPriority"
+                        actionPriority = "high"
+                    })
+                    IosFilterChip("Tag Critical Urgent", false, onClick = {
+                        name = "Tag Critical Priority Urgent"
+                        trigger = "task.priority_changed"
+                        conditionPreset = "only_critical"
+                        actionType = "addLabel"
+                        actionLabel = "urgent"
+                    })
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -1687,6 +1755,15 @@ private fun CreateRuleDialog(
                             onClick = { trigger = tKey },
                             modifier = Modifier.testTag("chip_trigger_$tKey")
                         )
+                    }
+                }
+
+                if (trigger != "sprint.completed") {
+                    Text("If Condition (optional)", style = AppTypography.caption2, color = AppColors.textSecondary)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IosFilterChip("Any Task", conditionPreset == "any", onClick = { conditionPreset = "any" })
+                        IosFilterChip("Only Bugs", conditionPreset == "only_bugs", onClick = { conditionPreset = "only_bugs" })
+                        IosFilterChip("Only Critical", conditionPreset == "only_critical", onClick = { conditionPreset = "only_critical" })
                     }
                 }
 
@@ -1775,6 +1852,7 @@ private fun CreateRuleDialog(
                                 "isEnabled" to true,
                                 "triggerType" to trigger,
                                 "triggerConfigJson" to triggerConfigJson,
+                                "conditionsJson" to conditionsJson,
                                 "actionsJson" to actionsJson
                             )
                         )

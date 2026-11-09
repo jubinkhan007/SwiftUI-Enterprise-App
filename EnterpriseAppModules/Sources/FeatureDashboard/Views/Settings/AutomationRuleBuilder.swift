@@ -47,6 +47,36 @@ public struct AutomationRuleBuilder: View {
         }
     }
 
+    public enum ConditionPreset: String, CaseIterable, Identifiable {
+        case any = "any"
+        case onlyBugs = "only_bugs"
+        case onlyCritical = "only_critical"
+        case onlyStories = "only_stories"
+
+        public var id: String { rawValue }
+        public var title: String {
+            switch self {
+            case .any: return "Any Matching Task"
+            case .onlyBugs: return "Only Bug Issues (taskType == bug)"
+            case .onlyCritical: return "Only Critical Priority (priority == critical)"
+            case .onlyStories: return "Only User Stories (taskType == story)"
+            }
+        }
+
+        public var json: String? {
+            switch self {
+            case .any:
+                return nil
+            case .onlyBugs:
+                return #"[{"field":"taskType","op":"equals","value":"bug"}]"#
+            case .onlyCritical:
+                return #"[{"field":"priority","op":"equals","value":"critical"}]"#
+            case .onlyStories:
+                return #"[{"field":"taskType","op":"equals","value":"story"}]"#
+            }
+        }
+    }
+
     private let statuses: [WorkflowStatusDTO]
     private let onCreate: (CreateAutomationRuleRequest) -> Void
 
@@ -54,6 +84,7 @@ public struct AutomationRuleBuilder: View {
     @State private var isEnabled: Bool = true
     @State private var trigger: Trigger = .statusChanged
     @State private var triggerToStatusId: UUID? = nil
+    @State private var conditionPreset: ConditionPreset = .any
 
     @State private var actionType: ActionType = .setPriority
     @State private var actionStatusId: UUID? = nil
@@ -69,12 +100,69 @@ public struct AutomationRuleBuilder: View {
     public var body: some View {
         NavigationStack {
             Form {
+                Section("Quick Rule Presets") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            Button {
+                                name = "Rollover Unfinished Sprint Tasks"
+                                trigger = .sprintCompleted
+                                conditionPreset = .any
+                                actionType = .moveUncompletedToNextSprint
+                            } label: {
+                                Label("Sprint Rollover", systemImage: "arrow.right.circle.fill")
+                                    .appFont(AppTypography.caption1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(AppColors.brandPrimary.opacity(0.14))
+                                    .foregroundColor(AppColors.brandPrimary)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                name = "Auto-Escalate New Bugs"
+                                trigger = .taskCreated
+                                conditionPreset = .onlyBugs
+                                actionType = .setPriority
+                                actionPriority = .high
+                            } label: {
+                                Label("Escalate Bugs", systemImage: "ladybug.fill")
+                                    .appFont(AppTypography.caption1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(AppColors.statusWarning.opacity(0.14))
+                                    .foregroundColor(AppColors.statusWarning)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                name = "Tag Critical Priority Urgent"
+                                trigger = .priorityChanged
+                                conditionPreset = .onlyCritical
+                                actionType = .addLabel
+                                actionLabel = "urgent"
+                            } label: {
+                                Label("Tag Critical Urgent", systemImage: "tag.fill")
+                                    .appFont(AppTypography.caption1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(AppColors.statusError.opacity(0.14))
+                                    .foregroundColor(AppColors.statusError)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
                 Section("Rule") {
                     TextField("Name", text: $name)
                     Toggle("Enabled", isOn: $isEnabled)
                 }
 
-                Section("Trigger") {
+                Section("Trigger & Condition") {
                     Picker("When", selection: $trigger) {
                         ForEach(Trigger.allCases) { t in
                             Text(t.title).tag(t)
@@ -86,6 +174,14 @@ public struct AutomationRuleBuilder: View {
                             Text("Any").tag(Optional<UUID>.none)
                             ForEach(statuses) { s in
                                 Text(s.name).tag(Optional(s.id))
+                            }
+                        }
+                    }
+
+                    if trigger != .sprintCompleted {
+                        Picker("If Condition", selection: $conditionPreset) {
+                            ForEach(ConditionPreset.allCases) { cond in
+                                Text(cond.title).tag(cond)
                             }
                         }
                     }
@@ -110,6 +206,7 @@ public struct AutomationRuleBuilder: View {
                     VStack(alignment: .leading, spacing: AppSpacing.xs) {
                         Text("triggerType: \(trigger.rawValue)")
                         if let t = triggerConfigJson { Text("triggerConfigJson: \(t)") }
+                        if let c = conditionsJson { Text("conditionsJson: \(c)") }
                         if let a = actionsJson { Text("actionsJson: \(a)") }
                     }
                     .appFont(AppTypography.caption1)
@@ -128,7 +225,7 @@ public struct AutomationRuleBuilder: View {
                             isEnabled: isEnabled,
                             triggerType: trigger.rawValue,
                             triggerConfigJson: triggerConfigJson,
-                            conditionsJson: nil,
+                            conditionsJson: conditionsJson,
                             actionsJson: actionsJson
                         ))
                         dismiss()
@@ -217,6 +314,11 @@ public struct AutomationRuleBuilder: View {
     private var triggerConfigJson: String? {
         guard trigger == .statusChanged, let to = triggerToStatusId else { return nil }
         return #"{"toStatusId":"\#(to.uuidString)"}"#
+    }
+
+    private var conditionsJson: String? {
+        guard trigger != .sprintCompleted else { return nil }
+        return conditionPreset.json
     }
 
     private var actionsJson: String? {

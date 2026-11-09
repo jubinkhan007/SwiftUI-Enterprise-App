@@ -126,6 +126,32 @@ public struct CreateSprintRequest: Codable, Sendable {
     }
 }
 
+public struct UpdateSprintRequest: Codable, Sendable {
+    public let name: String?
+    public let startDate: Date?
+    public let endDate: Date?
+    public let status: SprintStatus?
+    public let capacity: Double?
+    /// Optional rollover target when completing a sprint: `"next_sprint"` or `"backlog"`.
+    public let rolloverUncompletedTo: String?
+
+    public init(
+        name: String? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        status: SprintStatus? = nil,
+        capacity: Double? = nil,
+        rolloverUncompletedTo: String? = nil
+    ) {
+        self.name = name
+        self.startDate = startDate
+        self.endDate = endDate
+        self.status = status
+        self.capacity = capacity
+        self.rolloverUncompletedTo = rolloverUncompletedTo
+    }
+}
+
 // MARK: - Reporting Series
 
 /// Weekly throughput bucket (UTC ISO week start).
