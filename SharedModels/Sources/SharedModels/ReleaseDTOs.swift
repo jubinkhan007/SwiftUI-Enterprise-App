@@ -96,3 +96,63 @@ public struct FinalizeReleaseRequest: Codable, Sendable {
     }
 }
 
+public struct UpdateReleaseRequest: Codable, Sendable {
+    public let name: String?
+    public let description: String?
+    public let releaseDate: Date?
+    public let status: ReleaseStatus?
+    public let isLocked: Bool?
+
+    public init(
+        name: String? = nil,
+        description: String? = nil,
+        releaseDate: Date? = nil,
+        status: ReleaseStatus? = nil,
+        isLocked: Bool? = nil
+    ) {
+        self.name = name
+        self.description = description
+        self.releaseDate = releaseDate
+        self.status = status
+        self.isLocked = isLocked
+    }
+}
+
+public struct ReleaseChangelogDTO: Codable, Sendable, Equatable {
+    public let releaseId: UUID
+    public let versionName: String
+    public let generatedAt: Date
+    public let markdown: String
+    public let epics: [TaskItemDTO]
+    public let stories: [TaskItemDTO]
+    public let bugs: [TaskItemDTO]
+    public let tasks: [TaskItemDTO]
+    public let readyToShip: Bool
+    public let blockers: [String]
+
+    public init(
+        releaseId: UUID,
+        versionName: String,
+        generatedAt: Date = Date(),
+        markdown: String,
+        epics: [TaskItemDTO] = [],
+        stories: [TaskItemDTO] = [],
+        bugs: [TaskItemDTO] = [],
+        tasks: [TaskItemDTO] = [],
+        readyToShip: Bool = true,
+        blockers: [String] = []
+    ) {
+        self.releaseId = releaseId
+        self.versionName = versionName
+        self.generatedAt = generatedAt
+        self.markdown = markdown
+        self.epics = epics
+        self.stories = stories
+        self.bugs = bugs
+        self.tasks = tasks
+        self.readyToShip = readyToShip
+        self.blockers = blockers
+    }
+}
+
+

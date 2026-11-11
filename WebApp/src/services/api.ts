@@ -1728,6 +1728,55 @@ class ApiService {
     };
   }
 
+  async updateRelease(
+    releaseId: string,
+    payload: {
+      name?: string;
+      description?: string;
+      releaseDate?: string;
+      status?: ReleaseStatus;
+      isLocked?: boolean;
+    }
+  ): Promise<ReleaseDTO> {
+    const raw = await this.request<any>(`/api/releases/${releaseId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    const r = raw.data || raw;
+    return {
+      id: r.id,
+      projectId: r.project_id || r.projectId,
+      name: r.name,
+      description: r.description,
+      releaseDate: r.release_date || r.releaseDate,
+      releasedAt: r.released_at || r.releasedAt,
+      status: (r.status as ReleaseStatus) || 'unreleased',
+      isLocked: Boolean(r.is_locked ?? r.isLocked),
+      createdAt: r.created_at || r.createdAt,
+      updatedAt: r.updated_at || r.updatedAt,
+    };
+  }
+
+  async getReleaseChangelog(releaseId: string): Promise<{
+    releaseId: string;
+    versionName: string;
+    generatedAt: string;
+    markdown: string;
+    readyToShip: boolean;
+    blockers: string[];
+  }> {
+    const raw = await this.request<any>(`/api/releases/${releaseId}/changelog`);
+    const d = raw.data || raw || {};
+    return {
+      releaseId: d.release_id || d.releaseId || releaseId,
+      versionName: d.version_name || d.versionName || '',
+      generatedAt: d.generated_at || d.generatedAt || new Date().toISOString(),
+      markdown: d.markdown || '',
+      readyToShip: d.ready_to_ship ?? d.readyToShip ?? true,
+      blockers: Array.isArray(d.blockers) ? d.blockers : [],
+    };
+  }
+
   async assignTaskToRelease(
     taskId: string,
     releaseId: string | null,
@@ -2471,36 +2520,40 @@ export function buildReleaseNotesMarkdown(
   }
 
   if (progress) {
+    const gate = progress.criticalBugCount > 0 ? `BLOCKED (${progress.criticalBugCount} critical bugs)` : 'READY TO SHIP';
     lines.push('');
     lines.push('## Summary');
+    lines.push(`- Deployment Readiness Gate: **${gate}**`);
     lines.push(`- Issues: ${progress.doneIssues}/${progress.totalIssues} done`);
     lines.push(`- Points: ${progress.donePoints}/${progress.totalPoints} done`);
     lines.push(`- Bugs: ${progress.bugCount} (critical: ${progress.criticalBugCount})`);
   }
 
-  const done = issues.filter(t => t.status === 'done');
-  const remaining = issues.filter(t => t.status !== 'done');
-
   const bullet = (task: TaskItemDTO) => {
-    const key = task.issueKey ? `${task.issueKey} — ` : '';
-    return `- ${key}${task.title}`;
+    const key = task.issueKey ? `\`${task.issueKey}\` — ` : '';
+    const state = task.status === 'done' ? '✅' : '⏳';
+    const pts = task.storyPoints !== undefined ? ` (${task.storyPoints} pts)` : '';
+    return `- ${state} ${key}${task.title}${pts}`;
   };
 
-  if (done.length > 0) {
-    lines.push('');
-    lines.push('## Completed');
-    for (const t of done) {
-      lines.push(bullet(t));
-    }
-  }
+  const epics = issues.filter(t => t.taskType === 'epic');
+  const stories = issues.filter(t => t.taskType === 'story');
+  const bugs = issues.filter(t => t.taskType === 'bug');
+  const tasks = issues.filter(t => !t.taskType || t.taskType === 'task' || (t.taskType as string) === 'subtask');
 
-  if (remaining.length > 0) {
+  const appendCategory = (title: string, list: TaskItemDTO[]) => {
+    if (list.length === 0) return;
     lines.push('');
-    lines.push('## In Progress / Remaining');
-    for (const t of remaining) {
+    lines.push(`## ${title} (${list.length})`);
+    for (const t of list) {
       lines.push(bullet(t));
     }
-  }
+  };
+
+  appendCategory('Epics & Milestones', epics);
+  appendCategory('Features & User Stories', stories);
+  appendCategory('Bug Fixes & Stability', bugs);
+  appendCategory('Engineering Tasks', tasks);
 
   return lines.join('\n');
 }

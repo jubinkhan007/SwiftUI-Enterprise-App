@@ -5,19 +5,30 @@ import AppNetwork
 
 struct ReleaseDetailView: View {
     let release: ReleaseDTO
+    var onChanged: (() -> Void)? = nil
 
+    @State private var currentRelease: ReleaseDTO
     @State private var progress: ReleaseProgressDTO? = nil
     @State private var issues: [TaskItemDTO] = []
+    @State private var changelog: ReleaseChangelogDTO? = nil
     @State private var isLoading = false
     @State private var error: Error?
 
     @State private var releaseNotesMarkdown: String = ""
     @State private var showNotesPreview = false
     @State private var showShareSheet = false
+    @State private var showShipConfirmation = false
+    @State private var lockOnShip = true
     @State private var toast: ToastMessage? = nil
 
     private let apiClient: APIClientProtocol = APIClient()
     private let apiConfiguration: APIConfiguration = .current
+
+    init(release: ReleaseDTO, onChanged: (() -> Void)? = nil) {
+        self.release = release
+        self.onChanged = onChanged
+        _currentRelease = State(initialValue: release)
+    }
 
     var body: some View {
         ZStack {
@@ -41,28 +52,53 @@ struct ReleaseDetailView: View {
                 .padding()
             } else {
                 List {
+                    readinessGateSection
                     overviewSection
                     progressSection
+                    releaseActionsSection
                     issuesSection
                     notesSection
                 }
                 .scrollContentBackground(.hidden)
             }
         }
-        .navigationTitle(release.name)
+        .navigationTitle(currentRelease.name)
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .task { await refresh() }
         .refreshable { await refresh() }
+        .confirmationDialog("Ship \(currentRelease.name)?", isPresented: $showShipConfirmation, titleVisibility: .visible) {
+            Button("Ship & Lock Scope") {
+                Task { await finalizeRelease(lock: true) }
+            }
+            Button("Ship Without Locking") {
+                Task { await finalizeRelease(lock: false) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Marking this release as Released stamps the completion timestamp and publishes the changelog.")
+        }
         .sheet(isPresented: $showNotesPreview) {
             NavigationStack {
                 ZStack {
                     AppColors.backgroundPrimary.ignoresSafeArea()
                     VStack(alignment: .leading, spacing: AppSpacing.md) {
-                        Text("Release Notes (Markdown)")
-                            .appFont(AppTypography.headline)
-                            .foregroundColor(AppColors.textPrimary)
+                        HStack {
+                            Text("Release Notes (Markdown)")
+                                .appFont(AppTypography.headline)
+                                .foregroundColor(AppColors.textPrimary)
+                            Spacer()
+                            Button {
+                                #if canImport(UIKit)
+                                UIPasteboard.general.string = releaseNotesMarkdown
+                                #endif
+                                toast = ToastMessage(type: .success, title: "Copied", message: "Copied Markdown to clipboard")
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                                    .appFont(AppTypography.caption1)
+                            }
+                        }
                         TextEditor(text: $releaseNotesMarkdown)
                             .font(.system(.body, design: .monospaced))
                             .scrollContentBackground(.hidden)
@@ -97,20 +133,64 @@ struct ReleaseDetailView: View {
         .toast($toast)
     }
 
+    private var readinessGateSection: some View {
+        Section {
+            let criticalCount = progress?.criticalBugCount ?? 0
+            let blockers = changelog?.blockers ?? (criticalCount > 0 ? ["\(criticalCount) unresolved critical bug(s) in scope."] : [])
+            let isReady = blockers.isEmpty
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: isReady ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                        .foregroundColor(isReady ? AppColors.statusSuccess : AppColors.statusError)
+                    Text(isReady ? "Deployment Gate: Ready to Ship" : "Deployment Gate: Blocked")
+                        .appFont(AppTypography.subheadline)
+                        .foregroundColor(isReady ? AppColors.statusSuccess : AppColors.statusError)
+                    Spacer()
+                    if currentRelease.isLocked {
+                        Label("Scope Locked", systemImage: "lock.fill")
+                            .appFont(AppTypography.caption2)
+                            .foregroundColor(AppColors.statusWarning)
+                    }
+                }
+                if !blockers.isEmpty {
+                    ForEach(blockers, id: \.self) { blocker in
+                        Text("• \(blocker)")
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.statusError)
+                    }
+                } else {
+                    Text("No open critical bugs or release gate blockers detected.")
+                        .appFont(AppTypography.caption2)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Release Readiness")
+        }
+    }
+
     private var overviewSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                if let date = release.releaseDate {
-                    Text("Planned: \(date.formatted(date: .abbreviated, time: .omitted))")
+                HStack {
+                    Text("Status: \(currentRelease.status.rawValue.capitalized)")
                         .appFont(AppTypography.caption1)
-                        .foregroundColor(AppColors.textSecondary)
+                        .foregroundColor(AppColors.brandPrimary)
+                    Spacer()
+                    if let date = currentRelease.releaseDate {
+                        Text("Planned: \(date.formatted(date: .abbreviated, time: .omitted))")
+                            .appFont(AppTypography.caption1)
+                            .foregroundColor(AppColors.textSecondary)
+                    }
                 }
-                if release.status == .released, let releasedAt = release.releasedAt {
+                if currentRelease.status == .released, let releasedAt = currentRelease.releasedAt {
                     Text("Released: \(releasedAt.formatted(date: .abbreviated, time: .shortened))")
                         .appFont(AppTypography.caption1)
-                        .foregroundColor(AppColors.textSecondary)
+                        .foregroundColor(AppColors.statusSuccess)
                 }
-                if let desc = release.description, !desc.isEmpty {
+                if let desc = currentRelease.description, !desc.isEmpty {
                     Text(desc)
                         .appFont(AppTypography.body)
                         .foregroundColor(AppColors.textPrimary)
@@ -119,6 +199,31 @@ struct ReleaseDetailView: View {
             .padding(.vertical, 6)
         } header: {
             Text("Overview")
+        }
+    }
+
+    private var releaseActionsSection: some View {
+        Section {
+            if currentRelease.status == .unreleased {
+                Button {
+                    showShipConfirmation = true
+                } label: {
+                    Label("Ship / Finalize Version", systemImage: "paperplane.fill")
+                        .foregroundColor(AppColors.statusSuccess)
+                }
+            }
+
+            Button {
+                Task { await toggleLock() }
+            } label: {
+                Label(
+                    currentRelease.isLocked ? "Unlock Release Scope" : "Lock Release Scope",
+                    systemImage: currentRelease.isLocked ? "lock.open" : "lock.fill"
+                )
+                .foregroundColor(AppColors.brandPrimary)
+            }
+        } header: {
+            Text("Version Controls")
         }
     }
 
@@ -194,13 +299,31 @@ struct ReleaseDetailView: View {
 
     private var notesSection: some View {
         Section {
+            if let changelog {
+                HStack(spacing: 12) {
+                    Label("\(changelog.epics.count) Epics", systemImage: "flag.fill")
+                        .appFont(AppTypography.caption2)
+                        .foregroundColor(AppColors.brandPrimary)
+                    Label("\(changelog.stories.count) Stories", systemImage: "sparkles")
+                        .appFont(AppTypography.caption2)
+                        .foregroundColor(AppColors.statusSuccess)
+                    Label("\(changelog.bugs.count) Bugs", systemImage: "ladybug.fill")
+                        .appFont(AppTypography.caption2)
+                        .foregroundColor(AppColors.statusError)
+                    Label("\(changelog.tasks.count) Tasks", systemImage: "checkmark.circle")
+                        .appFont(AppTypography.caption2)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+                .padding(.vertical, 2)
+            }
+
             Button {
-                releaseNotesMarkdown = buildReleaseNotesMarkdown(release: release, progress: progress, issues: issues)
+                releaseNotesMarkdown = changelog?.markdown ?? buildReleaseNotesMarkdown(release: currentRelease, progress: progress, issues: issues)
                 showNotesPreview = true
             } label: {
                 HStack {
                     Image(systemName: "doc.text")
-                    Text("Generate Release Notes")
+                    Text("Generate Categorized Release Notes")
                     Spacer()
                     Image(systemName: "chevron.right")
                         .foregroundColor(AppColors.textTertiary)
@@ -208,15 +331,14 @@ struct ReleaseDetailView: View {
                 .appFont(AppTypography.subheadline)
                 .foregroundColor(AppColors.brandPrimary)
             }
-            .disabled(issues.isEmpty)
 
             if issues.isEmpty {
-                Text("Link issues to this release (Affected Version) to generate notes.")
+                Text("Link issues to this release (Affected Version) to populate issue categories.")
                     .appFont(AppTypography.caption2)
                     .foregroundColor(AppColors.textTertiary)
             }
         } header: {
-            Text("Release Notes")
+            Text("Release Notes & Changelog")
         }
     }
 
@@ -229,24 +351,67 @@ struct ReleaseDetailView: View {
         do {
             async let p: ReleaseProgressDTO? = try fetchProgress()
             async let i: [TaskItemDTO] = try fetchIssues()
-            let (progress, issues) = try await (p, i)
+            async let c: ReleaseChangelogDTO? = try fetchChangelog()
+            let (progress, issues, changelog) = try await (p, i, c)
             self.progress = progress
             self.issues = issues
+            self.changelog = changelog
         } catch {
             self.error = error
         }
     }
 
+    private func finalizeRelease(lock: Bool) async {
+        do {
+            let endpoint = ReleaseEndpoint.finalize(releaseId: currentRelease.id, lock: lock, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<ReleaseDTO>.self)
+            if let updated = response.data {
+                currentRelease = updated
+            }
+            toast = ToastMessage(type: .success, title: "Shipped", message: "Shipped \(currentRelease.name)")
+            onChanged?()
+            await refresh()
+        } catch {
+            toast = ToastMessage(type: .error, title: "Error", message: error.localizedDescription)
+        }
+    }
+
+    private func toggleLock() async {
+        do {
+            let payload = UpdateReleaseRequest(isLocked: !currentRelease.isLocked)
+            let endpoint = ReleaseEndpoint.update(releaseId: currentRelease.id, payload: payload, configuration: apiConfiguration)
+            let response = try await apiClient.request(endpoint, responseType: APIResponse<ReleaseDTO>.self)
+            if let updated = response.data {
+                currentRelease = updated
+            }
+            toast = ToastMessage(
+                type: .success,
+                title: currentRelease.isLocked ? "Locked" : "Unlocked",
+                message: currentRelease.isLocked ? "Release scope locked" : "Release scope unlocked"
+            )
+            onChanged?()
+            await refresh()
+        } catch {
+            toast = ToastMessage(type: .error, title: "Error", message: error.localizedDescription)
+        }
+    }
+
     private func fetchProgress() async throws -> ReleaseProgressDTO? {
-        let endpoint = ReleaseEndpoint.progress(releaseId: release.id, configuration: apiConfiguration)
+        let endpoint = ReleaseEndpoint.progress(releaseId: currentRelease.id, configuration: apiConfiguration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<ReleaseProgressDTO>.self)
         return response.data
     }
 
     private func fetchIssues() async throws -> [TaskItemDTO] {
-        let endpoint = ReleaseEndpoint.issues(releaseId: release.id, configuration: apiConfiguration)
+        let endpoint = ReleaseEndpoint.issues(releaseId: currentRelease.id, configuration: apiConfiguration)
         let response = try await apiClient.request(endpoint, responseType: APIResponse<[TaskItemDTO]>.self)
         return response.data ?? []
+    }
+
+    private func fetchChangelog() async throws -> ReleaseChangelogDTO? {
+        let endpoint = ReleaseEndpoint.changelog(releaseId: currentRelease.id, configuration: apiConfiguration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<ReleaseChangelogDTO>.self)
+        return response.data
     }
 
     private func buildReleaseNotesMarkdown(release: ReleaseDTO, progress: ReleaseProgressDTO?, issues: [TaskItemDTO]) -> String {

@@ -5,6 +5,7 @@ import AppNetwork
 
 public struct ReleaseManagementView: View {
     @StateObject private var viewModel: ReleaseManagementViewModel
+    @State private var showCreateSheet = false
 
     public init(projectId: UUID) {
         _viewModel = StateObject(wrappedValue: ReleaseManagementViewModel(projectId: projectId))
@@ -32,18 +33,63 @@ public struct ReleaseManagementView: View {
                 .padding()
             } else {
                 List {
-                    if viewModel.releases.isEmpty {
-                        Text("No releases yet.")
-                            .foregroundColor(AppColors.textSecondary)
-                    } else {
-                        ForEach(viewModel.releases) { release in
-                            NavigationLink {
-                                ReleaseDetailView(release: release)
-                            } label: {
-                                ReleaseRow(
-                                    release: release,
-                                    progress: viewModel.progressByReleaseId[release.id]
-                                )
+                    Section {
+                        Picker("Status", selection: $viewModel.statusFilter) {
+                            Text("All (\(viewModel.releases.count))").tag(ReleaseStatus?.none)
+                            ForEach(ReleaseStatus.allCases, id: \.self) { status in
+                                Text("\(status.rawValue.capitalized)").tag(ReleaseStatus?.some(status))
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    Section {
+                        if viewModel.filteredReleases.isEmpty {
+                            Text("No releases found.")
+                                .foregroundColor(AppColors.textSecondary)
+                        } else {
+                            ForEach(viewModel.filteredReleases) { release in
+                                NavigationLink {
+                                    ReleaseDetailView(release: release, onChanged: {
+                                        Task { await viewModel.refresh() }
+                                    })
+                                } label: {
+                                    ReleaseRow(
+                                        release: release,
+                                        progress: viewModel.progressByReleaseId[release.id]
+                                    )
+                                }
+                                .contextMenu {
+                                    if release.status == .unreleased {
+                                        Button {
+                                            Task { try? await viewModel.finalizeRelease(releaseId: release.id, lock: true) }
+                                        } label: {
+                                            Label("Ship & Lock Version", systemImage: "paperplane.fill")
+                                        }
+                                    }
+                                    Button {
+                                        Task {
+                                            try? await viewModel.updateRelease(
+                                                releaseId: release.id,
+                                                payload: UpdateReleaseRequest(isLocked: !release.isLocked)
+                                            )
+                                        }
+                                    } label: {
+                                        Label(release.isLocked ? "Unlock Scope" : "Lock Scope", systemImage: release.isLocked ? "lock.open" : "lock.fill")
+                                    }
+                                    if release.status != .archived {
+                                        Button(role: .destructive) {
+                                            Task {
+                                                try? await viewModel.updateRelease(
+                                                    releaseId: release.id,
+                                                    payload: UpdateReleaseRequest(status: .archived)
+                                                )
+                                            }
+                                        } label: {
+                                            Label("Archive Release", systemImage: "archivebox")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -55,8 +101,71 @@ public struct ReleaseManagementView: View {
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showCreateSheet = true
+                } label: {
+                    Label("New Release", systemImage: "plus.circle.fill")
+                }
+            }
+        }
+        .sheet(isPresented: $showCreateSheet) {
+            CreateReleaseSheet(viewModel: viewModel)
+        }
         .task { await viewModel.refresh() }
         .refreshable { await viewModel.refresh() }
+    }
+}
+
+private struct CreateReleaseSheet: View {
+    @ObservedObject var viewModel: ReleaseManagementViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String = ""
+    @State private var descriptionText: String = ""
+    @State private var hasTargetDate: Bool = true
+    @State private var releaseDate: Date = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
+    @State private var isSubmitting = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Version Details") {
+                    TextField("Version Name (e.g. v2.4.0)", text: $name)
+                    TextField("Release Goals & Scope", text: $descriptionText, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+
+                Section("Schedule") {
+                    Toggle("Set Target Release Date", isOn: $hasTargetDate)
+                    if hasTargetDate {
+                        DatePicker("Target Date", selection: $releaseDate, displayedComponents: .date)
+                    }
+                }
+            }
+            .navigationTitle("New Release")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSubmitting ? "Creating…" : "Create") {
+                        isSubmitting = true
+                        Task {
+                            try? await viewModel.createRelease(
+                                name: name,
+                                description: descriptionText.isEmpty ? nil : descriptionText,
+                                releaseDate: hasTargetDate ? releaseDate : nil
+                            )
+                            isSubmitting = false
+                            dismiss()
+                        }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+                }
+            }
+        }
     }
 }
 

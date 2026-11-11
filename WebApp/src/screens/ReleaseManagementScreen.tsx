@@ -57,6 +57,11 @@ export const ReleaseManagementScreen: React.FC<ReleaseManagementScreenProps> = (
   // Release Detail & Notes Modal
   const [activeRelease, setActiveRelease] = useState<ReleaseDTO | null>(null);
   const [activeReleaseIssues, setActiveReleaseIssues] = useState<TaskItemDTO[]>([]);
+  const [serverChangelog, setServerChangelog] = useState<{
+    markdown: string;
+    readyToShip: boolean;
+    blockers: string[];
+  } | null>(null);
   const [isLoadingIssues, setIsLoadingIssues] = useState<boolean>(false);
   const [detailTab, setDetailTab] = useState<'overview' | 'issues' | 'notes' | 'ship'>('overview');
   const [copiedNotes, setCopiedNotes] = useState<boolean>(false);
@@ -130,14 +135,41 @@ export const ReleaseManagementScreen: React.FC<ReleaseManagementScreenProps> = (
     setActiveRelease(release);
     setDetailTab('overview');
     setIsLoadingIssues(true);
+    setServerChangelog(null);
     try {
-      const issues = await api.getReleaseIssues(release.id);
+      const [issues, cl] = await Promise.all([
+        api.getReleaseIssues(release.id),
+        api.getReleaseChangelog(release.id).catch(() => null),
+      ]);
       setActiveReleaseIssues(issues);
+      if (cl) {
+        setServerChangelog(cl);
+      }
     } catch (err) {
       console.error('Failed to load release issues:', err);
       setActiveReleaseIssues([]);
     } finally {
       setIsLoadingIssues(false);
+    }
+  };
+
+  const handleToggleLock = async (release: ReleaseDTO) => {
+    try {
+      const updated = await api.updateRelease(release.id, { isLocked: !release.isLocked });
+      setActiveRelease(updated);
+      await loadReleases(selectedProjectId);
+    } catch (err: any) {
+      alert(`Failed to update lock status: ${err.message || err}`);
+    }
+  };
+
+  const handleArchiveRelease = async (release: ReleaseDTO) => {
+    try {
+      const updated = await api.updateRelease(release.id, { status: 'archived' });
+      setActiveRelease(updated);
+      await loadReleases(selectedProjectId);
+    } catch (err: any) {
+      alert(`Failed to archive release: ${err.message || err}`);
     }
   };
 
@@ -180,7 +212,7 @@ export const ReleaseManagementScreen: React.FC<ReleaseManagementScreenProps> = (
   const handleCopyNotes = () => {
     if (!activeRelease) return;
     const progress = progressMap[activeRelease.id] || null;
-    const md = buildReleaseNotesMarkdown(activeRelease, progress, activeReleaseIssues);
+    const md = serverChangelog?.markdown || buildReleaseNotesMarkdown(activeRelease, progress, activeReleaseIssues);
     navigator.clipboard.writeText(md);
     setCopiedNotes(true);
     setTimeout(() => setCopiedNotes(false), 2000);
@@ -189,7 +221,7 @@ export const ReleaseManagementScreen: React.FC<ReleaseManagementScreenProps> = (
   const handleDownloadNotes = () => {
     if (!activeRelease) return;
     const progress = progressMap[activeRelease.id] || null;
-    const md = buildReleaseNotesMarkdown(activeRelease, progress, activeReleaseIssues);
+    const md = serverChangelog?.markdown || buildReleaseNotesMarkdown(activeRelease, progress, activeReleaseIssues);
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -608,21 +640,82 @@ export const ReleaseManagementScreen: React.FC<ReleaseManagementScreenProps> = (
                 </button>
               ))}
 
-              {activeRelease.status === 'unreleased' && (
+              <div className="ml-auto flex items-center gap-2 my-auto">
                 <button
-                  onClick={() => setShowShipModal(true)}
-                  className="ml-auto my-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-md shadow-emerald-600/20"
+                  onClick={() => handleToggleLock(activeRelease)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition border border-slate-700"
                 >
-                  <Rocket className="w-3.5 h-3.5" />
-                  Ship Version
+                  <Lock className="w-3.5 h-3.5 text-amber-400" />
+                  {activeRelease.isLocked ? 'Unlock Scope' : 'Lock Scope'}
                 </button>
-              )}
+                {activeRelease.status !== 'archived' && (
+                  <button
+                    onClick={() => handleArchiveRelease(activeRelease)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition border border-slate-700"
+                  >
+                    Archive
+                  </button>
+                )}
+                {activeRelease.status === 'unreleased' && (
+                  <button
+                    onClick={() => setShowShipModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-md shadow-emerald-600/20"
+                  >
+                    <Rocket className="w-3.5 h-3.5" />
+                    Ship Version
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-6">
               {detailTab === 'overview' && (
                 <div className="space-y-6">
+                  {/* Deployment Gate Readiness Banner */}
+                  {(() => {
+                    const p = progressMap[activeRelease.id];
+                    const criticalBugs = p?.criticalBugCount ?? 0;
+                    const blockers =
+                      serverChangelog?.blockers ??
+                      (criticalBugs > 0
+                        ? [`${criticalBugs} unresolved critical bug(s) must be closed before release.`]
+                        : []);
+                    const ready = blockers.length === 0;
+                    return (
+                      <div
+                        className={`p-4 rounded-xl border flex items-start justify-between gap-4 ${
+                          ready
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : 'bg-red-500/10 border-red-500/30 text-red-300'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          {ready ? (
+                            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                          ) : (
+                            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                          )}
+                          <div>
+                            <div className="text-xs font-bold uppercase tracking-wider">
+                              {ready ? 'Deployment Gate: Ready to Ship' : 'Deployment Gate: Release Blocked'}
+                            </div>
+                            {blockers.length > 0 ? (
+                              <ul className="text-xs mt-1 space-y-0.5 list-disc list-inside text-red-200">
+                                {blockers.map((b, idx) => (
+                                  <li key={idx}>{b}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-xs text-emerald-200/80 mt-0.5">
+                                All release gate checks passed — no unresolved critical bugs in scope.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {/* Summary Metric Cards */}
                   {(() => {
                     const p = progressMap[activeRelease.id];
@@ -798,11 +891,12 @@ export const ReleaseManagementScreen: React.FC<ReleaseManagementScreenProps> = (
                   </div>
 
                   <div className="p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-200 border border-slate-800 whitespace-pre-wrap leading-relaxed shadow-inner max-h-96 overflow-y-auto">
-                    {buildReleaseNotesMarkdown(
-                      activeRelease,
-                      progressMap[activeRelease.id] || null,
-                      activeReleaseIssues
-                    )}
+                    {serverChangelog?.markdown ||
+                      buildReleaseNotesMarkdown(
+                        activeRelease,
+                        progressMap[activeRelease.id] || null,
+                        activeReleaseIssues
+                      )}
                   </div>
                 </div>
               )}

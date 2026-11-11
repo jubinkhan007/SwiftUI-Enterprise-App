@@ -675,37 +675,44 @@ fun buildAndroidReleaseNotesMarkdown(release: JsonObject, progress: JsonObject?,
         val totalPoints = progress.number("total_points")
         val bugCount = progress.number("bug_count")
         val criticalBugCount = progress.number("critical_bug_count")
+        val gate = if (criticalBugCount > 0) "BLOCKED ($criticalBugCount critical bugs)" else "READY TO SHIP"
 
         lines.add("")
         lines.add("## Summary")
+        lines.add("- Deployment Readiness Gate: **$gate**")
         lines.add("- Issues: $doneIssues/$totalIssues done")
         lines.add("- Points: $donePoints/$totalPoints done")
         lines.add("- Bugs: $bugCount (critical: $criticalBugCount)")
     }
 
-    val done = issues.filter { it.text("status") == "done" || it.text("completed_at").isNotBlank() }
-    val remaining = issues.filter { it.text("status") != "done" && it.text("completed_at").isBlank() }
-
     fun bullet(task: JsonObject): String {
-        val key = task.text("issue_key").let { if (it.isNotBlank()) "$it — " else "" }
-        return "- $key${task.text("title")}"
+        val key = task.text("issue_key").let { if (it.isNotBlank()) "`$it` — " else "" }
+        val isDone = task.text("status") == "done" || task.text("completed_at").isNotBlank()
+        val state = if (isDone) "✅" else "⏳"
+        return "- $state $key${task.text("title")}"
     }
 
-    if (done.isNotEmpty()) {
+    val epics = issues.filter { it.text("task_type") == "epic" || it.text("taskType") == "epic" }
+    val stories = issues.filter { it.text("task_type") == "story" || it.text("taskType") == "story" }
+    val bugs = issues.filter { it.text("task_type") == "bug" || it.text("taskType") == "bug" }
+    val tasks = issues.filter {
+        val tt = it.text("task_type").ifBlank { it.text("taskType") }
+        tt.isBlank() || tt == "task" || tt == "subtask"
+    }
+
+    fun appendCategory(title: String, list: List<JsonObject>) {
+        if (list.isEmpty()) return
         lines.add("")
-        lines.add("## Completed")
-        for (t in done) {
+        lines.add("## $title (${list.size})")
+        for (t in list) {
             lines.add(bullet(t))
         }
     }
 
-    if (remaining.isNotEmpty()) {
-        lines.add("")
-        lines.add("## In Progress / Remaining")
-        for (t in remaining) {
-            lines.add(bullet(t))
-        }
-    }
+    appendCategory("Epics & Milestones", epics)
+    appendCategory("Features & User Stories", stories)
+    appendCategory("Bug Fixes & Stability", bugs)
+    appendCategory("Engineering Tasks", tasks)
 
     return lines.joinToString("\n")
 }
@@ -884,6 +891,29 @@ private fun ReleasesScreen(vm: AppViewModel, api: ApiClient, projectId: String, 
                     }
 
                     val issueList = issues.data.rows()
+                    val isLockedSelected = selectedRelease?.flag("is_locked") == true || selectedRelease?.flag("isLocked") == true
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (criticalBugCount > 0) AppColors.statusError.copy(alpha = 0.12f)
+                                else AppColors.statusSuccess.copy(alpha = 0.12f)
+                            )
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (criticalBugCount > 0) "Deployment Gate: Blocked ($criticalBugCount critical bugs)"
+                            else "Deployment Gate: Ready to Ship",
+                            style = AppTypography.caption1,
+                            color = if (criticalBugCount > 0) AppColors.statusError else AppColors.statusSuccess,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
                     Spacer(Modifier.height(12.dp))
                     Row(
@@ -905,6 +935,35 @@ private fun ReleasesScreen(vm: AppViewModel, api: ApiClient, projectId: String, 
                                 title = "Ship Version",
                                 onClick = { finalize = true },
                                 modifier = Modifier.weight(1f).height(44.dp).testTag("btn_finalize_release")
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IosPill(
+                            text = if (isLockedSelected) "Unlock Scope" else "Lock Scope",
+                            selected = isLockedSelected,
+                            onClick = {
+                                action.run {
+                                    api.request("/api/releases/$selected", "PATCH", json("isLocked" to !isLockedSelected))
+                                    vm.changed()
+                                }
+                            }
+                        )
+                        if (selectedRelease?.text("status") != "archived") {
+                            IosPill(
+                                text = "Archive Version",
+                                selected = false,
+                                onClick = {
+                                    action.run {
+                                        api.request("/api/releases/$selected", "PATCH", json("status" to "archived"))
+                                        vm.changed()
+                                    }
+                                }
                             )
                         }
                     }

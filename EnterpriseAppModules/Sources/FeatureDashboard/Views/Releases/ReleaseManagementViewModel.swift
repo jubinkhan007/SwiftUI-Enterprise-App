@@ -7,8 +7,14 @@ import AppNetwork
 public final class ReleaseManagementViewModel: ObservableObject {
     @Published public private(set) var releases: [ReleaseDTO] = []
     @Published public private(set) var progressByReleaseId: [UUID: ReleaseProgressDTO] = [:]
+    @Published public var statusFilter: ReleaseStatus? = nil
     @Published public private(set) var isLoading = false
     @Published public var error: Error?
+
+    public var filteredReleases: [ReleaseDTO] {
+        guard let statusFilter else { return releases }
+        return releases.filter { $0.status == statusFilter }
+    }
 
     private let projectId: UUID
     private let apiClient: APIClientProtocol
@@ -45,6 +51,29 @@ public final class ReleaseManagementViewModel: ObservableObject {
         } catch {
             self.error = error
         }
+    }
+
+    public func createRelease(name: String, description: String?, releaseDate: Date?) async throws {
+        let payload = CreateReleaseRequest(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            description: description?.trimmingCharacters(in: .whitespacesAndNewlines),
+            releaseDate: releaseDate
+        )
+        let endpoint = ReleaseEndpoint.create(projectId: projectId, payload: payload, configuration: apiConfiguration)
+        _ = try await apiClient.request(endpoint, responseType: APIResponse<ReleaseDTO>.self)
+        await refresh()
+    }
+
+    public func updateRelease(releaseId: UUID, payload: UpdateReleaseRequest) async throws {
+        let endpoint = ReleaseEndpoint.update(releaseId: releaseId, payload: payload, configuration: apiConfiguration)
+        _ = try await apiClient.request(endpoint, responseType: APIResponse<ReleaseDTO>.self)
+        await refresh()
+    }
+
+    public func finalizeRelease(releaseId: UUID, lock: Bool = true) async throws {
+        let endpoint = ReleaseEndpoint.finalize(releaseId: releaseId, lock: lock, configuration: apiConfiguration)
+        _ = try await apiClient.request(endpoint, responseType: APIResponse<ReleaseDTO>.self)
+        await refresh()
     }
 
     private func loadProgress(for releases: [ReleaseDTO]) async {

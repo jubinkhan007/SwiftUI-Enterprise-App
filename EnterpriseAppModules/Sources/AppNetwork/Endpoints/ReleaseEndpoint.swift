@@ -4,9 +4,11 @@ import SharedModels
 public enum ReleaseEndpoint {
     case list(projectId: UUID, configuration: APIConfiguration)
     case create(projectId: UUID, payload: CreateReleaseRequest, configuration: APIConfiguration)
+    case update(releaseId: UUID, payload: UpdateReleaseRequest, configuration: APIConfiguration)
     case progress(releaseId: UUID, configuration: APIConfiguration)
     case finalize(releaseId: UUID, lock: Bool?, configuration: APIConfiguration)
     case issues(releaseId: UUID, configuration: APIConfiguration)
+    case changelog(releaseId: UUID, configuration: APIConfiguration)
 }
 
 extension ReleaseEndpoint: APIEndpoint {
@@ -14,7 +16,7 @@ extension ReleaseEndpoint: APIEndpoint {
 
     private var configuration: APIConfiguration {
         switch self {
-        case .list(_, let c), .create(_, _, let c), .progress(_, let c), .finalize(_, _, let c), .issues(_, let c):
+        case .list(_, let c), .create(_, _, let c), .update(_, _, let c), .progress(_, let c), .finalize(_, _, let c), .issues(_, let c), .changelog(_, let c):
             return c
         }
     }
@@ -23,21 +25,27 @@ extension ReleaseEndpoint: APIEndpoint {
         switch self {
         case .list(let projectId, _), .create(let projectId, _, _):
             return "/api/projects/\(projectId.uuidString)/releases"
+        case .update(let releaseId, _, _):
+            return "/api/releases/\(releaseId.uuidString)"
         case .progress(let releaseId, _):
             return "/api/releases/\(releaseId.uuidString)/progress"
         case .finalize(let releaseId, _, _):
             return "/api/releases/\(releaseId.uuidString)/release"
         case .issues(let releaseId, _):
             return "/api/releases/\(releaseId.uuidString)/issues"
+        case .changelog(let releaseId, _):
+            return "/api/releases/\(releaseId.uuidString)/changelog"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
-        case .list, .progress, .issues:
+        case .list, .progress, .issues, .changelog:
             return .get
         case .create, .finalize:
             return .post
+        case .update:
+            return .patch
         }
     }
 
@@ -51,6 +59,8 @@ extension ReleaseEndpoint: APIEndpoint {
     public var body: Data? {
         switch self {
         case .create(_, let payload, _):
+            return try? JSONCoding.encoder.encode(payload)
+        case .update(_, let payload, _):
             return try? JSONCoding.encoder.encode(payload)
         case .finalize(_, let lock, _):
             return try? JSONCoding.encoder.encode(FinalizeReleaseRequest(lock: lock))

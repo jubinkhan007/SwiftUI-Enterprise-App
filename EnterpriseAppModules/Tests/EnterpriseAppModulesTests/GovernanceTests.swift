@@ -214,5 +214,27 @@ final class GovernanceTests: XCTestCase {
         XCTAssertEqual(decoded.capacity, 34)
         XCTAssertEqual(decoded.rolloverUncompletedTo, "next_sprint")
     }
+
+    func testReleaseUpdateAndChangelogEndpoints() throws {
+        let releaseId = UUID()
+        let payload = UpdateReleaseRequest(
+            name: "v1.1.0",
+            description: "Enterprise parity release",
+            status: .released,
+            isLocked: true
+        )
+        let updateEndpoint = ReleaseEndpoint.update(releaseId: releaseId, payload: payload, configuration: .current)
+        XCTAssertEqual(updateEndpoint.path, "/api/releases/\(releaseId.uuidString)")
+        XCTAssertEqual(updateEndpoint.method, HTTPMethod.patch)
+        let body = try XCTUnwrap(updateEndpoint.body)
+        let decoded = try JSONCoding.decoder.decode(UpdateReleaseRequest.self, from: body)
+        XCTAssertEqual(decoded.name, "v1.1.0")
+        XCTAssertEqual(decoded.status, .released)
+        XCTAssertEqual(decoded.isLocked, true)
+
+        let changelogEndpoint = ReleaseEndpoint.changelog(releaseId: releaseId, configuration: .current)
+        XCTAssertEqual(changelogEndpoint.path, "/api/releases/\(releaseId.uuidString)/changelog")
+        XCTAssertEqual(changelogEndpoint.method, HTTPMethod.get)
+    }
 }
 
