@@ -8,7 +8,58 @@ struct APIKeyController: RouteCollection {
         let keys = routes.grouped("api-keys").grouped(OrgTenantMiddleware())
         keys.get(use: list)
         keys.post(use: create)
+        keys.post(":keyID", "rotate", use: rotate)
         keys.delete(":keyID", use: revoke)
+    }
+
+    // MARK: - POST /api/api-keys/:keyID/rotate
+    @Sendable
+    func rotate(req: Request) async throws -> APIResponse<CreateAPIKeyResponse> {
+        let ctx = try req.orgContext
+        guard let oldId = req.parameters.get("keyID", as: UUID.self) else { throw Abort(.badRequest) }
+
+        guard let oldModel = try await APIKeyModel.query(on: req.db)
+            .filter(\.$id == oldId)
+            .filter(\.$organization.$id == ctx.orgId)
+            .first()
+        else {
+            throw Abort(.notFound)
+        }
+
+        oldModel.isRevoked = true
+        try await oldModel.save(on: req.db)
+
+        let newKeyId = UUID()
+        let rawSecret = [UInt8].random(count: 32).hex
+        let fullRawKey = "eap_\(newKeyId.uuidString).\(rawSecret)"
+        let hashedSecret = try Bcrypt.hash(rawSecret)
+        let prefix = String(rawSecret.prefix(8))
+
+        let newModel = APIKeyModel(
+            id: newKeyId,
+            orgId: ctx.orgId,
+            createdById: ctx.userId,
+            name: oldModel.name,
+            keyHash: hashedSecret,
+            keyPrefix: prefix,
+            scopes: oldModel.scopes,
+            expiresAt: oldModel.expiresAt
+        )
+        try await newModel.save(on: req.db)
+
+        let dto = APIKeyDTO(
+            id: newKeyId,
+            orgId: newModel.$organization.id,
+            userId: newModel.$createdBy.id,
+            name: newModel.name,
+            keyPrefix: newModel.keyPrefix,
+            scopes: newModel.scopes.compactMap { APIKeyScope(rawValue: $0) },
+            lastUsedAt: newModel.lastUsedAt,
+            expiresAt: newModel.expiresAt,
+            isRevoked: newModel.isRevoked,
+            createdAt: newModel.createdAt
+        )
+        return .success(CreateAPIKeyResponse(rawKey: fullRawKey, apiKey: dto))
     }
 
     // MARK: - GET /api/api-keys

@@ -4,6 +4,7 @@ import SharedModels
 public enum IntegrationEndpoint {
     case getAPIKeys(configuration: APIConfiguration)
     case createAPIKey(CreateAPIKeyRequest, configuration: APIConfiguration)
+    case rotateAPIKey(UUID, configuration: APIConfiguration)
     case revokeAPIKey(UUID, configuration: APIConfiguration)
     
     case getWebhooks(configuration: APIConfiguration)
@@ -20,7 +21,7 @@ extension IntegrationEndpoint: APIEndpoint {
     
     private var configuration: APIConfiguration {
         switch self {
-        case .getAPIKeys(let c), .createAPIKey(_, let c), .revokeAPIKey(_, let c),
+        case .getAPIKeys(let c), .createAPIKey(_, let c), .rotateAPIKey(_, let c), .revokeAPIKey(_, let c),
              .getWebhooks(let c), .createWebhook(_, let c), .updateWebhook(_, _, let c),
              .deleteWebhook(_, let c), .testWebhook(_, let c):
             return c
@@ -31,6 +32,8 @@ extension IntegrationEndpoint: APIEndpoint {
         switch self {
         case .getAPIKeys, .createAPIKey:
             return "/api/api-keys"
+        case .rotateAPIKey(let id, _):
+            return "/api/api-keys/\(id.uuidString)/rotate"
         case .revokeAPIKey(let id, _):
             return "/api/api-keys/\(id.uuidString)"
         case .getWebhooks, .createWebhook:
@@ -45,7 +48,7 @@ extension IntegrationEndpoint: APIEndpoint {
     public var method: HTTPMethod {
         switch self {
         case .getAPIKeys, .getWebhooks: return .get
-        case .createAPIKey, .createWebhook, .testWebhook: return .post
+        case .createAPIKey, .rotateAPIKey, .createWebhook, .testWebhook: return .post
         case .updateWebhook: return .patch
         case .revokeAPIKey, .deleteWebhook: return .delete
         }

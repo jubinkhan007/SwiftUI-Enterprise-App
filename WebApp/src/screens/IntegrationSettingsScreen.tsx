@@ -45,6 +45,8 @@ const AVAILABLE_EVENTS = [
   { id: 'task.deleted', label: 'Task Deleted', desc: 'Fires when a task is permanently removed' },
   { id: 'comment.created', label: 'Comment Created', desc: 'Fires when comments or activity items are posted' },
   { id: 'sprint.closed', label: 'Sprint Closed', desc: 'Fires when an agile sprint is finalized' },
+  { id: 'release.shipped', label: 'Release Shipped', desc: 'Fires when a version milestone is finalized and released' },
+  { id: 'meeting.completed', label: 'Meeting Summarized', desc: 'Fires when AI meeting notes and action items are ready' },
 ];
 
 export const IntegrationSettingsScreen: React.FC<IntegrationSettingsScreenProps> = ({ onNavigate: _onNavigate }) => {
@@ -69,7 +71,13 @@ export const IntegrationSettingsScreen: React.FC<IntegrationSettingsScreenProps>
   const [newWebhookSecret, setNewWebhookSecret] = useState('');
   const [newWebhookEvents, setNewWebhookEvents] = useState<string[]>(['task.created', 'task.updated']);
   const [testingWebhookId, setTestingWebhookId] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    id: string;
+    success: boolean;
+    message: string;
+    signatureHeader?: string;
+    samplePayloadJson?: string;
+  } | null>(null);
   const [deletingWebhookId, setDeletingWebhookId] = useState<string | null>(null);
 
   const fetchData = async () => {
@@ -145,6 +153,19 @@ export const IntegrationSettingsScreen: React.FC<IntegrationSettingsScreenProps>
     }
   };
 
+  const handleRotateKey = async (id: string) => {
+    setRevokingKeyId(id);
+    try {
+      const res = await api.rotateApiKey(id);
+      setApiKeys(prev => [res.apiKey, ...prev.filter(k => k.id !== id)]);
+      setCreatedSecretToken(res.rawKey);
+    } catch (err: any) {
+      alert(`Failed to rotate key: ${err.message || err}`);
+    } finally {
+      setRevokingKeyId(null);
+    }
+  };
+
   const handleCopySecret = () => {
     if (!createdSecretToken) return;
     navigator.clipboard.writeText(createdSecretToken);
@@ -212,7 +233,9 @@ export const IntegrationSettingsScreen: React.FC<IntegrationSettingsScreenProps>
         success: res.delivered,
         message: res.delivered 
           ? `Ping delivered successfully (HTTP ${res.statusCode || 200})` 
-          : `Delivery failed with status ${res.statusCode || 'unreachable'}`
+          : `Delivery failed with status ${res.statusCode || 'unreachable'}`,
+        signatureHeader: res.signatureHeader,
+        samplePayloadJson: res.samplePayloadJson,
       });
     } catch (err: any) {
       setTestResult({
@@ -417,6 +440,16 @@ export const IntegrationSettingsScreen: React.FC<IntegrationSettingsScreenProps>
 
                     <div className="flex items-center gap-2 self-end md:self-center">
                       <button
+                        onClick={() => handleRotateKey(key.id)}
+                        disabled={revokingKeyId === key.id || key.isRevoked}
+                        className="px-3 py-1.5 rounded-xl border border-indigo-900/50 hover:bg-indigo-950/40 text-indigo-300 font-medium text-xs transition flex items-center gap-1.5 disabled:opacity-40"
+                        title="Rotate Key (revokes current token and generates a new secret)"
+                        id={`btn-rotate-key-${key.id}`}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Rotate
+                      </button>
+                      <button
                         onClick={() => handleRevokeKey(key.id)}
                         disabled={revokingKeyId === key.id || key.isRevoked}
                         className="px-3 py-1.5 rounded-xl border border-red-900/40 hover:bg-red-950/40 text-red-400 hover:text-red-300 font-medium text-xs transition flex items-center gap-1.5 disabled:opacity-40"
@@ -507,13 +540,25 @@ export const IntegrationSettingsScreen: React.FC<IntegrationSettingsScreenProps>
                       </div>
 
                       {testResult && testResult.id === wh.id && (
-                        <div className={`mt-2 p-2 rounded-lg text-xs flex items-center gap-2 border ${
+                        <div className={`mt-2 p-2.5 rounded-lg text-xs space-y-2 border ${
                           testResult.success
                             ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
                             : 'bg-red-950/40 border-red-800/50 text-red-300'
                         }`}>
-                          {testResult.success ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <AlertTriangle className="w-3.5 h-3.5 text-red-400" />}
-                          <span>{testResult.message}</span>
+                          <div className="flex items-center gap-2">
+                            {testResult.success ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <AlertTriangle className="w-3.5 h-3.5 text-red-400" />}
+                            <span className="font-semibold">{testResult.message}</span>
+                          </div>
+                          {testResult.signatureHeader && (
+                            <div className="text-[11px] font-mono text-slate-300 break-all">
+                              X-Webhook-Signature: <span className="text-indigo-300">{testResult.signatureHeader}</span>
+                            </div>
+                          )}
+                          {testResult.samplePayloadJson && (
+                            <pre className="p-2 rounded bg-slate-950 text-[10px] font-mono text-slate-300 overflow-x-auto border border-slate-800">
+                              {testResult.samplePayloadJson}
+                            </pre>
+                          )}
                         </div>
                       )}
                     </div>

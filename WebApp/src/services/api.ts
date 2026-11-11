@@ -1960,6 +1960,18 @@ class ApiService {
     });
   }
 
+  async rotateApiKey(keyId: string): Promise<CreateAPIKeyResponse> {
+    const raw = await this.request<any>(`/api/api-keys/${keyId}/rotate`, {
+      method: 'POST',
+    });
+    const data = raw.data || raw;
+    return {
+      rawKey: data.raw_key || data.rawKey,
+      apiKey: this.mapApiKey(data.api_key || data.apiKey),
+      id: data.id || (data.api_key || data.apiKey)?.id,
+    };
+  }
+
   private mapWebhook(w: any): WebhookSubscriptionDTO {
     return {
       id: w.id,
@@ -2004,7 +2016,7 @@ class ApiService {
     });
   }
 
-  async testWebhook(webhookId: string): Promise<WebhookTestResponse> {
+  async testWebhook(webhookId: string): Promise<WebhookTestResponse & { signatureHeader?: string; samplePayloadJson?: string }> {
     const raw = await this.request<any>(`/api/webhooks/${webhookId}/test`, {
       method: 'POST',
     });
@@ -2012,6 +2024,8 @@ class ApiService {
     return {
       delivered: data.delivered ?? true,
       statusCode: data.status_code ?? data.statusCode ?? 200,
+      signatureHeader: data.signature_header || data.signatureHeader,
+      samplePayloadJson: data.sample_payload_json || data.samplePayloadJson,
     };
   }
 

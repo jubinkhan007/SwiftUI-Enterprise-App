@@ -2100,16 +2100,33 @@ fun IntegrationsScreen(vm: AppViewModel, api: ApiClient) {
                         }
 
                         if (!isRevoked) {
-                            IconButton(
-                                onClick = {
-                                    action.run {
-                                        api.request("/api/api-keys/${key.id}", "DELETE")
-                                        vm.changed()
-                                    }
-                                },
-                                modifier = Modifier.testTag("btn_revoke_key_${key.id}")
-                            ) {
-                                Icon(Icons.Default.Delete, "Revoke key", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(
+                                    onClick = {
+                                        action.run {
+                                            val res = api.request("/api/api-keys/${key.id}/rotate", "POST")
+                                            val rotatedSecret = res.data.obj().text("rawKey", res.data.obj().text("raw_key", ""))
+                                            if (rotatedSecret.isNotBlank()) {
+                                                rawKeySecret = rotatedSecret
+                                            }
+                                            vm.changed()
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("btn_rotate_key_${key.id}")
+                                ) {
+                                    Icon(Icons.Default.Refresh, "Rotate key", tint = AppColors.brandPrimary, modifier = Modifier.size(18.dp))
+                                }
+                                IconButton(
+                                    onClick = {
+                                        action.run {
+                                            api.request("/api/api-keys/${key.id}", "DELETE")
+                                            vm.changed()
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("btn_revoke_key_${key.id}")
+                                ) {
+                                    Icon(Icons.Default.Delete, "Revoke key", tint = AppColors.statusError, modifier = Modifier.size(18.dp))
+                                }
                             }
                         }
                     }
@@ -2187,8 +2204,10 @@ fun IntegrationsScreen(vm: AppViewModel, api: ApiClient) {
                                 IconButton(
                                     onClick = {
                                         action.run {
-                                            api.request("/api/webhooks/${wh.id}/test", "POST")
-                                            testResult = wh.id to "Ping delivered (HTTP 200 OK)"
+                                            val res = api.request("/api/webhooks/${wh.id}/test", "POST")
+                                            val sig = res.data.obj().text("signatureHeader", res.data.obj().text("signature_header", ""))
+                                            val sigSuffix = if (sig.isNotBlank()) " • X-Webhook-Signature: $sig" else ""
+                                            testResult = wh.id to "Ping delivered (HTTP 200 OK)$sigSuffix"
                                         }
                                     },
                                     modifier = Modifier.testTag("btn_test_webhook_${wh.id}")
@@ -2432,6 +2451,8 @@ private fun CreateWebhookDialog(
     var taskCreated by remember { mutableStateOf(true) }
     var taskUpdated by remember { mutableStateOf(true) }
     var sprintClosed by remember { mutableStateOf(false) }
+    var releaseShipped by remember { mutableStateOf(false) }
+    var meetingCompleted by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2484,6 +2505,24 @@ private fun CreateWebhookDialog(
                     Spacer(Modifier.width(8.dp))
                     Text("sprint.closed — Sprint finalized", style = AppTypography.caption1)
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { releaseShipped = !releaseShipped },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = releaseShipped, onCheckedChange = { releaseShipped = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("release.shipped — Version shipped", style = AppTypography.caption1)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { meetingCompleted = !meetingCompleted },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = meetingCompleted, onCheckedChange = { meetingCompleted = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("meeting.completed — AI summary ready", style = AppTypography.caption1)
+                }
             }
         },
         confirmButton = {
@@ -2494,13 +2533,15 @@ private fun CreateWebhookDialog(
                             if (taskCreated) add("task.created")
                             if (taskUpdated) add("task.updated")
                             if (sprintClosed) add("sprint.closed")
+                            if (releaseShipped) add("release.shipped")
+                            if (meetingCompleted) add("meeting.completed")
                         }
                         val payload = json("targetUrl" to targetUrl.trim())
                         payload.add("events", eventsArray)
                         onSubmit(payload)
                     }
                 },
-                enabled = targetUrl.isNotBlank() && (taskCreated || taskUpdated || sprintClosed),
+                enabled = targetUrl.isNotBlank() && (taskCreated || taskUpdated || sprintClosed || releaseShipped || meetingCompleted),
                 modifier = Modifier.testTag("btn_save_webhook")
             ) {
                 Text("Register", color = AppColors.brandPrimary)

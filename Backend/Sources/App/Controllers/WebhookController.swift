@@ -1,3 +1,4 @@
+import Crypto
 import Fluent
 import SharedModels
 import Vapor
@@ -147,6 +148,26 @@ struct WebhookController: RouteCollection {
 
         try await WebhookDispatcher.dispatchPing(to: model, on: req)
 
-        return .success(WebhookTestResponse(delivered: true, statusCode: 200)) // We mock it as success if it hasn't thrown
+        let sampleObj: [String: String] = [
+            "event_id": UUID().uuidString,
+            "event_type": "ping",
+            "org_id": ctx.orgId.uuidString,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "message": "Webhook ping successful!"
+        ]
+        let sampleData = (try? JSONSerialization.data(withJSONObject: sampleObj, options: [.prettyPrinted, .sortedKeys])) ?? Data("{}".utf8)
+        let sampleJson = String(data: sampleData, encoding: .utf8) ?? "{}"
+        let secretKey = SymmetricKey(data: Data(model.secret.utf8))
+        let sig = HMAC<SHA256>.authenticationCode(for: sampleData, using: secretKey)
+        let sigHeader = "sha256=\(Data(sig).hex)"
+
+        return .success(
+            WebhookTestResponse(
+                delivered: true,
+                statusCode: 200,
+                signatureHeader: sigHeader,
+                samplePayloadJson: sampleJson
+            )
+        )
     }
 }

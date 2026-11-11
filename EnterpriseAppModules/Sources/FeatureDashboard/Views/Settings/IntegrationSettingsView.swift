@@ -11,6 +11,7 @@ public struct IntegrationSettingsView: View {
     
     @State private var showingCreateKeyPopover = false
     @State private var newKeyName = ""
+    @State private var newKeyScopes: Set<APIKeyScope> = [.tasksRead, .tasksWrite]
     
     @State private var showingCreateWebhook = false
     @State private var newWebhookUrl = ""
@@ -18,7 +19,7 @@ public struct IntegrationSettingsView: View {
     
     let availableEvents = [
         "task.created", "task.updated", "task.deleted",
-        "comment.created", "sprint.closed"
+        "comment.created", "sprint.closed", "release.shipped", "meeting.completed"
     ]
     
     public init(integrationRepository repository: IntegrationRepositoryProtocol) {
@@ -74,23 +75,38 @@ public struct IntegrationSettingsView: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .popover(isPresented: $showingCreateKeyPopover) {
-                    VStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 14) {
                         Text("New API Key")
                             .font(AppTypography.h4)
                         TextField("e.g. Zapier Integration", text: $newKeyName)
                             .textFieldStyle(.roundedBorder)
+                        Text("Scopes")
+                            .font(AppTypography.caption1.weight(.semibold))
+                        ForEach(APIKeyScope.allCases, id: \.self) { scope in
+                            Toggle(scope.rawValue, isOn: Binding(
+                                get: { newKeyScopes.contains(scope) },
+                                set: { isOn in
+                                    if isOn { newKeyScopes.insert(scope) }
+                                    else { newKeyScopes.remove(scope) }
+                                }
+                            ))
+                            .font(AppTypography.caption1)
+                        }
                         Button("Create") {
                             Task {
-                                await viewModel.createAPIKey(name: newKeyName)
+                                await viewModel.createAPIKey(
+                                    name: newKeyName,
+                                    scopes: Array(newKeyScopes)
+                                )
                                 newKeyName = ""
                                 showingCreateKeyPopover = false
                             }
                         }
                         .buttonStyle(PrimaryButtonStyle())
-                        .disabled(newKeyName.isEmpty)
+                        .disabled(newKeyName.isEmpty || newKeyScopes.isEmpty)
                     }
                     .padding()
-                    .frame(width: 300)
+                    .frame(width: 310)
                     .presentationCompactAdaptation(.popover)
                 }
             }
@@ -103,14 +119,31 @@ public struct IntegrationSettingsView: View {
             } else {
                 ForEach(viewModel.apiKeys) { key in
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text(key.name)
                                 .font(AppTypography.body.weight(.semibold))
                             Text("\(key.keyPrefix)••••••••")
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundColor(AppColors.textSecondary)
+                            if !key.scopes.isEmpty {
+                                HStack(spacing: 4) {
+                                    ForEach(key.scopes, id: \.self) { scope in
+                                        Text(scope.rawValue)
+                                            .font(AppTypography.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(AppColors.brandSecondary)
+                                            .foregroundColor(AppColors.brandPrimary)
+                                            .cornerRadius(4)
+                                    }
+                                }
+                            }
                         }
                         Spacer()
+                        Button("Rotate") {
+                            Task { await viewModel.rotateAPIKey(id: key.id) }
+                        }
+                        .buttonStyle(.bordered)
                         Button("Revoke", role: .destructive) {
                             Task { await viewModel.revokeAPIKey(id: key.id) }
                         }
@@ -202,8 +235,11 @@ public struct IntegrationSettingsView: View {
                             Spacer()
                             
                             Menu {
-                                Button("Test Ping") {
+                                Button("Test Ping & Inspect Signature") {
                                     Task { await viewModel.testWebhook(id: hook.id) }
+                                }
+                                Button(hook.isActive ? "Pause Endpoint" : "Activate Endpoint") {
+                                    Task { await viewModel.toggleWebhookActive(hook: hook) }
                                 }
                                 Button("Delete", role: .destructive) {
                                     Task { await viewModel.deleteWebhook(id: hook.id) }
@@ -219,6 +255,32 @@ public struct IntegrationSettingsView: View {
                             Text("\(hook.failureCount) recent delivery failures")
                                 .font(AppTypography.caption1)
                                 .foregroundColor(.red)
+                        }
+
+                        if viewModel.lastPingWebhookId == hook.id, let ping = viewModel.lastPingResponse {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Ping Delivered (HTTP \(ping.statusCode ?? 200))")
+                                    .font(AppTypography.caption1.weight(.semibold))
+                                    .foregroundColor(AppColors.statusSuccess)
+                                if let sig = ping.signatureHeader {
+                                    Text("X-Webhook-Signature: \(sig)")
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundColor(AppColors.textSecondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                if let sample = ping.samplePayloadJson {
+                                    Text(sample)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundColor(AppColors.textPrimary)
+                                        .padding(6)
+                                        .background(AppColors.backgroundPrimary)
+                                        .cornerRadius(6)
+                                }
+                            }
+                            .padding(8)
+                            .background(AppColors.statusSuccess.opacity(0.08))
+                            .cornerRadius(6)
                         }
                         
                         HStack {

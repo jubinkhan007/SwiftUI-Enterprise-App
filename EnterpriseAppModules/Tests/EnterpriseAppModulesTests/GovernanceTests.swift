@@ -236,5 +236,25 @@ final class GovernanceTests: XCTestCase {
         XCTAssertEqual(changelogEndpoint.path, "/api/releases/\(releaseId.uuidString)/changelog")
         XCTAssertEqual(changelogEndpoint.method, HTTPMethod.get)
     }
+
+    func testIntegrationRotateKeyAndWebhookEndpoints() throws {
+        let keyId = UUID()
+        let rotateEp = IntegrationEndpoint.rotateAPIKey(keyId, configuration: .current)
+        XCTAssertEqual(rotateEp.path, "/api/api-keys/\(keyId.uuidString)/rotate")
+        XCTAssertEqual(rotateEp.method, HTTPMethod.post)
+
+        let testResponse = WebhookTestResponse(
+            delivered: true,
+            statusCode: 200,
+            signatureHeader: "sha256=deadbeef1234",
+            samplePayloadJson: "{\"event_type\":\"ping\"}"
+        )
+        let encoded = try JSONCoding.encoder.encode(testResponse)
+        let decoded = try JSONCoding.decoder.decode(WebhookTestResponse.self, from: encoded)
+        XCTAssertTrue(decoded.delivered)
+        XCTAssertEqual(decoded.statusCode, 200)
+        XCTAssertEqual(decoded.signatureHeader, "sha256=deadbeef1234")
+        XCTAssertEqual(decoded.samplePayloadJson, "{\"event_type\":\"ping\"}")
+    }
 }
 

@@ -25,6 +25,13 @@ public final class IntegrationRepository: Domain.IntegrationRepositoryProtocol {
         guard let data = response.data else { throw NetworkError.underlying("No data") }
         return data
     }
+
+    public func rotateAPIKey(id: UUID) async throws -> CreateAPIKeyResponse {
+        let endpoint = IntegrationEndpoint.rotateAPIKey(id, configuration: configuration)
+        let response = try await apiClient.request(endpoint, responseType: APIResponse<CreateAPIKeyResponse>.self)
+        guard let data = response.data else { throw NetworkError.underlying("No data") }
+        return data
+    }
     
     public func revokeAPIKey(id: UUID) async throws {
         let endpoint = IntegrationEndpoint.revokeAPIKey(id, configuration: configuration)

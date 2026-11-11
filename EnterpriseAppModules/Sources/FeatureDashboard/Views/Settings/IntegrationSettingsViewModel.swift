@@ -16,6 +16,8 @@ public final class IntegrationSettingsViewModel: ObservableObject {
     
     // API Key Creation state
     @Published public var showAPIKeySecret: String?
+    @Published public var lastPingWebhookId: UUID?
+    @Published public var lastPingResponse: WebhookTestResponse?
     
     public init(repository: IntegrationRepositoryProtocol) {
         self.repository = repository
@@ -37,11 +39,26 @@ public final class IntegrationSettingsViewModel: ObservableObject {
         isLoading = false
     }
     
-    public func createAPIKey(name: String) async {
+    public func createAPIKey(
+        name: String,
+        scopes: [APIKeyScope] = [.tasksRead, .tasksWrite, .admin],
+        expiresAt: Date? = nil
+    ) async {
         guard !name.isEmpty else { return }
         do {
-            let request = CreateAPIKeyRequest(name: name, scopes: [.admin], expiresAt: nil)
+            let request = CreateAPIKeyRequest(name: name, scopes: scopes, expiresAt: expiresAt)
             let response = try await repository.createAPIKey(payload: request)
+            apiKeys.insert(response.apiKey, at: 0)
+            showAPIKeySecret = response.rawKey
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func rotateAPIKey(id: UUID) async {
+        do {
+            let response = try await repository.rotateAPIKey(id: id)
+            apiKeys.removeAll { $0.id == id }
             apiKeys.insert(response.apiKey, at: 0)
             showAPIKeySecret = response.rawKey
         } catch {
@@ -72,12 +89,26 @@ public final class IntegrationSettingsViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    public func toggleWebhookActive(hook: WebhookSubscriptionDTO) async {
+        do {
+            let updated = try await repository.updateWebhook(
+                id: hook.id,
+                request: UpdateWebhookSubscriptionRequest(isActive: !hook.isActive)
+            )
+            if let idx = webhooks.firstIndex(where: { $0.id == hook.id }) {
+                webhooks[idx] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
     
     public func testWebhook(id: UUID) async {
         do {
             let result = try await repository.testWebhook(id: id)
-            // Show a temporary success toast ideally, but print for now.
-            print("Webhook test ping delivered=\(result.delivered) statusCode=\(result.statusCode)")
+            lastPingWebhookId = id
+            lastPingResponse = result
         } catch {
             errorMessage = error.localizedDescription
         }

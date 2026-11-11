@@ -9,6 +9,7 @@ public struct TimeLogDTO: Codable, Identifiable, Sendable, Equatable {
     public let hoursLogged: Double
     public let loggedAt: Date
     public let description: String?
+    public let isBillable: Bool?
     public let createdAt: Date?
 
     public init(
@@ -19,6 +20,7 @@ public struct TimeLogDTO: Codable, Identifiable, Sendable, Equatable {
         hoursLogged: Double,
         loggedAt: Date,
         description: String? = nil,
+        isBillable: Bool? = true,
         createdAt: Date? = nil
     ) {
         self.id = id
@@ -28,6 +30,7 @@ public struct TimeLogDTO: Codable, Identifiable, Sendable, Equatable {
         self.hoursLogged = hoursLogged
         self.loggedAt = loggedAt
         self.description = description
+        self.isBillable = isBillable
         self.createdAt = createdAt
     }
 }
@@ -37,11 +40,13 @@ public struct LogTimeRequest: Codable, Sendable {
     public let hoursLogged: Double
     public let loggedAt: Date
     public let description: String?
+    public let isBillable: Bool?
 
-    public init(hoursLogged: Double, loggedAt: Date, description: String? = nil) {
+    public init(hoursLogged: Double, loggedAt: Date, description: String? = nil, isBillable: Bool? = true) {
         self.hoursLogged = hoursLogged
         self.loggedAt = loggedAt
         self.description = description
+        self.isBillable = isBillable
     }
 }
 
@@ -75,12 +80,20 @@ public struct ProjectTimeReportDTO: Codable, Sendable {
 
     public let projectId: UUID
     public let totalHours: Double
+    public let billableHours: Double?
     public let byUser: [UserReport]
     public let byTask: [TaskReport]
 
-    public init(projectId: UUID, totalHours: Double, byUser: [UserReport], byTask: [TaskReport]) {
+    public init(
+        projectId: UUID,
+        totalHours: Double,
+        billableHours: Double? = nil,
+        byUser: [UserReport],
+        byTask: [TaskReport]
+    ) {
         self.projectId = projectId
         self.totalHours = totalHours
+        self.billableHours = billableHours
         self.byUser = byUser
         self.byTask = byTask
     }

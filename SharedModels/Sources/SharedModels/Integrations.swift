@@ -120,10 +120,19 @@ public struct CreateWebhookSubscriptionRequest: Codable, Sendable {
 public struct WebhookTestResponse: Codable, Sendable, Equatable {
     public let delivered: Bool
     public let statusCode: Int?
+    public let signatureHeader: String?
+    public let samplePayloadJson: String?
 
-    public init(delivered: Bool, statusCode: Int? = nil) {
+    public init(
+        delivered: Bool,
+        statusCode: Int? = nil,
+        signatureHeader: String? = nil,
+        samplePayloadJson: String? = nil
+    ) {
         self.delivered = delivered
         self.statusCode = statusCode
+        self.signatureHeader = signatureHeader
+        self.samplePayloadJson = samplePayloadJson
     }
 }
 
