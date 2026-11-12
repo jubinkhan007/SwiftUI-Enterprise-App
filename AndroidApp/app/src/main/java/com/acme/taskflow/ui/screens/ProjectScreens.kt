@@ -1138,8 +1138,11 @@ fun ProjectTimeReportDialog(
     val report = rememberRemote(api, "/api/projects/$projectId/time-logs/report", vm.revision)
     val data = report.data.obj()
     val totalHours = data.double("total_hours", data.double("totalHours"))
+    val billableHours = data.double("billable_hours", data.double("billableHours", totalHours))
     val byUser = data.list("by_user").ifEmpty { data.list("byUser") }
     val byTask = data.list("by_task").ifEmpty { data.list("byTask") }
+    val clipboardManager = LocalClipboardManager.current
+    var copiedCsv by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1171,7 +1174,7 @@ fun ProjectTimeReportDialog(
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Total Logged Time", style = AppTypography.caption1, color = AppColors.textSecondary)
                         Text(
-                            String.format(java.util.Locale.US, "%.1f Hours", totalHours),
+                            String.format(java.util.Locale.US, "%.1f Hours (%.1fh billable)", totalHours, billableHours),
                             style = AppTypography.largeTitle.copy(color = AppColors.brandPrimary, fontWeight = FontWeight.Bold)
                         )
                     }
@@ -1259,6 +1262,30 @@ fun ProjectTimeReportDialog(
             }
         },
         confirmButton = {
+            TextButton(
+                onClick = {
+                    val csvLines = mutableListOf("Section,Name,Hours")
+                    csvLines.add("Summary,\"Total Hours\",${String.format(java.util.Locale.US, "%.2f", totalHours)}")
+                    csvLines.add("Summary,\"Billable Hours\",${String.format(java.util.Locale.US, "%.2f", billableHours)}")
+                    byUser.forEach { u ->
+                        val name = u.text("user_display_name", u.text("userDisplayName", "Team Member")).replace("\"", "\"\"")
+                        val hrs = u.double("total_hours", u.double("totalHours"))
+                        csvLines.add("Contributor,\"$name\",${String.format(java.util.Locale.US, "%.2f", hrs)}")
+                    }
+                    byTask.forEach { t ->
+                        val title = t.text("task_title", t.text("taskTitle", "Task")).replace("\"", "\"\"")
+                        val hrs = t.double("total_hours", t.double("totalHours"))
+                        csvLines.add("Task,\"$title\",${String.format(java.util.Locale.US, "%.2f", hrs)}")
+                    }
+                    clipboardManager.setText(AnnotatedString(csvLines.joinToString("\n")))
+                    copiedCsv = true
+                },
+                modifier = Modifier.testTag("btn_export_timesheet_csv")
+            ) {
+                Text(if (copiedCsv) "CSV Copied!" else "Export CSV", color = AppColors.statusSuccess)
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Close", color = AppColors.brandPrimary)
             }

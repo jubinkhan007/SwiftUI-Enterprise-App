@@ -22,6 +22,9 @@ public struct TaskDetailView: View {
     @State private var showFilePicker = false
     @State private var previewItem: AttachmentPreviewItem? = nil
     @State private var showLogTimeSheet = false
+    @State private var isInlineTimerRunning = false
+    @State private var inlineElapsedSeconds: Int = 0
+    private let inlineStopwatchTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     public init(viewModel: TaskDetailViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -320,6 +323,55 @@ public struct TaskDetailView: View {
         }
     }
 
+    private var formattedInlineStopwatch: String {
+        let hrs = inlineElapsedSeconds / 3600
+        let mins = (inlineElapsedSeconds % 3600) / 60
+        let secs = inlineElapsedSeconds % 60
+        return String(format: "%02d:%02d:%02d", hrs, mins, secs)
+    }
+
+    private func copyTaskTimesheetCSV() {
+        let iso = ISO8601DateFormatter()
+        var lines = ["Log ID,Task ID,Contributor,Hours,Billable,Logged At,Description"]
+        for log in viewModel.timeLogs {
+            let billable = (log.isBillable ?? true) ? "Yes" : "No"
+            let desc = (log.description ?? "").replacingOccurrences(of: "\"", with: "\"\"")
+            lines.append("\"\(log.id.uuidString)\",\"\(log.taskId.uuidString)\",\"\(log.userDisplayName)\",\(String(format: "%.2f", log.hoursLogged)),\(billable),\"\(iso.string(from: log.loggedAt))\",\"\(desc)\"")
+        }
+        let csv = lines.joined(separator: "\n")
+        #if canImport(UIKit)
+        UIPasteboard.general.string = csv
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(csv, forType: .string)
+        #endif
+        toast = ToastMessage(type: .success, title: "Timesheet Exported", message: "CSV copied to clipboard (\(viewModel.timeLogs.count) entries).")
+    }
+
+    private func stopAndLogInlineTimer() {
+        isInlineTimerRunning = false
+        let elapsed = max(1, inlineElapsedSeconds)
+        inlineElapsedSeconds = 0
+        let rawHours = Double(elapsed) / 3600.0
+        let roundedQuarter = max(0.25, (rawHours * 4.0).rounded(.up) / 4.0)
+        let payload = LogTimeRequest(
+            hoursLogged: min(24.0, roundedQuarter),
+            loggedAt: Date(),
+            description: "Live timer session (\(elapsed / 60)m \(elapsed % 60)s)",
+            isBillable: true
+        )
+        Task {
+            do {
+                _ = try await viewModel.taskRepository.logTime(taskId: viewModel.task.id, payload: payload)
+                await viewModel.fetchTimeLogs()
+                await viewModel.fetchActivities()
+                toast = ToastMessage(type: .success, title: "Time Logged", message: String(format: "Logged %.2f billable hrs from stopwatch.", payload.hoursLogged))
+            } catch {
+                viewModel.error = error
+            }
+        }
+    }
+
     private var timeTrackingSection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
             HStack {
@@ -327,6 +379,19 @@ public struct TaskDetailView: View {
                     .appFont(AppTypography.title3)
                     .foregroundColor(AppColors.textPrimary)
                 Spacer()
+                if !viewModel.timeLogs.isEmpty {
+                    Button {
+                        copyTaskTimesheetCSV()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "tablecells")
+                            Text("Export CSV")
+                        }
+                        .appFont(AppTypography.caption1)
+                        .foregroundColor(AppColors.textSecondary)
+                    }
+                    .buttonStyle(.borderless)
+                }
                 Button {
                     showLogTimeSheet = true
                 } label: {
@@ -342,13 +407,67 @@ public struct TaskDetailView: View {
             let estHours = Double(viewModel.task.storyPoints ?? 0) * 8.0
             let hasEstimate = estHours > 0
             let logged = viewModel.totalHoursLogged
+            let billableLogged = viewModel.timeLogs.reduce(0.0) { $0 + (($1.isBillable ?? true) ? $1.hoursLogged : 0.0) }
             let progress = hasEstimate ? min(1.0, logged / estHours) : 0.0
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label(String(format: "Logged: %.2f hrs", logged), systemImage: "clock.fill")
-                        .appFont(AppTypography.body)
+            VStack(alignment: .leading, spacing: 10) {
+                // Inline Live Task Stopwatch Bar
+                HStack(spacing: 10) {
+                    Image(systemName: isInlineTimerRunning ? "stopwatch.fill" : "stopwatch")
+                        .foregroundColor(isInlineTimerRunning ? AppColors.statusSuccess : AppColors.brandPrimary)
+                    Text(formattedInlineStopwatch)
+                        .font(.system(.subheadline, design: .monospaced).weight(.bold))
                         .foregroundColor(AppColors.textPrimary)
+                    Spacer()
+                    Button {
+                        isInlineTimerRunning.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: isInlineTimerRunning ? "pause.fill" : "play.fill")
+                            Text(isInlineTimerRunning ? "Pause" : (inlineElapsedSeconds > 0 ? "Resume" : "Start Timer"))
+                        }
+                        .appFont(AppTypography.caption1)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(isInlineTimerRunning ? AppColors.statusWarning.opacity(0.18) : AppColors.statusSuccess.opacity(0.18))
+                        .foregroundColor(isInlineTimerRunning ? AppColors.statusWarning : AppColors.statusSuccess)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+
+                    if inlineElapsedSeconds > 0 {
+                        Button {
+                            stopAndLogInlineTimer()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Stop & Log")
+                            }
+                            .appFont(AppTypography.caption1)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(AppColors.brandPrimary)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(10)
+                .background(AppColors.backgroundSecondary.opacity(0.6))
+                .cornerRadius(8)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(String(format: "Logged: %.2f hrs", logged), systemImage: "clock.fill")
+                            .appFont(AppTypography.body)
+                            .foregroundColor(AppColors.textPrimary)
+                        Text(String(format: "Billable: %.2f hrs", billableLogged))
+                            .appFont(AppTypography.caption2)
+                            .foregroundColor(AppColors.statusSuccess)
+                    }
 
                     Spacer()
 
@@ -386,11 +505,21 @@ public struct TaskDetailView: View {
                             .padding(.top, 4)
 
                         ForEach(viewModel.timeLogs) { log in
+                            let billable = log.isBillable ?? true
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(log.description ?? "Worked on task")
-                                        .appFont(AppTypography.body)
-                                        .foregroundColor(AppColors.textPrimary)
+                                    HStack(spacing: 6) {
+                                        Text(log.description ?? "Worked on task")
+                                            .appFont(AppTypography.body)
+                                            .foregroundColor(AppColors.textPrimary)
+                                        Text(billable ? "Billable" : "Non-Billable")
+                                            .appFont(AppTypography.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(billable ? AppColors.statusSuccess.opacity(0.15) : AppColors.textTertiary.opacity(0.15))
+                                            .foregroundColor(billable ? AppColors.statusSuccess : AppColors.textSecondary)
+                                            .cornerRadius(4)
+                                    }
                                     Text("\(log.userDisplayName) • \(log.loggedAt.formatted(date: .abbreviated, time: .omitted))")
                                         .appFont(AppTypography.caption2)
                                         .foregroundColor(AppColors.textSecondary)
@@ -413,6 +542,11 @@ public struct TaskDetailView: View {
             .background(AppColors.surfacePrimary)
             .cornerRadius(12)
             .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 1)
+        }
+        .onReceive(inlineStopwatchTimer) { _ in
+            if isInlineTimerRunning {
+                inlineElapsedSeconds += 1
+            }
         }
     }
 

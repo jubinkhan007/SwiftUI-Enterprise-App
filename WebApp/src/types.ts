@@ -162,6 +162,7 @@ export interface TimeLogDTO {
   hoursLogged: number;
   loggedAt: string;
   description?: string;
+  isBillable?: boolean;
   createdAt?: string;
 }
 
@@ -329,6 +330,7 @@ export interface LogTimeRequest {
   hoursLogged: number;
   loggedAt?: string;
   description?: string;
+  isBillable?: boolean;
 }
 
 export interface UserTimeReport {
@@ -346,6 +348,7 @@ export interface TaskTimeReport {
 export interface ProjectTimeReportDTO {
   projectId: string;
   totalHours: number;
+  billableHours?: number;
   byUser: UserTimeReport[];
   byTask: TaskTimeReport[];
 }

@@ -260,7 +260,25 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
   const [loadingTimeLogs, setLoadingTimeLogs] = useState(false);
   const [logHours, setLogHours] = useState('1.0');
   const [logDescription, setLogDescription] = useState('');
+  const [logIsBillable, setLogIsBillable] = useState(true);
   const [isLoggingTime, setIsLoggingTime] = useState(false);
+  const [isStopwatchRunning, setIsStopwatchRunning] = useState(false);
+  const [stopwatchSeconds, setStopwatchSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!isStopwatchRunning) return;
+    const interval = setInterval(() => {
+      setStopwatchSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isStopwatchRunning]);
+
+  const formatStopwatch = (totalSecs: number) => {
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    return [hrs, mins, secs].map(v => String(v).padStart(2, '0')).join(':');
+  };
 
   // Project Time Report Modal State
   const [showTimeReportModal, setShowTimeReportModal] = useState(false);
@@ -412,7 +430,7 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
     }
     setIsLoggingTime(true);
     try {
-      const newLog = await api.logTime(editingTask.id, hours, logDescription.trim() || undefined);
+      const newLog = await api.logTime(editingTask.id, hours, logDescription.trim() || undefined, undefined, logIsBillable);
       setTimeLogs(prev => [newLog, ...prev]);
       setLogHours('1.0');
       setLogDescription('');
@@ -421,6 +439,39 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
     } finally {
       setIsLoggingTime(false);
     }
+  };
+
+  const handleStopAndLogStopwatch = async () => {
+    if (!editingTask) return;
+    setIsStopwatchRunning(false);
+    const elapsed = Math.max(1, stopwatchSeconds);
+    setStopwatchSeconds(0);
+    const roundedQuarter = Math.max(0.25, Math.ceil((elapsed / 3600) * 4) / 4);
+    const desc = logDescription.trim() || `Timed work session (${formatStopwatch(elapsed)})`;
+    setIsLoggingTime(true);
+    try {
+      const newLog = await api.logTime(editingTask.id, Math.min(24, roundedQuarter), desc, undefined, logIsBillable);
+      setTimeLogs(prev => [newLog, ...prev]);
+      setLogDescription('');
+    } catch (err: any) {
+      alert(`Failed to log stopwatch time: ${err.message}`);
+    } finally {
+      setIsLoggingTime(false);
+    }
+  };
+
+  const handleExportTimesheetCSV = async () => {
+    const activeProjectId = tasks[0]?.projectId || 'project-a';
+    const csv = await api.exportProjectTimesheetCSV(activeProjectId, timeReport);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `project-${activeProjectId.slice(0, 8)}-timesheet.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleOpenTimeReport = async () => {
@@ -1440,10 +1491,45 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
                   </div>
                   <div className="text-[11px] font-medium text-slate-400">
                     Logged: <span className="font-semibold text-slate-200">{timeLogs.reduce((acc, l) => acc + l.hoursLogged, 0).toFixed(1)} hrs</span>
+                    <span className="text-emerald-400 ml-1">
+                      ({timeLogs.reduce((acc, l) => acc + ((l.isBillable ?? true) ? l.hoursLogged : 0), 0).toFixed(1)}h billable)
+                    </span>
                     {editingTask.storyPoints ? (
                       <span> / Est: <span className="text-slate-300">{(editingTask.storyPoints * 8).toFixed(1)} hrs</span></span>
                     ) : (
                       <span className="text-slate-500"> (No estimate)</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Live Task Stopwatch Bar */}
+                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${isStopwatchRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+                    <span className="font-mono text-sm font-bold text-slate-100">{formatStopwatch(stopwatchSeconds)}</span>
+                    <span className="text-[11px] text-slate-400">Live Task Stopwatch</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsStopwatchRunning(prev => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
+                        isStopwatchRunning
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                      }`}
+                    >
+                      {isStopwatchRunning ? 'Pause' : stopwatchSeconds > 0 ? 'Resume' : 'Start Timer'}
+                    </button>
+                    {stopwatchSeconds > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleStopAndLogStopwatch}
+                        disabled={isLoggingTime}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer"
+                      >
+                        Stop & Log
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1482,28 +1568,75 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
                     {timeLogs.length === 0 ? (
                       <p className="text-xs text-slate-500 italic py-1">No time logged yet.</p>
                     ) : (
-                      timeLogs.map(l => (
-                        <div key={l.id} className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs flex items-center justify-between">
-                          <div className="space-y-0.5 min-w-0">
-                            <p className="text-slate-200 font-medium truncate">{l.description || 'Work session'}</p>
-                            <p className="text-[10px] text-slate-400">
-                              {l.userDisplayName || 'Team Member'} • {new Date(l.loggedAt).toLocaleDateString()}
-                            </p>
+                      timeLogs.map(l => {
+                        const billable = l.isBillable ?? true;
+                        return (
+                          <div key={l.id} className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs flex items-center justify-between">
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-slate-200 font-medium truncate">{l.description || 'Work session'}</p>
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                                  billable
+                                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25'
+                                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                                }`}>
+                                  {billable ? 'Billable' : 'Non-Billable'}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                {l.userDisplayName || 'Team Member'} • {new Date(l.loggedAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0 ml-2">
+                              +{l.hoursLogged.toFixed(2)} h
+                            </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0 ml-2">
-                            +{l.hoursLogged.toFixed(1)} h
-                          </span>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 )}
+
+                {/* Quick Duration Presets + Billable Toggle */}
+                <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    {[
+                      { label: '15m', val: '0.25' },
+                      { label: '30m', val: '0.5' },
+                      { label: '1h', val: '1.0' },
+                      { label: '2h', val: '2.0' },
+                      { label: '4h', val: '4.0' },
+                    ].map(preset => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setLogHours(preset.val)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition cursor-pointer ${
+                          logHours === preset.val
+                            ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={logIsBillable}
+                      onChange={(e) => setLogIsBillable(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
+                    />
+                    <span>Billable Hours</span>
+                  </label>
+                </div>
 
                 {/* Log Time Quick Form */}
                 <div className="flex items-center gap-2 pt-1">
                   <input
                     type="number"
-                    step="0.5"
+                    step="0.25"
                     min="0.1"
                     max="24"
                     placeholder="Hours"
@@ -1834,7 +1967,14 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
                 <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 to-slate-900 border border-emerald-500/20 flex items-center justify-between">
                   <div>
                     <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Project Hours</span>
-                    <h2 className="text-2xl font-black text-emerald-400">{timeReport.totalHours.toFixed(1)} hrs</h2>
+                    <div className="flex items-baseline gap-2.5">
+                      <h2 className="text-2xl font-black text-emerald-400">{timeReport.totalHours.toFixed(1)} hrs</h2>
+                      {timeReport.billableHours !== undefined && (
+                        <span className="text-xs font-semibold text-emerald-300/80">
+                          ({timeReport.billableHours.toFixed(1)}h billable)
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     {timeReport.byUser.length} Contributors
@@ -1895,7 +2035,14 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
               <p className="text-xs text-slate-400 text-center py-8">No time logged for this project yet.</p>
             )}
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end">
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleExportTimesheetCSV}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition cursor-pointer"
+              >
+                Export Timesheet CSV
+              </button>
               <button
                 type="button"
                 onClick={() => setShowTimeReportModal(false)}

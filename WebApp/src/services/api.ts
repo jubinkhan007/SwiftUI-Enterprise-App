@@ -792,11 +792,18 @@ class ApiService {
       hoursLogged: Number(l.hours_logged ?? l.hoursLogged ?? 0),
       loggedAt: l.logged_at || l.loggedAt || new Date().toISOString(),
       description: l.description || '',
+      isBillable: l.is_billable ?? l.isBillable ?? true,
       createdAt: l.created_at || l.createdAt,
     }));
   }
 
-  async logTime(taskId?: string, hoursLogged: number = 1.0, description?: string, loggedAt?: string): Promise<TimeLogDTO> {
+  async logTime(
+    taskId?: string,
+    hoursLogged: number = 1.0,
+    description?: string,
+    loggedAt?: string,
+    isBillable: boolean = true
+  ): Promise<TimeLogDTO> {
     let targetTaskId = taskId;
     if (!targetTaskId) {
       const tasks = await this.getTasks();
@@ -806,14 +813,16 @@ class ApiService {
       throw new Error("No task available to log time against.");
     }
 
-    const l = await this.request<any>(`/api/tasks/${targetTaskId}/time-logs`, {
+    const raw = await this.request<any>(`/api/tasks/${targetTaskId}/time-logs`, {
       method: 'POST',
       body: JSON.stringify({
         hoursLogged,
         loggedAt: loggedAt || new Date().toISOString(),
         description: description || undefined,
+        isBillable,
       }),
     });
+    const l = raw?.data || raw;
 
     return {
       id: l.id,
@@ -823,6 +832,7 @@ class ApiService {
       hoursLogged: Number(l.hours_logged ?? l.hoursLogged ?? hoursLogged),
       loggedAt: l.logged_at || l.loggedAt || loggedAt || new Date().toISOString(),
       description: l.description || description,
+      isBillable: l.is_billable ?? l.isBillable ?? isBillable,
       createdAt: l.created_at || l.createdAt,
     };
   }
@@ -833,6 +843,7 @@ class ApiService {
     return {
       projectId: data.project_id || data.projectId || projectId,
       totalHours: Number(data.total_hours ?? data.totalHours ?? 0),
+      billableHours: data.billable_hours ?? data.billableHours,
       byUser: (data.by_user || data.byUser || []).map((u: any) => ({
         userId: u.user_id || u.userId,
         userDisplayName: u.user_display_name || u.userDisplayName || 'Unknown User',
@@ -844,6 +855,36 @@ class ApiService {
         totalHours: Number(t.total_hours ?? t.totalHours ?? 0),
       })),
     };
+  }
+
+  async exportProjectTimesheetCSV(projectId: string, fallbackReport?: ProjectTimeReportDTO | null): Promise<string> {
+    try {
+      const path = `/api/projects/${projectId}/time-logs/export`;
+      const endpoint = this.baseUrl ? `${this.baseUrl}${path}` : path;
+      const headers: Record<string, string> = {};
+      if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+      if (this.selectedOrgId) headers['X-Org-Id'] = this.selectedOrgId;
+      const res = await fetch(endpoint, { headers });
+      if (res.ok) {
+        return await res.text();
+      }
+    } catch {
+      // Fallback to client-side CSV generation below
+    }
+    const lines = ['Section,Name,ID,Hours'];
+    if (fallbackReport) {
+      lines.push(`Summary,"Total Hours","${fallbackReport.projectId}",${fallbackReport.totalHours.toFixed(2)}`);
+      if (fallbackReport.billableHours !== undefined) {
+        lines.push(`Summary,"Billable Hours","${fallbackReport.projectId}",${fallbackReport.billableHours.toFixed(2)}`);
+      }
+      for (const u of fallbackReport.byUser) {
+        lines.push(`Contributor,"${u.userDisplayName.replace(/"/g, '""')}","${u.userId}",${u.totalHours.toFixed(2)}`);
+      }
+      for (const t of fallbackReport.byTask) {
+        lines.push(`Task,"${t.taskTitle.replace(/"/g, '""')}","${t.taskId}",${t.totalHours.toFixed(2)}`);
+      }
+    }
+    return lines.join('\n');
   }
 
   // --- Project Analytics & Burndown ---

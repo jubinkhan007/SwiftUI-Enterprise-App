@@ -256,5 +256,30 @@ final class GovernanceTests: XCTestCase {
         XCTAssertEqual(decoded.signatureHeader, "sha256=deadbeef1234")
         XCTAssertEqual(decoded.samplePayloadJson, "{\"event_type\":\"ping\"}")
     }
+
+    func testTimeLogBillableAndReportRoundtrip() throws {
+        let req = LogTimeRequest(
+            hoursLogged: 2.5,
+            loggedAt: Date(),
+            description: "Implemented OAuth callback",
+            isBillable: false
+        )
+        let reqData = try JSONCoding.encoder.encode(req)
+        let decodedReq = try JSONCoding.decoder.decode(LogTimeRequest.self, from: reqData)
+        XCTAssertEqual(decodedReq.hoursLogged, 2.5)
+        XCTAssertEqual(decodedReq.isBillable, false)
+
+        let report = ProjectTimeReportDTO(
+            projectId: UUID(),
+            totalHours: 14.0,
+            billableHours: 11.5,
+            byUser: [],
+            byTask: []
+        )
+        let reportData = try JSONCoding.encoder.encode(report)
+        let decodedReport = try JSONCoding.decoder.decode(ProjectTimeReportDTO.self, from: reportData)
+        XCTAssertEqual(decodedReport.totalHours, 14.0)
+        XCTAssertEqual(decodedReport.billableHours, 11.5)
+    }
 }
 
