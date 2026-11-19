@@ -43,9 +43,122 @@ const SLASH_COMMANDS = [
   { cmd: '/status', desc: 'Set your user status message' },
   { cmd: '/task', desc: 'Create a new task directly from chat' },
   { cmd: '/remind', desc: 'Set a quick reminder' },
+  { cmd: '/code', desc: 'Insert a fenced code block' },
+  { cmd: '/table', desc: 'Insert a Markdown table template' },
   { cmd: '/me', desc: 'Display action text' },
   { cmd: '/help', desc: 'Show chat command guide' },
 ];
+
+function renderRichMessageBody(raw: string): React.ReactNode {
+  const parts = raw.split('```');
+  return (
+    <div className="space-y-2">
+      {parts.map((part, idx) => {
+        if (idx % 2 === 1) {
+          const lines = part.split('\n');
+          const firstLine = (lines[0] || '').trim();
+          const hasLang = firstLine.length > 0 && !firstLine.includes(' ') && lines.length > 1;
+          const lang = hasLang ? firstLine : 'code';
+          const codeBody = (hasLang ? lines.slice(1) : lines).join('\n').replace(/^\n+|\n+$/g, '');
+          return (
+            <div key={idx} className="rounded-xl bg-slate-950/90 border border-slate-800 overflow-hidden text-left my-1">
+              <div className="px-3 py-1.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[10px]">
+                <span className="font-mono font-bold uppercase text-indigo-300">{lang}</span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(codeBody)}
+                  className="text-slate-400 hover:text-white font-semibold transition cursor-pointer"
+                >
+                  Copy Code
+                </button>
+              </div>
+              <pre className="p-3 text-[11px] font-mono text-emerald-300 overflow-x-auto whitespace-pre">
+                {codeBody}
+              </pre>
+            </div>
+          );
+        }
+
+        const lines = part.split('\n');
+        const blocks: React.ReactNode[] = [];
+        let textLines: string[] = [];
+        let tableLines: string[] = [];
+
+        const flushText = (keyPrefix: string) => {
+          const joined = textLines.join('\n').trim();
+          if (joined) {
+            blocks.push(
+              <div key={`${keyPrefix}-txt`} className="whitespace-pre-wrap">
+                {joined}
+              </div>
+            );
+          }
+          textLines = [];
+        };
+
+        const flushTable = (keyPrefix: string) => {
+          if (tableLines.length < 2) {
+            textLines.push(...tableLines);
+            tableLines = [];
+            return;
+          }
+          const rows = tableLines.map(l =>
+            l
+              .trim()
+              .replace(/^\|/, '')
+              .replace(/\|$/, '')
+              .split('|')
+              .map(c => c.trim())
+          );
+          const headers = rows[0] || [];
+          const dataRows = rows.slice(1).filter(r => !r.every(cell => /^[-:\s]+$/.test(cell)));
+          blocks.push(
+            <div key={`${keyPrefix}-tbl`} className="overflow-x-auto rounded-lg border border-slate-700/70 my-1">
+              <table className="w-full text-left border-collapse text-[11px]">
+                <thead>
+                  <tr className="bg-slate-950/70 border-b border-slate-700/70">
+                    {headers.map((h, hIdx) => (
+                      <th key={hIdx} className="px-2.5 py-1.5 font-bold text-slate-200">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dataRows.map((r, rIdx) => (
+                    <tr key={rIdx} className="border-b border-slate-800/60 last:border-b-0 bg-slate-950/30">
+                      {r.map((cell, cIdx) => (
+                        <td key={cIdx} className="px-2.5 py-1.5 text-slate-200">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+          tableLines = [];
+        };
+
+        lines.forEach((line, lIdx) => {
+          const t = line.trim();
+          if (t.startsWith('|') && t.endsWith('|') && t.length > 2) {
+            flushText(`${idx}-${lIdx}`);
+            tableLines.push(t);
+          } else {
+            if (tableLines.length > 0) flushTable(`${idx}-${lIdx}`);
+            textLines.push(line);
+          }
+        });
+        if (tableLines.length > 0) flushTable(`${idx}-end`);
+        flushText(`${idx}-end`);
+
+        return <React.Fragment key={idx}>{blocks}</React.Fragment>;
+      })}
+    </div>
+  );
+}
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChannelId }) => {
   const [conversations, setConversations] = useState<ConversationDTO[]>([]);
@@ -98,6 +211,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
   const [showRemindersModal, setShowRemindersModal] = useState(false);
   const [remindingMessage, setRemindingMessage] = useState<MessageDTO | null>(null);
   const [reminderDateTime, setReminderDateTime] = useState('');
+  const [editingScheduledId, setEditingScheduledId] = useState<string | null>(null);
+  const [editScheduledBody, setEditScheduledBody] = useState('');
+  const [editScheduledDateTime, setEditScheduledDateTime] = useState('');
   const [toastNotice, setToastNotice] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -161,6 +277,41 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
       loadProductivityData();
     } catch (err: any) {
       alert(`Failed to cancel: ${err.message || err}`);
+    }
+  };
+
+  const handleSaveEditedScheduled = async (id: string) => {
+    if (!editScheduledBody.trim()) return;
+    try {
+      await api.updateScheduledMessage(id, {
+        body: editScheduledBody.trim(),
+        scheduledFor: editScheduledDateTime ? new Date(editScheduledDateTime).toISOString() : undefined,
+      });
+      setEditingScheduledId(null);
+      showToast('Scheduled message updated!');
+      loadProductivityData();
+    } catch (err: any) {
+      alert(`Failed to update scheduled message: ${err.message || err}`);
+    }
+  };
+
+  const handleSnoozeReminderInChat = async (id: string, mins: number) => {
+    try {
+      await api.snoozeReminder(id, mins);
+      showToast(`Reminder snoozed (+${mins}m).`);
+      loadProductivityData();
+    } catch (err: any) {
+      alert(`Failed to snooze reminder: ${err.message || err}`);
+    }
+  };
+
+  const handleDismissReminderInChat = async (id: string) => {
+    try {
+      await api.dismissReminder(id);
+      showToast('Reminder marked done.');
+      loadProductivityData();
+    } catch (err: any) {
+      alert(`Failed to dismiss reminder: ${err.message || err}`);
     }
   };
 
@@ -679,12 +830,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
                         </div>
 
                         {/* Message Bubble */}
-                        <div className={`p-3 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap shadow-md max-w-[80%] text-left ${
+                        <div className={`p-3 rounded-2xl text-xs leading-relaxed shadow-md max-w-[80%] text-left ${
                           isMe
                             ? 'bg-indigo-600 text-white rounded-tr-none border border-indigo-500/40'
                             : 'bg-slate-900 text-slate-200 rounded-tl-none border border-slate-800'
                         }`}>
-                          {msg.body}
+                          {renderRichMessageBody(msg.body)}
                         </div>
 
                         {/* Reaction Pills */}
@@ -804,7 +955,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
                     <button
                       key={sc.cmd}
                       onClick={() => {
-                        setInputText(`${sc.cmd} `);
+                        if (sc.cmd === '/code') {
+                          setInputText(prev => `${prev ? prev + '\n' : ''}\`\`\`ts\n// code here\n\`\`\``);
+                        } else if (sc.cmd === '/table') {
+                          setInputText(prev => `${prev ? prev + '\n' : ''}| Header 1 | Header 2 |\n|---|---|\n| Row 1 | Value 1 |`);
+                        } else {
+                          setInputText(`${sc.cmd} `);
+                        }
                         setShowSlashHints(false);
                       }}
                       className="w-full text-left px-2.5 py-1.5 rounded-xl hover:bg-slate-800 flex items-center justify-between text-xs transition"
@@ -815,6 +972,25 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
                   ))}
                 </div>
               )}
+
+              {/* Quick Formatting Bar */}
+              <div className="flex items-center gap-1.5 pb-2">
+                {[
+                  { label: 'Bold', snippet: '**bold**' },
+                  { label: 'Inline Code', snippet: '`code`' },
+                  { label: 'Code Block', snippet: '\n```ts\n// code\n```' },
+                  { label: 'Table', snippet: '\n| Item | Status |\n|---|---|\n| API | Ready |' },
+                ].map(fmt => (
+                  <button
+                    key={fmt.label}
+                    type="button"
+                    onClick={() => setInputText(prev => `${prev}${fmt.snippet}`)}
+                    className="px-2 py-1 rounded-lg bg-slate-900/80 border border-slate-800 hover:border-indigo-500/40 text-[10px] font-semibold text-slate-300 hover:text-white transition cursor-pointer"
+                  >
+                    {fmt.label}
+                  </button>
+                ))}
+              </div>
 
               <form onSubmit={handleSendMessage} className="flex items-center gap-2">
                 <button
@@ -1244,21 +1420,68 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
                         {s.status}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-200 whitespace-pre-wrap">{s.body}</p>
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
-                      <button
-                        onClick={() => handleSendScheduledNow(s.id)}
-                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold transition"
-                      >
-                        Send Now
-                      </button>
-                      <button
-                        onClick={() => handleCancelScheduled(s.id)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                    {editingScheduledId === s.id ? (
+                      <div className="space-y-2 pt-1">
+                        <textarea
+                          rows={2}
+                          value={editScheduledBody}
+                          onChange={e => setEditScheduledBody(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                        />
+                        <input
+                          type="datetime-local"
+                          value={editScheduledDateTime}
+                          onChange={e => setEditScheduledDateTime(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingScheduledId(null)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-semibold"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditedScheduled(s.id)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold"
+                          >
+                            Save Changes
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-slate-200 whitespace-pre-wrap">{s.body}</p>
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
+                          <button
+                            onClick={() => {
+                              setEditingScheduledId(s.id);
+                              setEditScheduledBody(s.body);
+                              const d = new Date(s.scheduledFor);
+                              const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                              setEditScheduledDateTime(iso);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 text-[11px] font-semibold transition"
+                          >
+                            Edit / Reschedule
+                          </button>
+                          <button
+                            onClick={() => handleSendScheduledNow(s.id)}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold transition"
+                          >
+                            Send Now
+                          </button>
+                          <button
+                            onClick={() => handleCancelScheduled(s.id)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))
               )}
@@ -1411,7 +1634,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
                 <p className="text-xs text-slate-500 text-center py-8">No active reminders.</p>
               ) : (
                 reminders.map(r => (
-                  <div key={r.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                  <div key={r.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-400">
                         {new Date(r.remindAt).toLocaleString()}
@@ -1421,6 +1644,36 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onStartCall, initialChan
                       </span>
                     </div>
                     <p className="text-xs text-slate-200">{r.body}</p>
+                    <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-900">
+                      <button
+                        type="button"
+                        onClick={() => handleSnoozeReminderInChat(r.id, 15)}
+                        className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-indigo-500/40 text-[10px] font-semibold text-slate-300"
+                      >
+                        +15m
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSnoozeReminderInChat(r.id, 60)}
+                        className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-indigo-500/40 text-[10px] font-semibold text-slate-300"
+                      >
+                        +1h
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSnoozeReminderInChat(r.id, 1440)}
+                        className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-indigo-500/40 text-[10px] font-semibold text-slate-300"
+                      >
+                        Tomorrow
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDismissReminderInChat(r.id)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-semibold"
+                      >
+                        Done
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

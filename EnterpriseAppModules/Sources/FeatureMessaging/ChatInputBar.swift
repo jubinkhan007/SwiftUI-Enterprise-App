@@ -58,6 +58,66 @@ public struct ChatInputBar: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
+            if !isEditing {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Button {
+                            text += (text.isEmpty ? "" : " ") + "**bold**"
+                        } label: {
+                            Label("Bold", systemImage: "bold")
+                                .appFont(AppTypography.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(AppColors.surfaceElevated)
+                        .cornerRadius(6)
+
+                        Button {
+                            text += (text.isEmpty ? "" : "\n") + "```swift\n// code\n```"
+                        } label: {
+                            Label("Code Block", systemImage: "chevron.left.forwardslash.chevron.right")
+                                .appFont(AppTypography.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(AppColors.surfaceElevated)
+                        .cornerRadius(6)
+
+                        Button {
+                            text += (text.isEmpty ? "" : "\n") + "| Column 1 | Column 2 |\n|---|---|\n| Value A | Value B |"
+                        } label: {
+                            Label("Table", systemImage: "tablecells")
+                                .appFont(AppTypography.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(AppColors.surfaceElevated)
+                        .cornerRadius(6)
+
+                        if let onScheduleSend {
+                            Button {
+                                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                                onScheduleSend()
+                            } label: {
+                                Label("Schedule", systemImage: "clock.badge")
+                                    .appFont(AppTypography.caption2)
+                                    .foregroundColor(AppColors.brandPrimary)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(AppColors.brandPrimary.opacity(0.12))
+                            .cornerRadius(6)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                }
+            }
+
             HStack(spacing: AppSpacing.sm) {
                 if isEditing {
                     Button(action: { onCancelEdit?() }) {

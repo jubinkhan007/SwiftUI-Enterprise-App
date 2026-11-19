@@ -1,6 +1,11 @@
 import SwiftUI
 import SharedModels
 import DesignSystem
+#if canImport(UIKit)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 public struct MessageBubbleView: View {
     let message: MessageDTO
@@ -144,9 +149,7 @@ public struct MessageBubbleView: View {
                     .italic()
                     .foregroundColor(AppColors.textSecondary)
             } else {
-                Text(LocalizedStringKey(message.body))
-                    .appFont(AppTypography.body)
-                    .foregroundColor(isCurrentUser ? .white : AppColors.textPrimary)
+                richBodyView(for: message.body)
 
                 if let url = firstURL(in: message.body) {
                     LinkPreviewCard(url: url)
@@ -258,6 +261,181 @@ public struct MessageBubbleView: View {
                 Text(String(message.senderName.prefix(1)).uppercased())
                     .appFont(AppTypography.caption1)
             )
+    }
+
+    // MARK: - Rich Code & Table Segment Parser
+
+    private enum MessageBlockSegment: Identifiable {
+        case text(id: Int, content: String)
+        case codeBlock(id: Int, language: String, code: String)
+        case table(id: Int, headers: [String], rows: [[String]])
+
+        var id: Int {
+            switch self {
+            case .text(let id, _), .codeBlock(let id, _, _), .table(let id, _, _):
+                return id
+            }
+        }
+    }
+
+    private func parseSegments(from raw: String) -> [MessageBlockSegment] {
+        var segments: [MessageBlockSegment] = []
+        var nextId = 0
+        let parts = raw.components(separatedBy: "```")
+
+        for (index, part) in parts.enumerated() {
+            if index % 2 == 1 {
+                // Inside fenced code block
+                let lines = part.components(separatedBy: "\n")
+                let firstLine = lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let hasLang = !firstLine.isEmpty && !firstLine.contains(" ") && lines.count > 1
+                let lang = hasLang ? firstLine : "code"
+                let codeBody = (hasLang ? Array(lines.dropFirst()) : lines)
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .newlines)
+                segments.append(.codeBlock(id: nextId, language: lang, code: codeBody))
+                nextId += 1
+            } else {
+                // Parse markdown tables vs plain text
+                let lines = part.components(separatedBy: "\n")
+                var textBuffer: [String] = []
+                var tableBuffer: [String] = []
+
+                func flushText() {
+                    let joined = textBuffer.joined(separator: "\n").trimmingCharacters(in: .newlines)
+                    if !joined.isEmpty {
+                        segments.append(.text(id: nextId, content: joined))
+                        nextId += 1
+                    }
+                    textBuffer.removeAll()
+                }
+
+                func flushTable() {
+                    guard tableBuffer.count >= 2 else {
+                        textBuffer.append(contentsOf: tableBuffer)
+                        tableBuffer.removeAll()
+                        return
+                    }
+                    let parsedRows = tableBuffer.map { line -> [String] in
+                        line.trimmingCharacters(in: .whitespaces)
+                            .trimmingCharacters(in: CharacterSet(charactersIn: "|"))
+                            .components(separatedBy: "|")
+                            .map { $0.trimmingCharacters(in: .whitespaces) }
+                    }
+                    let headers = parsedRows.first ?? []
+                    let dataRows = parsedRows.dropFirst().filter { row in
+                        !row.allSatisfy { cell in
+                            cell.allSatisfy { $0 == "-" || $0 == ":" || $0 == " " }
+                        }
+                    }
+                    segments.append(.table(id: nextId, headers: headers, rows: Array(dataRows)))
+                    nextId += 1
+                    tableBuffer.removeAll()
+                }
+
+                for line in lines {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") && trimmed.count > 2 {
+                        flushText()
+                        tableBuffer.append(trimmed)
+                    } else {
+                        if !tableBuffer.isEmpty {
+                            flushTable()
+                        }
+                        textBuffer.append(line)
+                    }
+                }
+                if !tableBuffer.isEmpty { flushTable() }
+                flushText()
+            }
+        }
+
+        if segments.isEmpty {
+            return [.text(id: 0, content: raw)]
+        }
+        return segments
+    }
+
+    @ViewBuilder
+    private func richBodyView(for raw: String) -> some View {
+        let segments = parseSegments(from: raw)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(segments) { seg in
+                switch seg {
+                case .text(_, let content):
+                    Text(LocalizedStringKey(content))
+                        .appFont(AppTypography.body)
+                        .foregroundColor(isCurrentUser ? .white : AppColors.textPrimary)
+
+                case .codeBlock(_, let language, let code):
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(language.uppercased())
+                                .appFont(AppTypography.caption2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white.opacity(0.75))
+                            Spacer()
+                            Button {
+                                #if canImport(UIKit)
+                                UIPasteboard.general.string = code
+                                #elseif os(macOS)
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(code, forType: .string)
+                                #endif
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                                    .appFont(AppTypography.caption2)
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            Text(code)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.black.opacity(0.78))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                case .table(_, let headers, let rows):
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 0) {
+                            ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
+                                Text(header)
+                                    .appFont(AppTypography.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(isCurrentUser ? .white : AppColors.textPrimary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(6)
+                            }
+                        }
+                        .background(Color.black.opacity(0.18))
+
+                        ForEach(Array(rows.enumerated()), id: \.offset) { rowIdx, row in
+                            Divider()
+                            HStack(spacing: 0) {
+                                ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                    Text(cell)
+                                        .appFont(AppTypography.caption2)
+                                        .foregroundColor(isCurrentUser ? .white.opacity(0.92) : AppColors.textPrimary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(6)
+                                }
+                            }
+                            .background(rowIdx % 2 == 0 ? Color.clear : Color.black.opacity(0.07))
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+                }
+            }
+        }
     }
 }
 

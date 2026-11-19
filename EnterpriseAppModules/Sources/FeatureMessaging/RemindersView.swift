@@ -91,13 +91,17 @@ private struct ReminderRow: View {
 
             HStack(spacing: AppSpacing.sm) {
                 if reminder.status != .dismissed {
-                    Button("Snooze 10m") { Task { _ = await store.snooze(reminder.id, minutes: 10) } }
+                    Button("+15m") { Task { _ = await store.snooze(reminder.id, minutes: 15) } }
                         .appFont(AppTypography.caption1)
-                    Button("Snooze 1h") { Task { _ = await store.snooze(reminder.id, minutes: 60) } }
+                    Button("+1h") { Task { _ = await store.snooze(reminder.id, minutes: 60) } }
                         .appFont(AppTypography.caption1)
-                    Button("Dismiss") { Task { _ = await store.dismiss(reminder.id) } }
+                    Button("+3h") { Task { _ = await store.snooze(reminder.id, minutes: 180) } }
                         .appFont(AppTypography.caption1)
-                        .foregroundColor(.red)
+                    Button("Tomorrow") { Task { _ = await store.snooze(reminder.id, minutes: 1440) } }
+                        .appFont(AppTypography.caption1)
+                    Button("Done") { Task { _ = await store.dismiss(reminder.id) } }
+                        .appFont(AppTypography.caption1)
+                        .foregroundColor(.green)
                 }
                 Spacer()
                 Button(role: .destructive) {
@@ -139,6 +143,13 @@ public struct CreateReminderSheet: View {
     @State private var isSubmitting = false
     @State private var error: String?
 
+    private let quickPresets: [(label: String, offset: TimeInterval)] = [
+        ("In 20m", 1200),
+        ("In 1h", 3600),
+        ("In 3h", 10800),
+        ("Tomorrow 9am", 50400)
+    ]
+
     public init() {}
 
     public var body: some View {
@@ -149,6 +160,7 @@ public struct CreateReminderSheet: View {
                 }
                 Section("When") {
                     DatePicker("Remind me at", selection: $remindAt, in: Date()...)
+                    presetButtonsRow
                 }
                 if let error {
                     Section { Text(error).foregroundColor(.red) }
@@ -164,21 +176,42 @@ public struct CreateReminderSheet: View {
                     if isSubmitting { ProgressView() }
                     else {
                         Button("Create") {
-                            Task {
-                                isSubmitting = true
-                                defer { isSubmitting = false }
-                                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !trimmed.isEmpty else { error = "Description is required."; return }
-                                if let _ = await store.create(body: trimmed, remindAt: remindAt) {
-                                    dismiss()
-                                } else {
-                                    error = "Could not create reminder."
-                                }
-                            }
+                            submitReminder()
                         }
                         .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
+            }
+        }
+    }
+
+    private var presetButtonsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(quickPresets, id: \.label) { preset in
+                    Button(preset.label) {
+                        remindAt = Date().addingTimeInterval(preset.offset)
+                    }
+                    .appFont(AppTypography.caption2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppColors.backgroundSecondary)
+                    .cornerRadius(8)
+                }
+            }
+        }
+    }
+
+    private func submitReminder() {
+        Task {
+            isSubmitting = true
+            defer { isSubmitting = false }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { error = "Description is required."; return }
+            if let _ = await store.create(body: trimmed, remindAt: remindAt) {
+                dismiss()
+            } else {
+                error = "Could not create reminder."
             }
         }
     }

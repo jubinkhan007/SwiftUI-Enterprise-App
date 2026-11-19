@@ -1563,6 +1563,12 @@ fun EpicDetailDashboardModal(
                     ) {
                         // Section: Progress Rollup
                         item {
+                            val unfinishedCritical = childTasks.count {
+                                it.text("status").lowercase() !in listOf("done", "closed") && it.text("priority").lowercase() == "critical"
+                            }
+                            val healthLabel = if (unfinishedCritical > 0) "CRITICAL ($unfinishedCritical)" else "ON TRACK"
+                            val healthColor = if (unfinishedCritical > 0) AppColors.statusError else AppColors.statusSuccess
+
                             Card(
                                 shape = RoundedCornerShape(AppRadius.medium),
                                 colors = CardDefaults.cardColors(containerColor = AppColors.surfaceElevated),
@@ -1572,11 +1578,29 @@ fun EpicDetailDashboardModal(
                                     modifier = Modifier.padding(14.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Text(
-                                        text = "Progress",
-                                        style = AppTypography.headline,
-                                        color = AppColors.textPrimary
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Progress & Milestone Health",
+                                            style = AppTypography.headline,
+                                            color = AppColors.textPrimary
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(AppRadius.pill))
+                                                .background(healthColor.copy(alpha = 0.15f))
+                                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = healthLabel,
+                                                style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                                                color = healthColor
+                                            )
+                                        }
+                                    }
 
                                     // Points Rollup
                                     val donePoints = epic.number("epic_completed_points").toInt().let {

@@ -231,6 +231,8 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
 
   // View Mode: Kanban, Epics, Timeline
   const [viewMode, setViewMode] = useState<'board' | 'epics' | 'timeline'>('board');
+  const [highlightCriticalPath, setHighlightCriticalPath] = useState(true);
+  const [timelineCriticalOnly, setTimelineCriticalOnly] = useState(false);
 
   // Full Task Edit Modal State
   const [editingTask, setEditingTask] = useState<TaskItemDTO | null>(null);
@@ -798,6 +800,16 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
                   const completedChild = childTasks.filter(t => t.status === 'done').length;
                   const totalChild = childTasks.length;
                   const percent = totalChild > 0 ? Math.round((completedChild / totalChild) * 100) : (epic.status === 'done' ? 100 : 0);
+                  const totalPoints = childTasks.reduce((acc, c) => acc + (c.storyPoints || 0), 0) || (epic.storyPoints || 0);
+                  const donePoints = childTasks.filter(c => c.status === 'done').reduce((acc, c) => acc + (c.storyPoints || 0), 0) || (epic.status === 'done' ? totalPoints : 0);
+                  const criticalOpen = childTasks.filter(c => c.status !== 'done' && (c.priority === 'critical' || c.priority === 'urgent')).length;
+                  const overdueOpen = childTasks.filter(c => c.status !== 'done' && c.dueDate && new Date(c.dueDate) < new Date()).length;
+                  const healthLabel = criticalOpen > 0 ? `Critical Blockers (${criticalOpen})` : overdueOpen > 0 ? `At Risk (${overdueOpen} overdue)` : 'On Track';
+                  const healthClass = criticalOpen > 0
+                    ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                    : overdueOpen > 0
+                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
 
                   return (
                     <div 
@@ -806,12 +818,15 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="flex items-center gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                             <span className="text-[10px] font-mono font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2 py-0.5 rounded">
                               {epic.issueKey || `EPIC-${epic.id.slice(0, 4)}`}
                             </span>
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border uppercase ${getPriorityBadgeClass(epic.priority)}`}>
                               {epic.priority}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${healthClass}`}>
+                              {healthLabel}
                             </span>
                           </div>
                           <h3 
@@ -836,10 +851,10 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
                         </p>
                       )}
 
-                      {/* Progress Bar */}
+                      {/* Progress Bar & Story Points Rollup */}
                       <div className="space-y-1.5">
                         <div className="flex justify-between text-xs text-slate-400 font-medium">
-                          <span>Progress</span>
+                          <span>Progress ({completedChild}/{totalChild} issues • {donePoints}/{totalPoints} pts)</span>
                           <span className="text-slate-200 font-semibold">{percent}%</span>
                         </div>
                         <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -884,75 +899,150 @@ export const KanbanBoardScreen: React.FC<KanbanBoardScreenProps> = ({
           </div>
         ) : viewMode === 'timeline' ? (
           <div className="max-w-6xl mx-auto space-y-6 w-full">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-indigo-400" />
-                  Timeline & Sprint Roadmap
+                  Timeline &amp; Critical Path Roadmap
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Visual milestone schedule showing task progression across delivery phases
+                  Visual milestone schedule with critical path highlighting and dependency risk alerts
                 </p>
               </div>
-              <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl font-medium">
-                {filteredTasks.length} Scheduled Tasks
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setHighlightCriticalPath(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                    highlightCriticalPath
+                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  🔥 Highlight Critical Path
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimelineCriticalOnly(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                    timelineCriticalOnly
+                      ? 'bg-indigo-600 text-white border-indigo-500'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  {timelineCriticalOnly ? 'Showing Critical / Overdue Only' : 'Show All Tasks'}
+                </button>
+              </div>
             </div>
+
+            {/* Roadmap Health KPI Cards */}
+            {(() => {
+              const criticalCount = filteredTasks.filter(t => t.status !== 'done' && (t.priority === 'critical' || t.priority === 'urgent' || t.priority === 'high')).length;
+              const overdueCount = filteredTasks.filter(t => t.status !== 'done' && t.dueDate && new Date(t.dueDate) < new Date()).length;
+              const doneCount = filteredTasks.filter(t => t.status === 'done').length;
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Scheduled Items</span>
+                    <div className="text-lg font-bold text-slate-100 mt-0.5">{filteredTasks.length}</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-rose-500/20">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-rose-400">On Critical Path</span>
+                    <div className="text-lg font-bold text-rose-300 mt-0.5">{criticalCount}</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-amber-500/20">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Overdue / At Risk</span>
+                    <div className="text-lg font-bold text-amber-300 mt-0.5">{overdueCount}</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-emerald-500/20">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Shipped / Done</span>
+                    <div className="text-lg font-bold text-emerald-300 mt-0.5">{doneCount}</div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Timeline Phases Grid */}
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-6 shadow-xl">
               <div className="grid grid-cols-4 gap-4 pb-3 border-b border-slate-800 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">
                 <div className="text-slate-400">Backlog / To Do</div>
                 <div className="text-blue-400">Sprint Execution</div>
-                <div className="text-amber-400">Review & QA</div>
-                <div className="text-emerald-400">Completed & Released</div>
+                <div className="text-amber-400">Review &amp; QA</div>
+                <div className="text-emerald-400">Completed &amp; Released</div>
               </div>
 
               <div className="space-y-3">
-                {filteredTasks.map(task => {
-                  const phaseCol = task.status === 'done' ? 4 : task.status === 'in_review' || (task.status as string) === 'review' ? 3 : task.status === 'in_progress' ? 2 : 1;
-                  
-                  return (
-                    <div 
-                      key={task.id}
-                      onClick={() => openEditModal(task)}
-                      className="group p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 transition cursor-pointer flex items-center justify-between gap-4"
-                    >
-                      <div className="w-1/4 shrink-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-indigo-400">
-                            {task.issueKey || `TASK-${task.id.slice(0, 4)}`}
-                          </span>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border uppercase ${getPriorityBadgeClass(task.priority)}`}>
-                            {task.priority}
-                          </span>
-                        </div>
-                        <h4 className="text-xs font-semibold text-slate-200 mt-1 truncate group-hover:text-indigo-300">
-                          {task.title}
-                        </h4>
-                      </div>
+                {filteredTasks
+                  .filter(task => {
+                    if (!timelineCriticalOnly) return true;
+                    const isCrit = task.status !== 'done' && (task.priority === 'critical' || task.priority === 'urgent' || task.priority === 'high');
+                    const isOver = task.status !== 'done' && Boolean(task.dueDate && new Date(task.dueDate) < new Date());
+                    return isCrit || isOver;
+                  })
+                  .map(task => {
+                    const phaseCol = task.status === 'done' ? 4 : task.status === 'in_review' || (task.status as string) === 'review' ? 3 : task.status === 'in_progress' ? 2 : 1;
+                    const isCritical = highlightCriticalPath && task.status !== 'done' && (task.priority === 'critical' || task.priority === 'urgent' || task.priority === 'high');
+                    const isOverdue = task.status !== 'done' && Boolean(task.dueDate && new Date(task.dueDate) < new Date());
 
-                      {/* Visual Gantt Bar Span */}
-                      <div className="flex-1 grid grid-cols-4 gap-4 items-center">
-                        <div className={`col-span-4 flex items-center h-8 rounded-lg px-3 text-xs font-semibold transition shadow-sm ${
-                          phaseCol === 1 ? 'bg-slate-800/80 text-slate-300 border border-slate-700 w-1/4' :
-                          phaseCol === 2 ? 'bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-white w-2/4 ml-[25%]' :
-                          phaseCol === 3 ? 'bg-gradient-to-r from-amber-600/80 to-orange-600/80 text-white w-3/4 ml-[50%]' :
-                          'bg-emerald-600/80 text-white w-full'
-                        }`}>
-                          <span className="truncate">
-                            {phaseCol === 1 ? 'Scheduled' : phaseCol === 2 ? 'In Development' : phaseCol === 3 ? 'In Review' : 'Shipped'}
-                          </span>
-                          {task.storyPoints !== undefined && (
-                            <span className="ml-auto text-[10px] bg-black/30 px-1.5 py-0.5 rounded font-mono">
-                              {task.storyPoints} pts
+                    return (
+                      <div 
+                        key={task.id}
+                        onClick={() => openEditModal(task)}
+                        className={`group p-3 rounded-xl bg-slate-950/80 border transition cursor-pointer flex items-center justify-between gap-4 ${
+                          isCritical
+                            ? 'border-rose-500/40 hover:border-rose-500/70'
+                            : 'border-slate-800 hover:border-indigo-500/50'
+                        }`}
+                      >
+                        <div className="w-1/4 shrink-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-mono font-bold text-indigo-400">
+                              {task.issueKey || `TASK-${task.id.slice(0, 4)}`}
                             </span>
-                          )}
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border uppercase ${getPriorityBadgeClass(task.priority)}`}>
+                              {task.priority}
+                            </span>
+                            {isCritical && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                🔥 CRITICAL PATH
+                              </span>
+                            )}
+                            {isOverdue && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                OVERDUE
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-xs font-semibold text-slate-200 mt-1 truncate group-hover:text-indigo-300">
+                            {task.title}
+                          </h4>
+                        </div>
+
+                        {/* Visual Gantt Bar Span */}
+                        <div className="flex-1 grid grid-cols-4 gap-4 items-center">
+                          <div className={`col-span-4 flex items-center h-8 rounded-lg px-3 text-xs font-semibold transition shadow-sm ${
+                            isCritical
+                              ? `bg-gradient-to-r from-rose-600/85 to-amber-600/85 text-white ring-1 ring-rose-400/50 ${
+                                  phaseCol === 1 ? 'w-1/4' : phaseCol === 2 ? 'w-2/4 ml-[25%]' : 'w-3/4 ml-[50%]'
+                                }`
+                              : phaseCol === 1 ? 'bg-slate-800/80 text-slate-300 border border-slate-700 w-1/4' :
+                                phaseCol === 2 ? 'bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-white w-2/4 ml-[25%]' :
+                                phaseCol === 3 ? 'bg-gradient-to-r from-amber-600/80 to-orange-600/80 text-white w-3/4 ml-[50%]' :
+                                'bg-emerald-600/80 text-white w-full'
+                          }`}>
+                            <span className="truncate">
+                              {phaseCol === 1 ? 'Scheduled' : phaseCol === 2 ? 'In Development' : phaseCol === 3 ? 'In Review' : 'Shipped'}
+                            </span>
+                            {task.storyPoints !== undefined && (
+                              <span className="ml-auto text-[10px] bg-black/30 px-1.5 py-0.5 rounded font-mono">
+                                {task.storyPoints} pts
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
           </div>

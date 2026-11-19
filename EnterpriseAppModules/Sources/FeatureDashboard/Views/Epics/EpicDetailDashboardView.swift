@@ -64,27 +64,62 @@ public struct EpicDetailDashboardView: View {
         .refreshable { await viewModel.refresh() }
     }
 
+    private var epicHealthStatus: (label: String, color: Color, icon: String) {
+        let unfinishedCritical = viewModel.childIssues.filter { $0.status != .done && $0.priority == .critical }.count
+        let overdueCount = viewModel.childIssues.filter {
+            $0.status != .done && ($0.dueDate ?? Date.distantFuture) < Date()
+        }.count
+        if unfinishedCritical > 0 {
+            return ("Critical Blockers (\(unfinishedCritical))", AppColors.statusError, "exclamationmark.octagon.fill")
+        }
+        if overdueCount > 0 {
+            return ("At Risk (\(overdueCount) overdue)", AppColors.statusWarning, "exclamationmark.triangle.fill")
+        }
+        return ("On Track", AppColors.statusSuccess, "checkmark.seal.fill")
+    }
+
     private var progressSection: some View {
         Section {
             VStack(alignment: .leading, spacing: AppSpacing.md) {
-                Text(viewModel.epic.title)
-                    .appFont(AppTypography.headline)
-                    .foregroundColor(AppColors.textPrimary)
+                HStack {
+                    Text(viewModel.epic.title)
+                        .appFont(AppTypography.headline)
+                        .foregroundColor(AppColors.textPrimary)
+                    Spacer()
+                    let health = epicHealthStatus
+                    Label(health.label, systemImage: health.icon)
+                        .appFont(AppTypography.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(health.color.opacity(0.15))
+                        .foregroundColor(health.color)
+                        .cornerRadius(6)
+                }
+
+                let computedDonePts = viewModel.childIssues.filter { $0.status == .done }.reduce(0) { $0 + ($1.storyPoints ?? 0) }
+                let computedTotalPts = viewModel.childIssues.reduce(0) { $0 + ($1.storyPoints ?? 0) }
+                let donePts = max(viewModel.epic.epicCompletedPoints ?? 0, computedDonePts)
+                let totalPts = max(viewModel.epic.epicTotalPoints ?? 0, computedTotalPts)
+
+                let computedDoneIssues = viewModel.childIssues.filter { $0.status == .done }.count
+                let doneIssues = max(viewModel.epic.epicChildrenDoneCount ?? 0, computedDoneIssues)
+                let totalIssues = max(viewModel.epic.epicChildrenCount ?? 0, viewModel.childIssues.count)
 
                 epicProgressRow(
                     title: "Points",
-                    done: viewModel.epic.epicCompletedPoints ?? 0,
-                    total: viewModel.epic.epicTotalPoints ?? 0
+                    done: donePts,
+                    total: totalPts
                 )
                 epicProgressRow(
                     title: "Issues",
-                    done: viewModel.epic.epicChildrenDoneCount ?? 0,
-                    total: viewModel.epic.epicChildrenCount ?? viewModel.childIssues.count
+                    done: doneIssues,
+                    total: totalIssues
                 )
             }
             .padding(.vertical, AppSpacing.sm)
         } header: {
-            Text("Progress")
+            Text("Progress & Milestone Health")
         }
     }
 

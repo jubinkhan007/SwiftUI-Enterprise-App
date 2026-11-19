@@ -281,5 +281,22 @@ final class GovernanceTests: XCTestCase {
         XCTAssertEqual(decodedReport.totalHours, 14.0)
         XCTAssertEqual(decodedReport.billableHours, 11.5)
     }
+
+    func testScheduledMessageUpdateAndReminderSnoozePayloads() throws {
+        let targetDate = Date().addingTimeInterval(3600)
+        let updateReq = UpdateScheduledMessageRequest(
+            body: "```swift\nprint(\"hello\")\n```",
+            scheduledFor: targetDate
+        )
+        let encodedUpdate = try JSONCoding.encoder.encode(updateReq)
+        let decodedUpdate = try JSONCoding.decoder.decode(UpdateScheduledMessageRequest.self, from: encodedUpdate)
+        XCTAssertEqual(decodedUpdate.body, "```swift\nprint(\"hello\")\n```")
+        XCTAssertNotNil(decodedUpdate.scheduledFor)
+
+        let snoozeReq = SnoozeReminderRequest(minutes: 180)
+        let encodedSnooze = try JSONCoding.encoder.encode(snoozeReq)
+        let decodedSnooze = try JSONCoding.decoder.decode(SnoozeReminderRequest.self, from: encodedSnooze)
+        XCTAssertEqual(decodedSnooze.minutes, 180)
+    }
 }
 

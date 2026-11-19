@@ -75,6 +75,7 @@ export const ProductivityScreen: React.FC<ProductivityScreenProps> = ({ onNaviga
   const [scheduledFilter, setScheduledFilter] = useState<'all' | 'scheduled' | 'sent' | 'cancelled'>('all');
   const [conversations, setConversations] = useState<ConversationDTO[]>([]);
   const [showCreateScheduledModal, setShowCreateScheduledModal] = useState(false);
+  const [editingScheduled, setEditingScheduled] = useState<ScheduledMessageDTO | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState('');
   const [scheduledMessageBody, setScheduledMessageBody] = useState('');
   const [scheduledMessageDateTime, setScheduledMessageDateTime] = useState('');
@@ -232,18 +233,27 @@ export const ProductivityScreen: React.FC<ProductivityScreenProps> = ({ onNaviga
   // ===================== SCHEDULED MESSAGES HANDLERS =====================
   const handleCreateScheduledMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedConversationId || !scheduledMessageBody.trim() || !scheduledMessageDateTime) {
+    if ((!editingScheduled && !selectedConversationId) || !scheduledMessageBody.trim() || !scheduledMessageDateTime) {
       showNotification('Conversation, message body, and scheduled time are required.', 'error');
       return;
     }
     try {
       const dt = new Date(scheduledMessageDateTime).toISOString();
-      await api.createScheduledMessage(selectedConversationId, {
-        body: scheduledMessageBody.trim(),
-        scheduledFor: dt
-      });
-      showNotification('Message scheduled successfully!');
+      if (editingScheduled) {
+        await api.updateScheduledMessage(editingScheduled.id, {
+          body: scheduledMessageBody.trim(),
+          scheduledFor: dt
+        });
+        showNotification('Scheduled message updated!');
+      } else {
+        await api.createScheduledMessage(selectedConversationId, {
+          body: scheduledMessageBody.trim(),
+          scheduledFor: dt
+        });
+        showNotification('Message scheduled successfully!');
+      }
       setShowCreateScheduledModal(false);
+      setEditingScheduled(null);
       setScheduledMessageBody('');
       setScheduledMessageDateTime('');
       const scheds = await api.getScheduledMessages(scheduledFilter === 'all' ? undefined : scheduledFilter);
@@ -641,6 +651,21 @@ export const ProductivityScreen: React.FC<ProductivityScreenProps> = ({ onNaviga
                       {msg.status === 'scheduled' && (
                         <div className="flex items-center gap-2">
                           <button
+                            onClick={() => {
+                              setEditingScheduled(msg);
+                              setSelectedConversationId(msg.conversationId);
+                              setScheduledMessageBody(msg.body);
+                              const d = new Date(msg.scheduledFor);
+                              const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                              setScheduledMessageDateTime(iso);
+                              setShowCreateScheduledModal(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold text-xs flex items-center gap-1 transition"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Edit
+                          </button>
+                          <button
                             onClick={() => handleSendNow(msg.id)}
                             className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1 transition"
                           >
@@ -749,6 +774,18 @@ export const ProductivityScreen: React.FC<ProductivityScreenProps> = ({ onNaviga
                               className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition"
                             >
                               +1h
+                            </button>
+                            <button
+                              onClick={() => handleSnoozeReminder(rem.id, 180)}
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition"
+                            >
+                              +3h
+                            </button>
+                            <button
+                              onClick={() => handleSnoozeReminder(rem.id, 1440)}
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition"
+                            >
+                              Tomorrow
                             </button>
                             <button
                               onClick={() => handleDismissReminder(rem.id)}

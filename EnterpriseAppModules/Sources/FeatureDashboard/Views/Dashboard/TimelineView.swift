@@ -5,26 +5,73 @@ import DesignSystem
 struct TimelineView: View {
     @ObservedObject var viewModel: DashboardViewModel
 
+    @State private var highlightCriticalPath: Bool = true
+    @State private var showCriticalOnly: Bool = false
+
     private let calendar = Calendar.current
     private let dayWidth: CGFloat = 80
     private let rowHeight: CGFloat = 40
 
+    private var blockingTaskIds: Set<UUID> {
+        let relations = viewModel.timelineResponse?.relations ?? []
+        var ids = Set<UUID>()
+        for r in relations where r.relationType == .blocks {
+            ids.insert(r.taskId)
+            ids.insert(r.relatedTaskId)
+        }
+        return ids
+    }
+
+    private func isTaskOnCriticalPath(_ task: TaskItemDTO) -> Bool {
+        guard task.status != .done else { return false }
+        return task.priority == .critical || task.priority == .high || blockingTaskIds.contains(task.id)
+    }
+
+    private func isTaskOverdue(_ task: TaskItemDTO) -> Bool {
+        guard task.status != .done, let due = task.dueDate else { return false }
+        return due < Date()
+    }
+
+    private var displayedTasks: [TaskItemDTO] {
+        if showCriticalOnly {
+            return viewModel.tasks.filter { isTaskOnCriticalPath($0) || isTaskOverdue($0) }
+        }
+        return viewModel.tasks
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            roadmapHealthToolbar
+
             TimelineHeader(startDate: viewModel.startDate, endDate: viewModel.endDate, dayWidth: dayWidth)
 
             ScrollView(.vertical, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 0) {
                     // Task Labels
                     VStack(spacing: 0) {
-                        ForEach(viewModel.tasks) { task in
-                            Text(task.title)
-                                .appFont(AppTypography.caption1)
-                                .frame(height: rowHeight)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.leading, 8)
-                                .background(AppColors.surfacePrimary)
-                                .border(AppColors.borderDefault.opacity(0.3), width: 0.5)
+                        ForEach(displayedTasks) { task in
+                            let critical = highlightCriticalPath && isTaskOnCriticalPath(task)
+                            let overdue = isTaskOverdue(task)
+                            HStack(spacing: 4) {
+                                if critical {
+                                    Image(systemName: "flame.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(AppColors.statusError)
+                                } else if overdue {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(AppColors.statusWarning)
+                                }
+                                Text(task.title)
+                                    .appFont(AppTypography.caption1)
+                                    .foregroundColor(critical ? AppColors.statusError : AppColors.textPrimary)
+                                    .lineLimit(1)
+                            }
+                            .frame(height: rowHeight)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 8)
+                            .background(AppColors.surfacePrimary)
+                            .border(AppColors.borderDefault.opacity(0.3), width: 0.5)
                         }
                     }
                     .frame(width: 150)
@@ -38,15 +85,17 @@ struct TimelineView: View {
                                 endDate: viewModel.endDate,
                                 dayWidth: dayWidth,
                                 rowHeight: rowHeight,
-                                rows: viewModel.tasks.count
+                                rows: displayedTasks.count
                             )
 
                             VStack(spacing: 0) {
-                                ForEach(viewModel.tasks) { task in
+                                ForEach(displayedTasks) { task in
                                     TimelineTaskBar(
                                         task: task,
                                         timelineStart: viewModel.startDate,
                                         dayWidth: dayWidth,
+                                        isCriticalPath: highlightCriticalPath && isTaskOnCriticalPath(task),
+                                        isOverdue: isTaskOverdue(task),
                                         onDateChange: { taskId, start, due in
                                             Task {
                                                 await viewModel.updateTaskDates(taskId: taskId, startDate: start, dueDate: due)
@@ -60,7 +109,7 @@ struct TimelineView: View {
                             // Dependency lines drawn on top of bars, non-interactive
                             if let relations = viewModel.timelineResponse?.relations, !relations.isEmpty {
                                 TimelineDependencyLines(
-                                    tasks: viewModel.tasks,
+                                    tasks: displayedTasks,
                                     relations: relations,
                                     timelineStart: viewModel.startDate,
                                     dayWidth: dayWidth,
@@ -77,6 +126,65 @@ struct TimelineView: View {
         .onAppear {
             updateRange()
         }
+    }
+
+    private var roadmapHealthToolbar: some View {
+        let criticalCount = viewModel.tasks.filter { isTaskOnCriticalPath($0) }.count
+        let overdueCount = viewModel.tasks.filter { isTaskOverdue($0) }.count
+        let doneCount = viewModel.tasks.filter { $0.status == .done }.count
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                HStack(spacing: 4) {
+                    Image(systemName: "flame.fill")
+                        .foregroundColor(AppColors.statusError)
+                    Text("Critical Path: \(criticalCount)")
+                        .appFont(AppTypography.caption2)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(AppColors.statusError.opacity(0.12))
+                .cornerRadius(6)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .foregroundColor(AppColors.statusWarning)
+                    Text("Overdue: \(overdueCount)")
+                        .appFont(AppTypography.caption2)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(AppColors.statusWarning.opacity(0.12))
+                .cornerRadius(6)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundColor(AppColors.statusSuccess)
+                    Text("Done: \(doneCount)/\(viewModel.tasks.count)")
+                        .appFont(AppTypography.caption2)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(AppColors.statusSuccess.opacity(0.12))
+                .cornerRadius(6)
+
+                Divider().frame(height: 16)
+
+                Toggle("Highlight Critical Path", isOn: $highlightCriticalPath)
+                    .appFont(AppTypography.caption2)
+                    .toggleStyle(.button)
+
+                Toggle("Critical / Overdue Only", isOn: $showCriticalOnly)
+                    .appFont(AppTypography.caption2)
+                    .toggleStyle(.button)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(AppColors.surfacePrimary)
     }
 
     private func updateRange() {
@@ -169,9 +277,18 @@ struct TimelineTaskBar: View {
     let task: TaskItemDTO
     let timelineStart: Date
     let dayWidth: CGFloat
+    var isCriticalPath: Bool = false
+    var isOverdue: Bool = false
     let onDateChange: @MainActor @Sendable (UUID, Date?, Date?) -> Void
 
     @State private var dragAccumulator: CGFloat = 0
+
+    private var barColor: Color {
+        if task.status == .done { return AppColors.statusSuccess }
+        if isCriticalPath { return AppColors.statusError }
+        if isOverdue { return AppColors.statusWarning }
+        return AppColors.brandPrimary
+    }
 
     var body: some View {
         let (offset, width) = calculatePosition()
@@ -179,26 +296,32 @@ struct TimelineTaskBar: View {
         return ZStack(alignment: .leading) {
             if width > 0 {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(AppColors.brandPrimary.opacity(0.15))
+                    .fill(barColor.opacity(isCriticalPath ? 0.22 : 0.15))
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(AppColors.brandPrimary, lineWidth: 1.5)
+                            .stroke(barColor, lineWidth: isCriticalPath ? 2.0 : 1.5)
                     )
                     .frame(width: width, height: 24)
                     .offset(x: offset + dragAccumulator)
                     .overlay(
                         HStack(spacing: 4) {
+                            if isCriticalPath {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(barColor)
+                                    .padding(.leading, 6)
+                            }
                             Text(task.title)
-                                .appFont(.system(size: 10, weight: .medium))
-                                .foregroundColor(AppColors.brandPrimary)
-                                .padding(.leading, 8)
+                                .appFont(.system(size: 10, weight: isCriticalPath ? .bold : .medium))
+                                .foregroundColor(barColor)
+                                .padding(.leading, isCriticalPath ? 2 : 8)
                                 .lineLimit(1)
                             
                             Spacer()
                             
                             Image(systemName: "line.3.horizontal")
                                 .font(.system(size: 8))
-                                .foregroundColor(AppColors.brandPrimary.opacity(0.6))
+                                .foregroundColor(barColor.opacity(0.6))
                                 .padding(.trailing, 6)
                         }
                         .frame(width: width)

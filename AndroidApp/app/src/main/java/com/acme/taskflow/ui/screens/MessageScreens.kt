@@ -450,11 +450,39 @@ fun ChatScreen(vm: AppViewModel, api: ApiClient, conversationId: String, lists: 
                     ) {
                         Column {
                             val msgBody = if (message.text("deleted_at").isNotBlank()) "Message deleted" else message.text("body")
-                            Text(
-                                text = msgBody,
-                                style = AppTypography.body,
-                                color = if (isMe) Color.White else AppColors.textPrimary
-                            )
+                            if (msgBody.contains("```")) {
+                                val parts = msgBody.split("```")
+                                parts.forEachIndexed { idx, part ->
+                                    if (idx % 2 == 1) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color.Black.copy(alpha = 0.72f))
+                                                .padding(8.dp)
+                                        ) {
+                                            Text(
+                                                text = part.trim(),
+                                                style = AppTypography.caption1,
+                                                color = Color(0xFF6EE7B7)
+                                            )
+                                        }
+                                    } else if (part.isNotBlank()) {
+                                        Text(
+                                            text = part.trim(),
+                                            style = AppTypography.body,
+                                            color = if (isMe) Color.White else AppColors.textPrimary
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = msgBody,
+                                    style = AppTypography.body,
+                                    color = if (isMe) Color.White else AppColors.textPrimary
+                                )
+                            }
 
                             // Rich Link Preview if link detected
                             val detectedUrl = urlRegex.find(msgBody)?.value
@@ -623,6 +651,12 @@ fun ChatScreen(vm: AppViewModel, api: ApiClient, conversationId: String, lists: 
                 onClick = { showTemplates = true }
             ) {
                 Icon(Icons.Default.TextSnippet, "Templates", tint = AppColors.textSecondary, modifier = Modifier.size(20.dp))
+            }
+            TextButton(onClick = { body += if (body.isBlank()) "```\n// code\n```" else "\n```\n// code\n```" }) {
+                Text("Code", style = AppTypography.caption2, color = AppColors.brandPrimary)
+            }
+            TextButton(onClick = { body += if (body.isBlank()) "| Header 1 | Header 2 |\n|---|---|\n| Cell 1 | Cell 2 |" else "\n| Header 1 | Header 2 |\n|---|---|\n| Cell 1 | Cell 2 |" }) {
+                Text("Table", style = AppTypography.caption2, color = AppColors.brandPrimary)
             }
         }
 
