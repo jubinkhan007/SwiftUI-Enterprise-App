@@ -10,6 +10,7 @@ import Combine
 public final class SecuritySessionsViewModel: ObservableObject {
     @Published public var sessions: [UserSessionDTO] = []
     @Published public var isLoading = false
+    @Published public var isRevokingOthers = false
     @Published public var errorMessage: String?
     @Published public var revokingIds: Set<UUID> = []
     @Published public var sessionPendingRevoke: UserSessionDTO?
@@ -23,6 +24,27 @@ public final class SecuritySessionsViewModel: ObservableObject {
     ) {
         self.apiClient = apiClient
         self.configuration = configuration
+    }
+
+    public var primarySessionId: UUID? {
+        sessions.first?.id
+    }
+
+    public var primaryIPAddress: String? {
+        let ip = sessions.first?.ipAddress.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return ip.isEmpty ? nil : ip
+    }
+
+    public var distinctIPCount: Int {
+        Set(sessions.map { $0.ipAddress.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }).count
+    }
+
+    public var anomalousSessionsCount: Int {
+        sessions.filter { !anomalyReasons(for: $0).isEmpty }.count
+    }
+
+    public func anomalyReasons(for session: UserSessionDTO) -> [String] {
+        session.anomalyFlags(primaryIP: primaryIPAddress)
     }
 
     public func load() async {
@@ -53,6 +75,28 @@ public final class SecuritySessionsViewModel: ObservableObject {
         } catch {
             handle(error)
             return false
+        }
+    }
+
+    /// Bulk-revokes all other active sessions besides the current/primary session.
+    @discardableResult
+    public func revokeAllOtherSessions() async -> Int {
+        guard sessions.count > 1 else { return 0 }
+        isRevokingOthers = true
+        errorMessage = nil
+        defer { isRevokingOthers = false }
+
+        let beforeCount = sessions.count
+        do {
+            let endpoint = SessionEndpoint.revokeOthers(configuration: configuration)
+            _ = try await apiClient.request(endpoint, responseType: APIResponse<EmptyResponse>.self)
+            if let keepId = primarySessionId {
+                sessions = sessions.filter { $0.id == keepId }
+            }
+            return max(0, beforeCount - sessions.count)
+        } catch {
+            handle(error)
+            return 0
         }
     }
 
@@ -92,6 +136,23 @@ public extension UserSessionDTO {
         }
         if t.contains("ipad") || t.contains("tablet") { return "ipad" }
         return "laptopcomputer"
+    }
+
+    /// Flags potential device/session anomalies relative to the caller's primary IP and current time.
+    func anomalyFlags(primaryIP: String?, now: Date = Date()) -> [String] {
+        var flags: [String] = []
+        let cleanIP = ipAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let primary = primaryIP, !primary.isEmpty, !cleanIP.isEmpty, cleanIP != primary {
+            flags.append("Different IP")
+        }
+        let ua = userAgent.lowercased()
+        if ua.contains("curl") || ua.contains("python") || ua.contains("postman") || ua.contains("bot") || ua.isEmpty {
+            flags.append("CLI / Automated")
+        }
+        if let created = createdAt, now.timeIntervalSince(created) > 30 * 24 * 3600 {
+            flags.append("Stale >30d")
+        }
+        return flags
     }
 }
 

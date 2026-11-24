@@ -151,6 +151,19 @@ fun sessionDeviceIcon(session: JsonObject): ImageVector {
     }
 }
 
+fun sessionAnomalyFlags(session: JsonObject, primaryIp: String?): List<String> {
+    val flags = mutableListOf<String>()
+    val ip = session.text("ip_address", session.text("ipAddress")).trim()
+    if (!primaryIp.isNullOrBlank() && ip.isNotBlank() && ip != primaryIp) {
+        flags.add("Different IP")
+    }
+    val ua = session.text("user_agent", session.text("userAgent")).lowercase()
+    if (ua.isBlank() || "curl" in ua || "python" in ua || "postman" in ua || "bot" in ua) {
+        flags.add("CLI / Automated")
+    }
+    return flags
+}
+
 @Composable
 fun RolesPermissionsScreen(vm: AppViewModel, api: ApiClient) {
     Column(Modifier.fillMaxSize().background(AppColors.backgroundPrimary)) {
@@ -222,8 +235,11 @@ fun RolesPermissionsContent(
 
     var selectedRole by rememberSaveable { mutableStateOf<String?>(null) }
     val activeRole = selectedRole ?: myRole ?: "member"
+    var compareRole by rememberSaveable { mutableStateOf<String?>(null) }
+    var permSearch by rememberSaveable { mutableStateOf("") }
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val granted = RolePermissions.permissionsFor(activeRole)
+    val comparedGranted = compareRole?.let { RolePermissions.permissionsFor(it) }
     val visibleCategories = RolePermissions.categories.filter { selectedCategory == null || it.first == selectedCategory }
 
     Column(modifier) {
@@ -254,6 +270,16 @@ fun RolesPermissionsContent(
             }
 
             item {
+                IosTextField(
+                    label = "Search permissions (e.g. audit, sprints)...",
+                    value = permSearch,
+                    onValueChange = { permSearch = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("input_permission_search")
+                )
+            }
+
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -278,6 +304,26 @@ fun RolesPermissionsContent(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(RolePermissions.summary(activeRole), style = AppTypography.caption1, color = AppColors.textSecondary)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Compare:", style = AppTypography.caption2, color = AppColors.textSecondary)
+                    FilterChip(
+                        selected = compareRole == null,
+                        onClick = { compareRole = null },
+                        label = { Text("None") }
+                    )
+                    RolePermissions.roles.filter { it != activeRole }.forEach { role ->
+                        FilterChip(
+                            selected = compareRole == role,
+                            onClick = { compareRole = if (compareRole == role) null else role },
+                            label = { Text(RolePermissions.displayName(role)) }
+                        )
+                    }
+                }
             }
 
             item {
@@ -301,28 +347,43 @@ fun RolesPermissionsContent(
             }
 
             items(visibleCategories, key = { it.first }) { (category, permissions) ->
-                IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
-                    Text(category, style = AppTypography.headline, color = AppColors.textPrimary)
-                    Spacer(Modifier.height(8.dp))
-                    permissions.forEachIndexed { index, permission ->
-                        val allowed = permission in granted
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(RolePermissions.label(permission), style = AppTypography.body, color = AppColors.textPrimary)
-                                Text(permission, style = AppTypography.caption2, color = AppColors.textTertiary)
+                val q = permSearch.trim().lowercase()
+                val filteredPerms = if (q.isEmpty()) permissions else permissions.filter {
+                    it.lowercase().contains(q) || RolePermissions.label(it).lowercase().contains(q)
+                }
+                if (filteredPerms.isNotEmpty()) {
+                    IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+                        Text(category, style = AppTypography.headline, color = AppColors.textPrimary)
+                        Spacer(Modifier.height(8.dp))
+                        filteredPerms.forEachIndexed { index, permission ->
+                            val allowed = permission in granted
+                            val comparedAllowed = comparedGranted?.contains(permission)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(RolePermissions.label(permission), style = AppTypography.body, color = AppColors.textPrimary)
+                                    Text(permission, style = AppTypography.caption2, color = AppColors.textTertiary)
+                                }
+                                if (comparedAllowed != null && allowed != comparedAllowed) {
+                                    Text(
+                                        text = if (allowed) "+ Only ${RolePermissions.displayName(activeRole)}" else "- Missing vs ${RolePermissions.displayName(compareRole!!)}",
+                                        style = AppTypography.caption2.copy(fontWeight = FontWeight.SemiBold),
+                                        color = if (allowed) AppColors.statusSuccess else AppColors.statusWarning,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (allowed) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                                    contentDescription = if (allowed) "Allowed" else "Not allowed",
+                                    tint = if (allowed) AppColors.statusSuccess else AppColors.textTertiary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
-                            Icon(
-                                imageVector = if (allowed) Icons.Default.CheckCircle else Icons.Default.Cancel,
-                                contentDescription = if (allowed) "Allowed" else "Not allowed",
-                                tint = if (allowed) AppColors.statusSuccess else AppColors.textTertiary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        if (index < permissions.lastIndex) {
-                            HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+                            if (index < filteredPerms.lastIndex) {
+                                HorizontalDivider(thickness = 0.5.dp, color = AppColors.borderSubtle)
+                            }
                         }
                     }
                 }
@@ -382,7 +443,11 @@ fun SecuritySessionsContent(
 ) {
     val remote = rememberRemote(api, "/api/me/sessions", vm.revision)
     var selected by remember { mutableStateOf<JsonObject?>(null) }
+    var confirmRevokeOthers by remember { mutableStateOf(false) }
     val sessions = remote.data.rows()
+    val primarySessionId = sessions.firstOrNull()?.id
+    val primaryIp = sessions.firstOrNull()?.let { it.text("ip_address", it.text("ipAddress")).trim().ifBlank { null } }
+    val anomalousCount = sessions.count { sessionAnomalyFlags(it, primaryIp).isNotEmpty() }
 
     Column(modifier) {
         RemoteStatus(remote)
@@ -394,22 +459,55 @@ fun SecuritySessionsContent(
         ) {
             item {
                 IosCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(
-                            Icons.Default.Security,
-                            contentDescription = null,
-                            tint = AppColors.brandPrimary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text("Active sessions (${sessions.size})", style = AppTypography.headline, color = AppColors.textPrimary)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "These devices are currently signed in to your account. Revoke any session you don't recognise.",
-                                style = AppTypography.caption1,
-                                color = AppColors.textSecondary
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(
+                                Icons.Default.Security,
+                                contentDescription = null,
+                                tint = AppColors.brandPrimary,
+                                modifier = Modifier.size(24.dp)
                             )
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("Active sessions (${sessions.size})", style = AppTypography.headline, color = AppColors.textPrimary)
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    "These devices are currently signed in to your account. Revoke any session you don't recognise.",
+                                    style = AppTypography.caption1,
+                                    color = AppColors.textSecondary
+                                )
+                            }
+                        }
+
+                        if (anomalousCount > 0) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(AppRadius.small))
+                                    .background(AppColors.statusWarning.copy(alpha = 0.14f))
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Warning, null, tint = AppColors.statusWarning, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "$anomalousCount anomalous session(s) detected (different IP or automated client).",
+                                    style = AppTypography.caption1.copy(fontWeight = FontWeight.SemiBold),
+                                    color = AppColors.statusWarning
+                                )
+                            }
+                        }
+
+                        if (sessions.size > 1) {
+                            OutlinedButton(
+                                onClick = { confirmRevokeOthers = true },
+                                modifier = Modifier.fillMaxWidth().testTag("btn_revoke_all_other_sessions"),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.statusError)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Logout, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Sign Out All Other Devices (${sessions.size - 1})")
+                            }
                         }
                     }
                 }
@@ -420,6 +518,8 @@ fun SecuritySessionsContent(
                 val ip = session.text("ip_address", session.text("ipAddress")).ifBlank { "Unknown IP" }
                 val createdAt = session.text("created_at", session.text("createdAt"))
                 val expiresAt = session.text("expires_at", session.text("expiresAt"))
+                val anomalies = sessionAnomalyFlags(session, primaryIp)
+                val isPrimary = session.id == primarySessionId
 
                 IosCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -427,15 +527,36 @@ fun SecuritySessionsContent(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(RoundedCornerShape(AppRadius.small))
-                                .background(AppColors.brandPrimary.copy(alpha = 0.12f)),
+                                .background((if (anomalies.isEmpty()) AppColors.brandPrimary else AppColors.statusWarning).copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(sessionDeviceIcon(session), null, tint = AppColors.brandPrimary, modifier = Modifier.size(20.dp))
+                            Icon(
+                                sessionDeviceIcon(session),
+                                null,
+                                tint = if (anomalies.isEmpty()) AppColors.brandPrimary else AppColors.statusWarning,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(clientLabel, style = AppTypography.headline, color = AppColors.textPrimary)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(clientLabel, style = AppTypography.headline, color = AppColors.textPrimary)
+                                if (isPrimary) {
+                                    Text(
+                                        "CURRENT",
+                                        style = AppTypography.caption2.copy(fontWeight = FontWeight.Bold),
+                                        color = AppColors.statusSuccess
+                                    )
+                                }
+                            }
                             Text(ip, style = AppTypography.caption1, color = AppColors.textSecondary)
+                            if (anomalies.isNotEmpty()) {
+                                Text(
+                                    "⚠ ${anomalies.joinToString(" • ")}",
+                                    style = AppTypography.caption2.copy(fontWeight = FontWeight.SemiBold),
+                                    color = AppColors.statusWarning
+                                )
+                            }
                             if (createdAt.isNotBlank()) {
                                 Text("Signed in ${dateLabel(createdAt)}", style = AppTypography.caption2, color = AppColors.textTertiary)
                             }
@@ -452,6 +573,19 @@ fun SecuritySessionsContent(
                     }
                 }
             }
+        }
+    }
+
+    if (confirmRevokeOthers) {
+        ConfirmDialog(
+            title = "Sign out all other devices?",
+            message = "All ${sessions.size - 1} other active session(s) will be revoked immediately.",
+            onDismiss = { confirmRevokeOthers = false }
+        ) {
+            api.request("/api/me/sessions/others", "DELETE")
+            confirmRevokeOthers = false
+            remote.refresh()
+            vm.changed()
         }
     }
 

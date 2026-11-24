@@ -44,6 +44,7 @@ func routes(_ app: Application) throws {
     // Setup authenticated API routes
     let authenticatedAPI = api.grouped(AnyAuthMiddleware())
     authenticatedAPI.get("me", "sessions", use: sessionController.listMySessions)
+    authenticatedAPI.delete("me", "sessions", "others", use: sessionController.revokeOtherSessions)
     authenticatedAPI.delete("me", "sessions", ":sessionID", use: sessionController.revokeMySession)
     // Org-scoped routes (require X-Org-Id header)
     let orgScopedAPI = authenticatedAPI.grouped(OrgTenantMiddleware())

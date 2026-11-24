@@ -9,7 +9,10 @@ import DesignSystem
 public struct OrganizationRolesView: View {
     private let currentRole: UserRole?
     @State private var selectedRole: UserRole
+    @State private var compareRole: UserRole? = nil
     @State private var selectedCategory: PermissionCategory?
+    @State private var searchQuery: String = ""
+    @State private var showFullMatrix: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     /// Highest privilege first, matching the web admin console.
@@ -41,33 +44,15 @@ public struct OrganizationRolesView: View {
                 }
 
                 Section {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: AppSpacing.sm) {
-                            ForEach(Self.roleOrder, id: \.self) { role in
-                                Button {
-                                    selectedRole = role
-                                } label: {
-                                    Text(role.displayName + (role == currentRole ? " (You)" : ""))
-                                        .appFont(AppTypography.subheadline)
-                                        .padding(.horizontal, AppSpacing.md)
-                                        .padding(.vertical, AppSpacing.xs + 2)
-                                        .background(selectedRole == role ? role.tint : AppColors.surfaceElevated)
-                                        .foregroundColor(selectedRole == role ? .white : AppColors.textPrimary)
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.vertical, AppSpacing.xs)
+                    Picker("View Mode", selection: $showFullMatrix) {
+                        Text("Role Inspector").tag(false)
+                        Text("Side-by-Side Matrix").tag(true)
                     }
-                    Text(selectedRole.summary)
-                        .appFont(AppTypography.caption1)
-                        .foregroundColor(AppColors.textSecondary)
-                } header: {
-                    Text("Roles")
-                }
+                    .pickerStyle(.segmented)
 
-                Section {
+                    TextField("Search permissions (e.g. audit, sprints, delete)...", text: $searchQuery)
+                        .appFont(AppTypography.subheadline)
+
                     Picker("Category", selection: $selectedCategory) {
                         Text("All categories").tag(PermissionCategory?.none)
                         ForEach(PermissionCategory.allCases) { category in
@@ -76,26 +61,10 @@ public struct OrganizationRolesView: View {
                     }
                 }
 
-                let granted = PermissionSet.defaultPermissions(for: selectedRole)
-                ForEach(visibleCategories) { category in
-                    Section(category.title) {
-                        ForEach(category.permissions, id: \.self) { permission in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(permission.label)
-                                        .appFont(AppTypography.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Text(permission.rawValue)
-                                        .appFont(AppTypography.caption2)
-                                        .foregroundColor(AppColors.textTertiary)
-                                }
-                                Spacer()
-                                Image(systemName: granted.has(permission) ? "checkmark.circle.fill" : "xmark.circle")
-                                    .foregroundColor(granted.has(permission) ? AppColors.statusSuccess : AppColors.textTertiary)
-                                    .accessibilityLabel(granted.has(permission) ? "Allowed" : "Not allowed")
-                            }
-                        }
-                    }
+                if showFullMatrix {
+                    fullMatrixSections
+                } else {
+                    roleInspectorSections
                 }
             }
             #if os(iOS)
@@ -108,6 +77,134 @@ public struct OrganizationRolesView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var roleInspectorSections: some View {
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AppSpacing.sm) {
+                    ForEach(Self.roleOrder, id: \.self) { role in
+                        Button {
+                            selectedRole = role
+                        } label: {
+                            Text(role.displayName + (role == currentRole ? " (You)" : ""))
+                                .appFont(AppTypography.subheadline)
+                                .padding(.horizontal, AppSpacing.md)
+                                .padding(.vertical, AppSpacing.xs + 2)
+                                .background(selectedRole == role ? role.tint : AppColors.surfaceElevated)
+                                .foregroundColor(selectedRole == role ? .white : AppColors.textPrimary)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, AppSpacing.xs)
+            }
+            Text(selectedRole.summary)
+                .appFont(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+
+            Picker("Compare With Role", selection: $compareRole) {
+                Text("None").tag(UserRole?.none)
+                ForEach(Self.roleOrder.filter { $0 != selectedRole }, id: \.self) { role in
+                    Text(role.displayName).tag(UserRole?.some(role))
+                }
+            }
+        } header: {
+            Text("Roles")
+        }
+
+        let granted = PermissionSet.defaultPermissions(for: selectedRole)
+        let comparedGranted = compareRole.map { PermissionSet.defaultPermissions(for: $0) }
+        ForEach(visibleCategories) { category in
+            let perms = filteredPermissions(in: category)
+            if !perms.isEmpty {
+                Section(category.title) {
+                    ForEach(perms, id: \.self) { permission in
+                        let hasSelected = granted.has(permission)
+                        let hasCompared = comparedGranted?.has(permission)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(permission.label)
+                                    .appFont(AppTypography.body)
+                                    .foregroundColor(AppColors.textPrimary)
+                                Text(permission.rawValue)
+                                    .appFont(AppTypography.caption2)
+                                    .foregroundColor(AppColors.textTertiary)
+                            }
+                            Spacer()
+                            if let hasCompared, hasSelected != hasCompared {
+                                Text(hasSelected ? "+ Only \(selectedRole.displayName)" : "- Missing vs \(compareRole?.displayName ?? "")")
+                                    .appFont(AppTypography.caption2)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background((hasSelected ? AppColors.statusSuccess : AppColors.statusWarning).opacity(0.16))
+                                    .foregroundColor(hasSelected ? AppColors.statusSuccess : AppColors.statusWarning)
+                                    .cornerRadius(4)
+                            }
+                            Image(systemName: hasSelected ? "checkmark.circle.fill" : "xmark.circle")
+                                .foregroundColor(hasSelected ? AppColors.statusSuccess : AppColors.textTertiary)
+                                .accessibilityLabel(hasSelected ? "Allowed" : "Not allowed")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fullMatrixSections: some View {
+        ForEach(visibleCategories) { category in
+            let perms = filteredPermissions(in: category)
+            if !perms.isEmpty {
+                Section(category.title) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Text("Permission")
+                                    .appFont(AppTypography.caption2)
+                                    .fontWeight(.bold)
+                                    .frame(width: 140, alignment: .leading)
+                                ForEach(Self.roleOrder, id: \.self) { role in
+                                    Text(String(role.displayName.prefix(3)).uppercased())
+                                        .appFont(AppTypography.caption2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(role.tint)
+                                        .frame(width: 36)
+                                }
+                            }
+                            Divider()
+                            ForEach(perms, id: \.self) { permission in
+                                HStack(spacing: 8) {
+                                    Text(permission.label)
+                                        .appFont(AppTypography.caption1)
+                                        .frame(width: 140, alignment: .leading)
+                                        .lineLimit(1)
+                                    ForEach(Self.roleOrder, id: \.self) { role in
+                                        let ok = PermissionSet.defaultPermissions(for: role).has(permission)
+                                        Image(systemName: ok ? "checkmark.circle.fill" : "minus")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(ok ? AppColors.statusSuccess : AppColors.textTertiary.opacity(0.5))
+                                            .frame(width: 36)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private func filteredPermissions(in category: PermissionCategory) -> [Permission] {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return category.permissions }
+        return category.permissions.filter {
+            $0.label.lowercased().contains(q) || $0.rawValue.lowercased().contains(q)
         }
     }
 

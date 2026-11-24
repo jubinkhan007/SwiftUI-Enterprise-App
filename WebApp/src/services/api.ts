@@ -1032,6 +1032,12 @@ class ApiService {
     });
   }
 
+  async revokeOtherSessions(): Promise<void> {
+    await this.request('/api/me/sessions/others', {
+      method: 'DELETE',
+    });
+  }
+
   // --- Team & Organization ---
   async getInvites(): Promise<OrgInviteDTO[]> {
     const orgId = this.selectedOrgId || 'org-a';

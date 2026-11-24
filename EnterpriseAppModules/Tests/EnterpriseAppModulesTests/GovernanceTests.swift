@@ -298,5 +298,40 @@ final class GovernanceTests: XCTestCase {
         let decodedSnooze = try JSONCoding.decoder.decode(SnoozeReminderRequest.self, from: encodedSnooze)
         XCTAssertEqual(decodedSnooze.minutes, 180)
     }
+
+    func testSessionRevokeOthersEndpointAndAnomalyDetection() {
+        let ep = SessionEndpoint.revokeOthers(configuration: .current)
+        XCTAssertEqual(ep.path, "/api/me/sessions/others")
+        XCTAssertEqual(ep.method, HTTPMethod.delete)
+
+        let now = Date()
+        let staleDate = now.addingTimeInterval(-40 * 24 * 3600)
+        let suspiciousSession = UserSessionDTO(
+            id: UUID(),
+            userId: UUID(),
+            deviceType: "cli",
+            ipAddress: "198.51.100.77",
+            userAgent: "curl/8.4.0",
+            isRevoked: false,
+            expiresAt: now.addingTimeInterval(3600),
+            createdAt: staleDate
+        )
+        let flags = suspiciousSession.anomalyFlags(primaryIP: "203.0.113.10", now: now)
+        XCTAssertTrue(flags.contains("Different IP"))
+        XCTAssertTrue(flags.contains("CLI / Automated"))
+        XCTAssertTrue(flags.contains("Stale >30d"))
+
+        let cleanSession = UserSessionDTO(
+            id: UUID(),
+            userId: UUID(),
+            deviceType: "ios",
+            ipAddress: "203.0.113.10",
+            userAgent: "EnterpriseApp/1.2 CFNetwork/1490",
+            isRevoked: false,
+            expiresAt: now.addingTimeInterval(3600),
+            createdAt: now
+        )
+        XCTAssertTrue(cleanSession.anomalyFlags(primaryIP: "203.0.113.10", now: now).isEmpty)
+    }
 }
 

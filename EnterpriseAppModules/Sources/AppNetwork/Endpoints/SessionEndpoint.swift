@@ -6,12 +6,13 @@ import SharedModels
 public enum SessionEndpoint {
     case listMine(configuration: APIConfiguration)
     case revokeMine(sessionId: UUID, configuration: APIConfiguration)
+    case revokeOthers(configuration: APIConfiguration)
 }
 
 extension SessionEndpoint: APIEndpoint {
     public var baseURL: URL {
         switch self {
-        case .listMine(let c), .revokeMine(_, let c):
+        case .listMine(let c), .revokeMine(_, let c), .revokeOthers(let c):
             return c.baseURL
         }
     }
@@ -22,13 +23,15 @@ extension SessionEndpoint: APIEndpoint {
             return "/api/me/sessions"
         case .revokeMine(let sessionId, _):
             return "/api/me/sessions/\(sessionId.uuidString)"
+        case .revokeOthers:
+            return "/api/me/sessions/others"
         }
     }
 
     public var method: HTTPMethod {
         switch self {
         case .listMine: return .get
-        case .revokeMine: return .delete
+        case .revokeMine, .revokeOthers: return .delete
         }
     }
 

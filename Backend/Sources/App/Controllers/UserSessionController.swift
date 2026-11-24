@@ -45,6 +45,44 @@ struct UserSessionController: RouteCollection {
         return .success(EmptyResponse())
     }
 
+    @Sendable
+    func revokeOtherSessions(req: Request) async throws -> APIResponse<EmptyResponse> {
+        let auth = try req.authContext
+        let currentSessionId = (try? req.authPayload)?.sessionId
+
+        let activeSessions = try await UserSessionModel.query(on: req.db)
+            .filter(\.$user.$id == auth.userId)
+            .filter(\.$isRevoked == false)
+            .filter(\.$expiresAt > Date())
+            .sort(\.$createdAt, .descending)
+            .all()
+
+        let keepId = currentSessionId ?? activeSessions.first?.id
+        let toRevoke = activeSessions.filter { $0.id != keepId }
+
+        guard !toRevoke.isEmpty else {
+            return .success(EmptyResponse())
+        }
+
+        try await req.db.transaction { db in
+            for session in toRevoke {
+                session.isRevoked = true
+                try await session.save(on: db)
+            }
+        }
+
+        if let first = toRevoke.first {
+            await logSessionRevocation(
+                req: req,
+                actorId: auth.userId,
+                session: first,
+                details: "Bulk-revoked \(toRevoke.count) other active session(s)"
+            )
+        }
+
+        return .success(EmptyResponse())
+    }
+
     // MARK: - Admin Handlers
 
     @Sendable
